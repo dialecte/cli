@@ -5,7 +5,11 @@ import { join } from 'node:path'
 import { gitFolderOf, isInWorkTree, readGit } from '../git.ts'
 import { readCliVersion } from '../read-cli-version.ts'
 import { replaceWhole } from '../store/publish.ts'
-import { SOURCE_INDEX_FILE, SOURCE_INDEX_SCHEMA } from './source-functions.constants.ts'
+import {
+	SOURCE_INDEX_FILE,
+	SOURCE_INDEX_SCHEMA,
+	SOURCE_TEXT_MISSING,
+} from './source-functions.constants.ts'
 
 import type { ApiSourceFunction } from './api-json.types.ts'
 import type {
@@ -19,7 +23,7 @@ import type {
  * in the git folder so only the files whose bytes changed are parsed again; outside a git work tree every file is parsed.
  * The cache is keyed by path from the work tree top: the packages of one repository keep their files side by side.
  * Each file's text is read from the disk, or from `texts` when given (a commit's, read through git): the cache is then
- * read only, never written or pruned.
+ * read only, never written or pruned, and a file it lacks throws.
  */
 export function indexSourceFiles(params: {
 	root: string
@@ -30,9 +34,11 @@ export function indexSourceFiles(params: {
 }): ParsedSourceFile[] {
 	const { root, files, parse, texts } = params
 	function bytesOf(file: string): Buffer {
-		return texts === undefined
-			? readFileSync(join(root, file))
-			: Buffer.from(texts.get(file) ?? '', 'utf8')
+		if (texts === undefined) return readFileSync(join(root, file))
+		const text = texts.get(file)
+		// a file the caller lists without its text is never read as empty
+		if (text === undefined) throw new Error(SOURCE_TEXT_MISSING.replace('{file}', () => file))
+		return Buffer.from(text, 'utf8')
 	}
 	if (!isInWorkTree(root))
 		return files.map(function parseFile(file) {

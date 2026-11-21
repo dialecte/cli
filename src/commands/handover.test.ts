@@ -3088,6 +3088,7 @@ describe('handover: the gates from records', { timeout: SCRATCH_REPOSITORY_TIMEO
 				'✓ tests 397/397',
 				'✓ build',
 				'✓ skills',
+				'! quality never run on this tree',
 				'! review no findings ledger',
 				'✓ effort medium · risk class light at handover write (4 lines in 1 files) · 0 review rounds of 2',
 				'! standard not consulted: none configured (DIALECTE_STANDARD)',
@@ -3103,6 +3104,7 @@ describe('handover: the gates from records', { timeout: SCRATCH_REPOSITORY_TIMEO
 		expect(gateLinesOf(result.output).sort()).toEqual(
 			[
 				'✗ gate never run on this tree',
+				'! quality never run on this tree',
 				'! review no findings ledger',
 				'✓ effort medium · risk class light at handover write (4 lines in 1 files) · 0 review rounds of 2',
 				'! standard not consulted: none configured (DIALECTE_STANDARD)',
@@ -3441,6 +3443,7 @@ describe('handover: the card layout', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 			'│ ! tdd       not run here (the package does not test with vitest)             │',
 			'│ ! check     4/4 (the tree changed since)                                     │',
 			'│ ✗ build     exit 1 (the tree changed since)                                  │',
+			'│ ! quality   never run on this tree                                           │',
 			'│ ! review    no findings ledger                                               │',
 			'│ ✓ effort    medium · risk class light at handover write (4 lines in 1 files) │',
 			'│             · 0 review rounds of 2                                           │',

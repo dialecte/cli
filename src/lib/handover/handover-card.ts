@@ -51,7 +51,6 @@ import {
 	qualityToReadCount,
 } from '../quality/quality-card.ts'
 import { readQualityStanding } from '../quality/quality-record.ts'
-import { resolveRulesBaseSource } from '../rules-base.ts'
 import { shellQuote, shellWord } from '../shell-quote.ts'
 import { readRecordedStandardLine, readStandardLine } from '../standard/read-standard-line.ts'
 import { STACK_CARD_LINE_NAME } from '../store/stack.constants.ts'
@@ -414,24 +413,16 @@ export function buildHandoverCard(params: {
 
 /**
  * The card's quality of the worktree at `root` for the tree `stateHash`: the record's standing and its base as a short
- * commit; none for a root with no package.json, or with no record where the order answers no lot or base-branch base
- * (a bare `rules` would judge nothing there: no base-aware part to show).
+ * commit; none for a root with no package.json (no base-aware part there). No record reads `never run on this tree`.
  */
 function cardQualityOf(params: { root: string; stateHash: string }): CardQuality | undefined {
 	const { root } = params
 	if (!existsSync(join(root, PACKAGE_MANIFEST_FILE))) return undefined
 	const standing = readQualityStanding(params)
 	const { lists, docs } = standing
-	if (lists.kind === 'none' && docs.kind === 'none' && !judgesChange(root)) return undefined
 	const base =
 		lists.kind === 'current' ? lists.base : docs.kind === 'current' ? docs.base : undefined
 	return { standing, short: base === undefined ? '' : shortCommitOf({ root, commit: base.commit }) }
-}
-
-/** Whether a bare `rules` in `root` runs the base-aware rules: the order answers a lot or base-branch base. */
-function judgesChange(root: string): boolean {
-	const order = resolveRulesBaseSource({ root, emptyTreeRequest: true })
-	return order !== undefined && !('failure' in order) && order.source !== 'release-tag'
 }
 
 /** The warning row of the folder's last run when it spanned a sleep of the machine; none otherwise. */

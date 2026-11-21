@@ -61,6 +61,13 @@ export const ALIAS_CONFIG_PATTERN = /(?:^|\/)(?:tsconfig[^/]*\.json|vite\.config
 /** The tree side of a `rules` run: the worktree, uncommitted work included. */
 export const WORKTREE: QualityTree = { kind: 'worktree' }
 
+/** Why a commit's base-aware findings were not judged: a read of it that failed. */
+export const QUALITY_READ_FAILURES = {
+	diff: 'the diff from {base} cannot be read',
+	list: 'the files of {revision} cannot be listed',
+	text: '{path} not read at {revision}',
+} as const
+
 /** The record of the last base-aware run on the change, in the worktree's git folder. */
 export const QUALITY_RECORD_FILE = 'dialecte-quality.json'
 
@@ -108,6 +115,7 @@ export const QUALITY_CARD_TEXTS = {
 	listsOtherTree: 'lists: record of another tree (dialecte rules)',
 	docsNever: 'docs: never run on this tree',
 	docsOtherTree: 'docs: record of another tree',
+	docsNotJudged: 'docs: not judged ({why})',
 	more: '… {count} more (dialecte rules --base {short} --json)',
 	place: '{place}  ',
 } as const

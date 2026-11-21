@@ -11,7 +11,7 @@ import {
 	duplicateMessageOf,
 	isDocsFinding,
 	sharedExportMessageOf,
-} from './quality-pass.ts'
+} from './quality-wording.ts'
 import {
 	QUALITY_CARD_MAX_LINES,
 	QUALITY_CARD_NAME,
@@ -75,11 +75,17 @@ export function buildQualityLine(params: {
 		...(allowed ? [QUALITY_CARD_TEXTS.allowed.replace('{count}', String(allowed))] : []),
 		...(docs.kind === 'none' ? [QUALITY_CARD_TEXTS.docsNever] : []),
 		...(docs.kind === 'other-tree' ? [QUALITY_CARD_TEXTS.docsOtherTree] : []),
+		...(docs.kind === 'current' && docs.notJudged !== undefined
+			? [QUALITY_CARD_TEXTS.docsNotJudged.replace('{why}', () => docs.notJudged ?? '')]
+			: []),
 	]
 	const detail = parts.length ? parts.join(DETAIL_SEPARATOR) : QUALITY_CARD_TEXTS.nothing
 	const status = shown.docs.length
 		? 'failed'
-		: toRead.length || lists.kind !== 'current' || docs.kind !== 'current'
+		: toRead.length ||
+			  lists.kind !== 'current' ||
+			  docs.kind !== 'current' ||
+			  docs.notJudged !== undefined
 			? 'warning'
 			: 'passed'
 	return { name: QUALITY_CARD_NAME, status, detail }

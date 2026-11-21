@@ -26,3 +26,6 @@ export const API_DIFF_UNKNOWN = {
 		'an export source changed while every api.json did not: run dialecte skills generate',
 	unreadable: 'an api.json of the base or the tree does not parse',
 } as const
+
+/** Why an index a commit lists is no index: the batch read did not return its text. */
+export const INDEX_NOT_READ = 'not read at that commit'

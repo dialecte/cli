@@ -138,7 +138,7 @@ export type RecordedQuality = Omit<QualityResult, 'duplicates' | 'sharedExports'
 	QualityDocs
 
 /** The docs row of the last non-`flag` run, carried by a `flag` record: its tree, its base and its findings. */
-export type LotDocs = { stateHash: string; base: QualityBase } & QualityDocs
+export type LotDocs = { stateHash: string; base: QualityBase } & QualityDocsStanding
 
 /** `dialecte-quality.json`: the last base-aware run on the change, its tree, its base and what it found. */
 export type QualityRecord = RecordedQuality & {
@@ -168,7 +168,13 @@ export type QualityStandingPart<Value> =
  */
 export type QualityStanding = {
 	lists: QualityStandingPart<QualityLists>
-	docs: QualityStandingPart<QualityDocs>
+	docs: QualityStandingPart<QualityDocsStanding>
+}
+
+/** The docs row as the card reads it: its findings, and why they were not judged when the public API is unknown. */
+export type QualityDocsStanding = QualityDocs & {
+	/** The public API diff's reason when it is unknown: no docs finding could be judged. */
+	notJudged?: string
 }
 
 /** The pull request body's quality judged: the findings on the committed head against its base, with the notes. */

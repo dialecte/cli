@@ -96,6 +96,7 @@ describe('the card’s mutation gate line', { timeout: SCRATCH_REPOSITORY_TIMEOU
 		expect(built.gates.map((line) => line.name)).toEqual([
 			'check',
 			'mutation',
+			'quality',
 			'review',
 			'effort',
 			'standard',
@@ -110,7 +111,13 @@ describe('the card’s mutation gate line', { timeout: SCRATCH_REPOSITORY_TIMEOU
 	it('a package without dialecte.mutation → no mutation line', () => {
 		const { card } = cardOf({ declared: false })
 
-		expect(card().gates.map((line) => line.name)).toEqual(['check', 'review', 'effort', 'standard'])
+		expect(card().gates.map((line) => line.name)).toEqual([
+			'check',
+			'quality',
+			'review',
+			'effort',
+			'standard',
+		])
 	})
 
 	it('a gate lot.json in the folder and no run → BLOCKED, the ✗ line says to run dialecte mutants run on this tree first', () => {

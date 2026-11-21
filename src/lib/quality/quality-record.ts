@@ -13,6 +13,7 @@ import type {
 	LotDocs,
 	QualityBase,
 	QualityDocs,
+	QualityDocsStanding,
 	QualityRecord,
 	QualityStanding,
 	QualityStandingPart,
@@ -76,7 +77,7 @@ export function readQualityStanding(params: { root: string; stateHash: string })
 		const current = isOrderedBase({ base: record.base, order })
 		return {
 			lists: standingOf({ current, base: record.base, value: lists }),
-			docs: standingOf({ current, base: record.base, value: { docs: record.docs } }),
+			docs: standingOf({ current, base: record.base, value: docsStandingOf(record) }),
 		}
 	}
 	// a nearer base than the order's would miss changes; an older one only adds main's
@@ -93,7 +94,7 @@ export function readQualityStanding(params: { root: string; stateHash: string })
 function lotDocsOf(previous: QualityRecord | undefined): LotDocs | undefined {
 	if (previous === undefined) return undefined
 	if (previous.base.source === 'flag') return previous.lotDocs
-	return { stateHash: previous.stateHash, base: previous.base, docs: previous.docs }
+	return { stateHash: previous.stateHash, base: previous.base, ...docsStandingOf(previous) }
 }
 
 // dialecte-allow duplicate-read: the quality record's docs row; readStoreLotStanding reads a store lot's state
@@ -102,14 +103,26 @@ function lotDocsStandingOf(params: {
 	lotDocs: LotDocs | undefined
 	stateHash: string
 	order: QualityBase | undefined
-}): QualityStandingPart<QualityDocs> {
+}): QualityStandingPart<QualityDocsStanding> {
 	const { lotDocs } = params
 	if (lotDocs === undefined || lotDocs.stateHash !== params.stateHash) return { kind: 'none' }
 	return standingOf({
 		current: isOrderedBase({ base: lotDocs.base, order: params.order }),
 		base: lotDocs.base,
-		value: { docs: lotDocs.docs },
+		value: {
+			docs: lotDocs.docs,
+			...(lotDocs.notJudged !== undefined && { notJudged: lotDocs.notJudged }),
+		},
 	})
+}
+
+/** A run's docs row: its findings, and why none could be judged when its public API was unknown. */
+function docsStandingOf(record: QualityRecord): QualityDocsStanding {
+	const { publicApi } = record
+	return {
+		docs: record.docs,
+		...(publicApi.kind === 'unknown' && { notJudged: publicApi.why }),
+	}
 }
 
 /** The lot or base-branch base the order answers now for `root`, as the run asked it; undefined for any other answer. */

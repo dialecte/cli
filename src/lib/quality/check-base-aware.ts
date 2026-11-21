@@ -27,6 +27,7 @@ import {
 	ALIAS_CONFIG_PATTERN,
 	CONTRIBUTOR_PROFILE,
 	DOC_PAGE_PATTERN,
+	QUALITY_READ_FAILURES,
 	WORKTREE,
 } from './quality.constants.ts'
 import { findSharedExportChanges } from './shared-exports.ts'
@@ -63,6 +64,36 @@ export function checkBaseAware(params: {
 	/** On a commit: its package.json when the caller read it already (else read with the commit's texts). */
 	treePackageJson?: PackageJson
 }): QualityResult {
+	const judged = judgeBaseAware(params)
+	if ('notJudged' in judged) throw new Error(judged.notJudged)
+	return judged
+}
+
+/**
+ * The base-aware findings of the package at `root` against `base` on the commit `revision`, or why they were not
+ * judged: a read of the commit that failed (its diff from the base, its file list, a text it lists), never taken as
+ * an empty change or text.
+ *
+ * @intent judge a commit's change against its base, or say why it could not be read
+ * @internal
+ */
+export function checkBaseAwareAt(params: {
+	root: string
+	base: QualityBase
+	revision: string
+	/** The commit's package.json when the caller read it already (else read with the commit's texts). */
+	treePackageJson?: PackageJson
+}): QualityResult | { notJudged: string } {
+	return judgeBaseAware({ ...params, tree: { kind: 'revision', revision: params.revision } })
+}
+
+/** The findings on `tree`, or why a commit could not be read. */
+function judgeBaseAware(params: {
+	root: string
+	base: QualityBase
+	tree?: QualityTree
+	treePackageJson?: PackageJson
+}): QualityResult | { notJudged: string } {
 	const { root, base } = params
 	const tree = params.tree ?? WORKTREE
 	const side =
@@ -74,6 +105,7 @@ export function checkBaseAware(params: {
 					...(params.treePackageJson !== undefined && { packageJson: params.treePackageJson }),
 				})
 			: worktreeSideOf({ root, base: base.commit })
+	if ('notJudged' in side) return side
 	const allChanged = side.changed
 	const sourceChanged = allChanged.filter(
 		(path) =>
@@ -86,8 +118,9 @@ export function checkBaseAware(params: {
 		tree: side.facts,
 		base: baseFactsOf({ root, base: base.commit, changed }),
 	}
+	const { reading } = side
 	function resolveTree(request: { from: string; specifier: string }): string | undefined {
-		return side.reading.localFileOf(request)
+		return reading.localFileOf(request)
 	}
 	const resolveBase = revisionResolverOf({ root, revision: base.commit })
 	const sides = functionSidesOf(change)
@@ -156,10 +189,15 @@ function revisionSideOf(params: {
 	base: string
 	revision: string
 	packageJson?: PackageJson
-}): QualityTreeSide {
+}): QualityTreeSide | { notJudged: string } {
 	const { root, revision } = params
-	const changed = readDiffChanges(params).map(changedPathOf)
+	const diff = readDiffChanges(params)
+	if (diff === undefined)
+		return { notJudged: QUALITY_READ_FAILURES.diff.replace('{base}', () => params.base) }
+	const changed = diff.map(changedPathOf)
 	const files = listFilesAtRevision({ root, revision, folder: '.' })
+	if (files === undefined)
+		return { notJudged: QUALITY_READ_FAILURES.list.replace('{revision}', () => revision) }
 	const sources = files.filter((file) => isSourceFilePath(file)).sort(TEXT_COLLATOR.compare)
 	const pages = files.filter((file) => DOC_PAGE_PATTERN.test(file))
 	const indexPaths = ownIndexPathsIn(files)
@@ -169,6 +207,14 @@ function revisionSideOf(params: {
 		revision,
 		files: [...sources, ...pages, ...indexPaths, ...manifest],
 	})
+	// a file the commit lists whose text the batch did not return is never read as empty or absent
+	const unread = [...sources, ...pages, ...indexPaths].find((path) => !texts.has(path))
+	if (unread !== undefined)
+		return {
+			notJudged: QUALITY_READ_FAILURES.text
+				.replace('{path}', () => unread)
+				.replace('{revision}', () => revision),
+		}
 	const manifestText = texts.get(PACKAGE_MANIFEST_FILE)
 	const packageJson =
 		params.packageJson ?? (manifestText === undefined ? undefined : packageJsonOfText(manifestText))
@@ -271,7 +317,10 @@ function baseFactsOf(params: {
 
 /** A resolver over the file set the commit `revision` holds (`git ls-tree`), never the disk. */
 function revisionResolverOf(params: { root: string; revision: string }): ResolveSpecifier {
-	return resolverOver({ root: params.root, files: listFilesAtRevision({ ...params, folder: '.' }) })
+	return resolverOver({
+		root: params.root,
+		files: listFilesAtRevision({ ...params, folder: '.' }) ?? [],
+	})
 }
 
 /** The module resolver over `files` (relative to `root`), its local answers as package paths. */

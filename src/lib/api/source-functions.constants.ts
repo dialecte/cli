@@ -45,3 +45,6 @@ export const UNKNOWN_SOURCE_TEXT =
 /** The answer of a source lookup run with no package.json at or above `cwd`: `{command}` the lookup as typed. */
 export const NO_PACKAGE_TEXT =
 	'{command}: no package at {cwd}: run it inside a package (a folder holding a package.json, or below one)'
+
+/** Why the source index refuses a file whose text the caller (a commit's batch read) did not give: `{file}`. */
+export const SOURCE_TEXT_MISSING = '{file}: no text given for it'

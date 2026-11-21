@@ -63,7 +63,7 @@ export function diffApiIndexes(params: {
 }
 
 /**
- * The files the commit `revision` holds under `folder`, relative to `root`.
+ * The files the commit `revision` holds under `folder`, relative to `root`; undefined when git cannot list them.
  *
  * @intent list what a commit holds without checking it out
  * @internal
@@ -72,13 +72,12 @@ export function listFilesAtRevision(params: {
 	root: string
 	revision: string
 	folder: string
-}): string[] {
-	const listing =
-		tryReadGit({
-			root: params.root,
-			args: ['ls-tree', '-r', '-z', '--name-only', params.revision, '--', params.folder],
-		}) ?? ''
-	return listing.split('\0').filter((file) => file !== '')
+}): string[] | undefined {
+	const listing = tryReadGit({
+		root: params.root,
+		args: ['ls-tree', '-r', '-z', '--name-only', params.revision, '--', params.folder],
+	})
+	return listing?.split('\0').filter((file) => file !== '')
 }
 
 /**
@@ -113,7 +112,7 @@ function readApiSides(params: {
 	const treePaths =
 		treePackage === undefined ? worktreeIndexPathsOf(root) : ownIndexPathsIn(treePackage.files)
 	const basePaths = ownIndexPathsIn(
-		listFilesAtRevision({ root, revision: base, folder: SKILLS_FOLDER }),
+		listFilesAtRevision({ root, revision: base, folder: SKILLS_FOLDER }) ?? [],
 	)
 	const paths = [...new Set([...treePaths, ...basePaths])]
 	const sources = exportSourcesOf({ root, treePackage })
@@ -145,7 +144,7 @@ function readApiSides(params: {
 
 /** A commit's package.json (undefined when it holds none, or one that does not parse) and its file set. */
 function readPackageTree(params: { root: string; revision: string }): PackageTree {
-	const files = listFilesAtRevision({ ...params, folder: '.' })
+	const files = listFilesAtRevision({ ...params, folder: '.' }) ?? []
 	const text = readFilesAtRevision({ ...params, files: [RISK_PACKAGE_FILE] }).get(RISK_PACKAGE_FILE)
 	return {
 		packageJson: text === undefined ? undefined : packageJsonOfText(text),

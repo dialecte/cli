@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { TEXT_COLLATOR } from '../skills/api-index.constants.ts'
 import { SKILLS_FOLDER } from '../skills/skill-file.constants.ts'
 import { discoverSkillSources } from '../skills/sync-skills.ts'
-import { API_JSON_FILE, API_JSON_FOLDER } from './api-json.constants.ts'
+import { API_JSON_FILE, API_JSON_FOLDER, INDEX_NOT_READ } from './api-json.constants.ts'
 
 import type { ApiJson, ApiJsonRead } from './api-json.types.ts'
 
@@ -38,7 +38,7 @@ export function readOwnApiIndexes(params: {
 		})
 	return firstPerPackage(
 		ownIndexPathsIn(tree.files).map((path) =>
-			indexOrThrow({ path, read: parseApiJsonText(tree.texts.get(path) ?? '') }),
+			indexOrThrow({ path, read: indexTextRead(tree.texts.get(path)) }),
 		),
 	)
 }
@@ -134,6 +134,11 @@ function ownSkillFolders(cwd: string): string[] {
 /** One shipped index; a file that is not one throws, naming it and the fix. */
 function readApiJson(path: string): ApiJson {
 	return indexOrThrow({ path, read: parseApiJson(path) })
+}
+
+/** What a commit's index text reads as: the index, or why not (a text the batch read did not return is no index). */
+function indexTextRead(text: string | undefined): ApiJsonRead {
+	return text === undefined ? { problem: INDEX_NOT_READ } : parseApiJsonText(text)
 }
 
 /** The index `read` holds; one that is not an index throws, naming `path` and the fix. */

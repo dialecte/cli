@@ -12,7 +12,7 @@ import {
 	duplicateMessageOf,
 	isDocsFinding,
 	sharedExportMessageOf,
-} from './quality-pass.ts'
+} from './quality-wording.ts'
 import { QUALITY_BODY_TEXTS, QUALITY_CARD_TEXTS, QUALITY_PIECE_NOTES } from './quality.constants.ts'
 
 import type {

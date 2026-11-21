@@ -15,8 +15,9 @@ import { hashStateTree } from '../gate-records/state-hash.ts'
 import { readFilesAtRevision, readGit, tryReadGit } from '../git.ts'
 import { readLanding } from '../handover/land-record.ts'
 import { PACKAGE_MANIFEST_FILE } from '../package-json.constants.ts'
-import { checkBaseAware } from '../quality/check-base-aware.ts'
-import { applyQualityOptOuts, isDocsFinding, qualityNotesOf } from '../quality/quality-pass.ts'
+import { checkBaseAwareAt } from '../quality/check-base-aware.ts'
+import { applyQualityOptOuts } from '../quality/quality-pass.ts'
+import { isDocsFinding, qualityNotesOf } from '../quality/quality-wording.ts'
 import { QUALITY_BODY_TEXTS } from '../quality/quality.constants.ts'
 import { designRowOf, readReviewRecord, verdictsAt } from '../review-rounds/review-record.ts'
 import { riskStandingOf } from '../risk/risk-records.ts'
@@ -224,12 +225,13 @@ function bodyQualityOf(params: { worktree: string; base: string }): BodyQuality 
 			why: QUALITY_BODY_TEXTS.noBase.replace('{base}', () => params.base),
 		}
 	const base = { commit, source: 'base-branch' as const }
-	const result = checkBaseAware({
+	const result = checkBaseAwareAt({
 		root,
 		base,
-		tree: HEAD_TREE,
+		revision: HEAD_TREE.revision,
 		treePackageJson: packageJson,
 	})
+	if ('notJudged' in result) return { kind: 'not-judged', why: result.notJudged }
 	// the body judges no file: no opt-out is judged unused, the findings it silences are only counted
 	const { recorded } = applyQualityOptOuts({
 		result,
