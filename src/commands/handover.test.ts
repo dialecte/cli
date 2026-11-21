@@ -1308,7 +1308,7 @@ describe('commit.sh', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 })
 
 describe('handover run', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
-	it('every guard green → one line each with its result and duration, then lot n/N, its commit and stat, the card; the lock released', async () => {
+	it('every guard green, the scope guard after the lot guard → one line each with its result and duration, then lot n/N, its commit and stat, the card; the lock released', async () => {
 		const { root, lotsPath, out } = prepare()
 		expect(writeHandover({ lotsPath }).exitCode).toBe(0)
 		const lockPath = join(root, '.git', 'dialecte-handover.lock')
@@ -1318,7 +1318,7 @@ describe('handover run', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		const result = await runFolder({ out })
 
 		expect(result.exitCode).toBe(0)
-		expect(result.lines.slice(1, 14)).toEqual([
+		expect(result.lines.slice(1, 15)).toEqual([
 			`✓ repository  ${root}  0.0 s`,
 			'✓ lots        2 lot(s) as reviewed  0.0 s',
 			'✓ hooks       git hooks folder  0.0 s',
@@ -1327,6 +1327,7 @@ describe('handover run', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 			'✓ processes   none running in the worktree  0.0 s',
 			'✓ verify      no late fixes  0.0 s',
 			`✓ lot         ${basename(out)}  0.0 s`,
+			'✓ scope       2 path(s) inside the scope  0.0 s',
 			'✓ index       empty  0.0 s',
 			'✓ snapshot    2 file(s)  0.0 s',
 			'✓ deleted     0 file(s) absent  0.0 s',

@@ -46,6 +46,9 @@ export const LOT_SCOPE_TEXTS = {
 	insideEntry:
 		'lot scope: {name}: {path} lies inside the entry {entry}: drop the entry and add what stays: nothing written',
 	changed: "lot scope: {name}: {path} holds {file}, changed in the lot's worktree: nothing written",
+	/** A drop whose lot base cannot be read: the committed work cannot be checked (SAFE Q5). */
+	dropBase:
+		'lot scope: {name}: the lot base cannot be read ({failure}): a drop is checked against the committed work; nothing written',
 	worktreeUnreadable:
 		"lot scope: {name}: the lot's worktree {worktree} cannot be read: nothing written",
 	overLimit: 'lot scope: {name}: {message}: nothing written',

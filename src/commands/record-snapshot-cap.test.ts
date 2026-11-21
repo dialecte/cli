@@ -38,7 +38,7 @@ type Effort = BriefEffort
 
 /** A store lot whose identity holds `identity` (undefined: none) and whose `brief.json` holds `brief` (undefined: none). */
 function lotWith(params: { identity?: Effort; brief?: Effort }): StationLot {
-	const lot = createStationLot()
+	const lot = createStationLot({ repositoryIsWorktree: true })
 	setIdentityEffort({ lot, level: params.identity })
 	writeLotBrief({ lot, stepCount: 1, effort: params.brief })
 	return lot
@@ -219,9 +219,16 @@ describe('lot snapshot --beyond-cap', { timeout: STORE_CASE_TIMEOUT }, () => {
 		})
 
 		expect(crashed.exitCode).toBe(1)
-		// the stopped write leaves its temporary file (a later run sweeps it): nothing else is new
+		// the stopped write leaves its temporary file (a later run sweeps it); the class derived from the lot's worktree
+		// is appended before the go-ahead: risk.jsonl holds that one derived line, nothing else is new
 		const kept = listing(lot).filter((name) => !name.includes('.tmp-'))
-		expect(kept).toEqual(before)
+		expect(kept).toEqual([...before, 'risk.jsonl'].sort())
+		expect(
+			readFileSync(join(lot.lotFolder, 'risk.jsonl'), 'utf8')
+				.split('\n')
+				.filter(Boolean)
+				.map((line) => (JSON.parse(line) as { kind: string }).kind),
+		).toEqual(['derived'])
 		expect(kept).not.toContain('decisions.md')
 		expect(kept.filter((name) => name.startsWith('round-4'))).toEqual([])
 		expect(snapshot({ lot, round: 4, extra: GO_AHEAD }).exitCode).toBe(0)
@@ -417,7 +424,7 @@ describe(
 
 		for (const { name, extra, source, option } of WORD_CASES)
 			it(`${name} → exit 2, nothing written`, () => {
-				const lot = createStationLot()
+				const lot = createStationLot({ repositoryIsWorktree: true })
 				setIdentityEffort({ lot, level: 'high' })
 				configureMachine({ userFileLines: source === 'user file' ? [FIRST_WORD] : undefined })
 				if (source === 'git config')

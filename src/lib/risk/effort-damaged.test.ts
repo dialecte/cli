@@ -173,9 +173,12 @@ describe('every reader of the effort - a damaged level', { timeout: STORE_CASE_T
 		})
 	}
 
-	/** A store lot whose identity's effort level is damaged. */
+	/**
+	 * A store lot whose identity's effort level is damaged; its worktree a real folder (the repository), so a verb that
+	 * reads the lot's tree reads the lot first, whatever the order.
+	 */
 	function damagedStationLot(): StationLot {
-		const lot = createStationLot()
+		const lot = createStationLot({ repositoryIsWorktree: true })
 		damageLevel(lot.lotFolder)
 		return lot
 	}

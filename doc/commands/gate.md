@@ -31,14 +31,25 @@ gate - The package's Definition of Done with the real counts
   --full and --release hold the machine awake while they run (macOS: caffeinate -i -w <pid>;
     DIALECTE_KEEP_AWAKE=0 turns it off); a run that spanned a sleep keeps sleptMs on its record and
     the card says it
-  --hook - in a commit hook, no test suite (CI runs it on every push): with "dialecte.gate.hook"
-           declared, the tdd receipts of the lot first (every new or changed case since the lot base
-           proven red then green, unchanged, accepted or revised, its newest green at the production
-           as committed; a stale green names dialecte tdd green (measured from the lot base); a
-           first or merge commit skips it), then the declared steps (the cli: check, then rules on
-           the touched files); without one, every step of --full, a scoped one against the hook
-           base; each step answered by a green record (any mode) of the committed tree and install
-           that ran it as it is now, else run; the running line names the steps it runs
+  --hook - in a commit hook, no test suite (CI runs it on every push): on a commit of a lot's
+           branch, from any worktree, the scope step comes first, whatever dialecte.gate.hook
+           declares: the lot's whole work up to the commit (its lot base against the index tree
+           being committed, both sides of a rename, deletions included) must lie inside its
+           effective scope (the brief's with lot scope's changes; .dialecte/ records left out), else
+           the commit fails naming every path outside and the lot scope <lot> --add ... --by
+           lot-session to run (a path holding a glob character gets no add), no other step run, the
+           failed part in the lot's events; a review throwaway, a committed, canceled, failed or
+           simulated lot, a first commit and a merge in progress skip it; a damaged lot or a lot
+           base that cannot be read fails it; with no base branch it holds the staged change (held
+           against HEAD: no base branch); a branch no lot names gives no line; then the design step;
+           with "dialecte.gate.hook" declared, the tdd receipts of the lot first (every new or
+           changed case since the lot base proven red then green, unchanged, accepted or revised,
+           its newest green at the production as committed; a stale green names dialecte tdd green
+           (measured from the lot base); a first or merge commit skips it), then the declared steps
+           (the cli: check, then rules on the touched files); without one, every step of --full, a
+           scoped one against the hook base; each step answered by a green record (any mode) of the
+           committed tree and install that ran it as it is now, else run; the running line names the
+           steps it runs
   --release - alone: "dialecte.gate.release" (default: the --full steps), every scoped step against
               the empty tree (--base feeds only the tdd step); records dialecte-gate-release.json;
               each of its steps answers a hook step of the same step hash (a scoped one at any base:

@@ -10,8 +10,8 @@ import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 
 import { renderLotUsage } from '../lib/command-map/render-help.ts'
-import { getArg, positionalArguments } from '../lib/config.ts'
 import { textOf } from '../lib/print/print.ts'
+import { readArguments } from '../lib/review-rounds/round-arguments.ts'
 import { stableJson } from '../lib/stable-json.ts'
 import { briefTextFaults, checkBriefFields } from '../lib/store/brief.ts'
 import { readIdentity } from '../lib/store/identity.ts'
@@ -33,8 +33,11 @@ import {
 import type { CommandResult } from '../lib/command-result.types.ts'
 
 export function runLotBrief(params: { cwd: string; argv: string[]; now?: Date }): CommandResult {
-	const ids = positionalArguments({ argv: params.argv, valueOptions: LOT_BRIEF_VALUE_OPTIONS })
-	const [from, by, reason] = LOT_BRIEF_VALUE_OPTIONS.map((name) => getArg(params.argv, name))
+	// read as every signing verb reads its line: the last value wins, every word after `--` is no option
+	const read = readArguments({ argv: params.argv, valueOptions: LOT_BRIEF_VALUE_OPTIONS })
+	if (typeof read === 'string') return { exitCode: 2, output: renderLotUsage() }
+	const ids = read.words
+	const [from, by, reason] = LOT_BRIEF_VALUE_OPTIONS.map((name) => read.values.get(name))
 	if (ids.length !== 1 || !from || !by || !reason) return { exitCode: 2, output: renderLotUsage() }
 	const required = requiredLotOf({ argument: ids[0], cwd: params.cwd, mode: 'write' })
 	if (!('lot' in required)) return { exitCode: 2, output: textOf(required.lines) }

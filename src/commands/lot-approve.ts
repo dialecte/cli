@@ -31,15 +31,13 @@ import { openBlockingFindings, refreshReviewRecord } from '../lib/review-rounds/
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
 import { PUBLIC_TEXT_REFUSAL } from '../lib/store/public-text.constants.ts'
 import { folderPlanEntryIds, publicTextLabel } from '../lib/store/public-text.ts'
-import { ORCHESTRATOR_APPROVER } from '../lib/store/signer-rules.constants.ts'
-import { recordedByOf } from '../lib/store/signer-rules.ts'
+import { approvalSignerRefusal, recordedByOf } from '../lib/store/signer-rules.ts'
 import { STORE_FILES } from '../lib/store/store.constants.ts'
 import { resolveTddBase } from '../lib/tdd/tdd-base.ts'
 import {
 	APPROVABLE_STATES,
 	APPROVAL_LINE_SCHEMA,
 	APPROVE_OPTIONS,
-	CLI_PACKAGE_NAME,
 	LOT_APPROVE_LINES,
 } from './lot-approve.constants.ts'
 import { resolveLotPlace, sendRenderedText } from './lot-pr.ts'
@@ -199,8 +197,8 @@ function approverRefusal(params: {
 }): string | undefined {
 	const { place, by } = params
 	const packageName = readPackageJson(place.worktree).name ?? place.worktree
-	if (by.toLowerCase() === ORCHESTRATOR_APPROVER && packageName !== CLI_PACKAGE_NAME)
-		return LOT_APPROVE_LINES.orchestratorElsewhere.replace('{package}', () => packageName)
+	const signerRefusal = approvalSignerRefusal({ by, packageName })
+	if (signerRefusal !== undefined) return signerRefusal
 	const wordRefusal = forbiddenWordRefusal({
 		root: place.worktree,
 		verb: 'approve',

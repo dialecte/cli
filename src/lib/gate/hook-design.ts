@@ -11,6 +11,7 @@ import { designGateOf } from '../design/design-gate.ts'
 import { designNextOf, designStateText, designStateWithReasons } from '../design/design-line.ts'
 import { realPathOf } from '../file-system.ts'
 import { readGit, tryReadGit } from '../git.ts'
+import { readCheckedLotState, registryOfLotFolder } from '../store/lot-records.ts'
 import { listLotIdentities, locateStore } from '../store/store-folder.ts'
 import { resolveTddBase } from '../tdd/tdd-base.ts'
 import { isProductionPath } from '../tdd/tdd-files.ts'
@@ -28,8 +29,8 @@ import type { StepResult } from './gate.types.ts'
 import type { HookLot } from './hook-design.types.ts'
 
 /**
- * The lot base a hook run resolves once, for its design step and its tdd step: resolved when the worktree `cwd` is a
- * lot's own or the package declares a hook list (its tdd step reads it); undefined otherwise (nothing reads it).
+ * The lot base a hook run resolves once, for its scope, design and tdd steps: resolved when a lot is being committed
+ * or the package declares a hook list (its tdd step reads it); undefined otherwise (nothing reads it).
  *
  * @intent resolve a hook run's one lot base, only when a step reads it
  * @internal
@@ -37,15 +38,17 @@ import type { HookLot } from './hook-design.types.ts'
 export function resolveHookLotBase(params: {
 	cwd: string
 	packageJson: PackageJson
+	/** The lot being committed (`hookLotOf`), resolved once for the run. */
+	lot: HookLot | undefined
 }): TddBase | { failure: string } | undefined {
 	const { cwd, packageJson } = params
-	if (packageJson.dialecte?.gate?.hook === undefined && hookLotOf({ cwd }) === undefined)
-		return undefined
+	if (packageJson.dialecte?.gate?.hook === undefined && params.lot === undefined) return undefined
 	return resolveTddBase({ root: cwd, packageJson })
 }
 
 /**
- * The hook's design step for the commit in the worktree `cwd`; undefined outside a lot's own worktree.
+ * The hook's design step for the commit of the lot `lot` (the run's one `hookLotOf`) in the worktree `cwd`; undefined
+ * when no lot is being committed.
  *
  * @intent stop a commit of production code whose lot's design is not approved
  * @internal
@@ -53,10 +56,11 @@ export function resolveHookLotBase(params: {
 export function runHookDesignStep(params: {
 	cwd: string
 	packageJson: PackageJson
+	lot: HookLot | undefined
 	base: TddBase | { failure: string }
 }): StepResult | undefined {
 	const { cwd, packageJson, base } = params
-	const held = hookLotOf({ cwd })
+	const held = params.lot
 	if (held === undefined) return undefined
 	if (held.kind === 'throwaway')
 		return resultOf({ status: 'skipped', reason: HOOK_DESIGN_TEXTS.throwaway })
@@ -91,7 +95,7 @@ export function runHookDesignStep(params: {
 /**
  * The lot the commit in `cwd` belongs to, found by the branch being committed, not by the worktree: the store lot whose
  * branch it is (the newest when several were), wherever it is committed from; or a review throwaway of one, on its own
- * branch `<lot branch>-round-<n>`; undefined for a branch no lot names.
+ * branch `<lot branch>-round-<n>`; undefined for a branch no lot names. A lot's records are read once, with it.
  *
  * @intent find the lot a commit belongs to, from any worktree
  * @internal
@@ -108,7 +112,14 @@ export function hookLotOf(params: { cwd: string }): HookLot | undefined {
 		return entry.identity.branch === branch
 	})
 	const newest = own.at(-1)
-	if (newest !== undefined) return { kind: 'lot', lotFolder: realPathOf(join(store, newest.name)) }
+	if (newest !== undefined) {
+		const lotFolder = realPathOf(join(store, newest.name))
+		return {
+			kind: 'lot',
+			lotFolder,
+			checked: readCheckedLotState({ lotFolder, registry: registryOfLotFolder(lotFolder) }),
+		}
+	}
 	const throwaway = lots.some(function ownsTheRound(entry) {
 		return (
 			branch.startsWith(`${entry.identity.branch}${THROWAWAY_BRANCH_INFIX}`) &&

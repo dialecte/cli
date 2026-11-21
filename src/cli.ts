@@ -25,6 +25,7 @@ import { GIVEN_ENVIRONMENT } from './lib/given-environment.constants.ts'
 import { HELP_FLAGS } from './lib/parse-invocation.constants.ts'
 import { parseInvocation } from './lib/parse-invocation.ts'
 import { printLines, printOut } from './lib/print/print.ts'
+import { workplaceSignerRefusal } from './lib/store/signer-rules.ts'
 
 import type { PrintedText } from './lib/print/print.types.ts'
 
@@ -55,6 +56,16 @@ async function main(): Promise<void> {
 		})
 		printOut({ stream: 'stdout', text: renderGlobalHelp() })
 		process.exit(1)
+	}
+	// one signer rule for every verb that signs, checked once before any runs: no orchestrator from a lot's workplace
+	const signerRefusal = workplaceSignerRefusal({
+		command: invocation.command,
+		argv: invocation.argv,
+		cwd: process.cwd(),
+	})
+	if (signerRefusal !== undefined) {
+		printLines({ stream: 'stderr', lines: [signerRefusal] })
+		process.exit(2)
 	}
 	await COMMANDS_BY_NAME[invocation.command](invocation.argv)
 }

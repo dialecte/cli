@@ -12,7 +12,9 @@ import { FORECAST_HOLD_TEXTS } from '../lib/coordination/forecast.constants.ts'
 import { forecastLot } from '../lib/coordination/forecast.ts'
 import { EVENT_LINE_LIMIT } from '../lib/events/events.constants.ts'
 import { makeEnvelope, overLimitMessage, writeEvent } from '../lib/events/write-event.ts'
+import { listLotChangePaths } from '../lib/git.ts'
 import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
+import { readPackageJson } from '../lib/package-json.ts'
 import { readCliVersion } from '../lib/read-cli-version.ts'
 import { forbiddenWordRefusal, isOneLine } from '../lib/review-rounds/option-checks.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
@@ -61,6 +63,7 @@ import {
 } from '../lib/store/scope-changes.ts'
 import { readStackRecord } from '../lib/store/stack.ts'
 import { QUESTIONS_CLOSED_STATES, STORE_FILES } from '../lib/store/store.constants.ts'
+import { resolveTddBase } from '../lib/tdd/tdd-base.ts'
 import {
 	LOT_SCOPE_LIST_SEPARATOR,
 	LOT_SCOPE_FLAGS,
@@ -268,8 +271,9 @@ function dropEntryRefusal(params: {
 }
 
 /**
- * Why the drop cannot keep the lot's work held: it leaves no scope, the worktree cannot be read, or a changed file
- * inside a dropped entry is covered by no entry left (the call's adds counted, D2); none when the drop may go.
+ * Why the drop cannot keep the lot's work held: it leaves no scope, the worktree or the lot base cannot be read, or a
+ * file the lot changed or committed (SAFE Q5) inside a dropped entry is covered by no entry left (the call's adds
+ * counted, D2); none when the drop may go.
  */
 function coverageRefusal(params: {
 	target: ScopeTarget
@@ -288,9 +292,14 @@ function coverageRefusal(params: {
 			template: LOT_SCOPE_TEXTS.worktreeUnreadable,
 			values: { name: target.name, worktree: target.worktree ?? NO_WORKTREE },
 		})
+	if ('failure' in changed)
+		return refused({
+			template: LOT_SCOPE_TEXTS.dropBase,
+			values: { name: target.name, failure: changed.failure },
+		})
 	for (const path of params.dropped) {
 		const holding = scope.filter((entry) => isDroppedBy({ entry, path }))
-		const file = changed.find(
+		const file = changed.paths.find(
 			(each) =>
 				// a removed glob entry holds every changed file under its literal folder, matched or not: stricter than
 				// the coverage of the entries left on purpose (fails closed, FIX-lot-scope R1-7)
@@ -433,14 +442,26 @@ function addOverlapsOf(params: { target: ScopeTarget; added: string[] }): LotOve
 	}).filter((overlap) => overlap.name !== parent)
 }
 
-/** The files the lot's worktree lists as changed (git status); undefined when it has none or it cannot be read. */
-function changedFilesOf(params: { worktree: string | null }): string[] | undefined {
-	if (params.worktree === null) return undefined
+/**
+ * The files the lot's work holds (SAFE Q5): those it committed since its lot base (`listLotChangePaths`) and those its
+ * worktree lists as changed (git status); undefined when it has no worktree or it cannot be read, the base's failure
+ * when the lot base cannot be read (a drop never uncovers committed work unseen).
+ */
+function changedFilesOf(params: {
+	worktree: string | null
+}): { paths: string[] } | { failure: string } | undefined {
+	const { worktree } = params
+	if (worktree === null) return undefined
+	let status: string[]
 	try {
-		return listStatusPaths(params.worktree).paths
+		status = listStatusPaths(worktree).paths
 	} catch {
 		return undefined
 	}
+	const base = resolveTddBase({ root: worktree, packageJson: readPackageJson(worktree) })
+	if ('failure' in base) return base
+	const committed = listLotChangePaths({ root: worktree, from: base.commit, to: 'HEAD' })
+	return { paths: [...new Set([...committed, ...status])] }
 }
 
 /**

@@ -4,6 +4,7 @@ import { join } from 'node:path'
 
 import { STORE_FILES } from '../src/lib/store/store.constants.ts'
 import { writeStoreLot } from './brief-workspace.ts'
+import { addWorktreeFolder } from './lot-stores.ts'
 import { OTHER_LOT, OTHER_LOT_SCOPE } from './step-events-delta.constants.ts'
 import { createStepLot } from './step-events-lot.ts'
 
@@ -22,6 +23,8 @@ export function createDeltaScene(): DeltaScene {
 		branch: 'feat/other',
 		repository: inLot.workspace.repository,
 	})
+	// the lot the id names has a worktree of its own (the path its identity names): lot delta reads that tree
+	addWorktreeFolder({ workspace: inLot.workspace, folderName: OTHER_LOT })
 	mkdirSync(join(lotFolder, 'round-1'), { recursive: true })
 	writeFileSync(join(lotFolder, 'round-1.deleted'), '')
 	return {

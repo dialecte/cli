@@ -2,6 +2,7 @@
 import { STATION_VERDICTS } from '../events/station-event.constants.ts'
 import { VERIFY_VERDICT } from '../review-rounds/review-record.constants.ts'
 import { SEVERITY_SPELLINGS } from '../review-rounds/review-rounds.constants.ts'
+import { ORCHESTRATOR_SIGNER } from '../store/signer-rules.constants.ts'
 
 import type { GateRecordMode } from '../gate-records/gate-records.types.ts'
 import type { CaseStatus } from '../tdd/tdd.types.ts'
@@ -98,7 +99,7 @@ export const DONE_CASE_STATUSES: readonly string[] = ['green', 'accepted', 'revi
 /** Who gave a verdict, as the body names them: by kind, never a person's name. */
 export const REVIEWER_KINDS = {
 	verify: 'verify',
-	orchestrator: 'orchestrator',
+	orchestrator: ORCHESTRATOR_SIGNER,
 	person: 'person',
 } as const
 

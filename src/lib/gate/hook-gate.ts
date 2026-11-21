@@ -1,5 +1,6 @@
 /**
- * `gate --hook`: with a declared `dialecte.gate.hook`, the tdd receipts of the lot first (`runHookTddStep`, run every
+ * `gate --hook`: on a commit of a lot's branch, the scope step then the design step first (a failure runs no step);
+ * with a declared `dialecte.gate.hook`, the tdd receipts of the lot first (`runHookTddStep`, run every
  * time, never recorded; a failure runs no step), then the declared steps; else every step of the full gate. For the
  * commit being made, each answered by the newest green record of the committed tree and install that ran it as it is
  * now (any mode), else run - every step not answered in one run, in list order. When the full steps hold a scoped step,
@@ -46,7 +47,8 @@ import {
 	resolveGateSteps,
 	resolveHookSteps,
 } from './gate-config.ts'
-import { resolveHookLotBase, runHookDesignStep } from './hook-design.ts'
+import { hookLotOf, resolveHookLotBase, runHookDesignStep } from './hook-design.ts'
+import { runHookScopeStep } from './hook-scope.ts'
 import { answerHookSteps } from './hook-step-answers.ts'
 import { HOOK_TDD_STEP_DETAIL } from './hook-tdd.constants.ts'
 import { runHookTddStep } from './hook-tdd.ts'
@@ -65,6 +67,7 @@ import type { TddBase } from '../tdd/tdd.types.ts'
 import type { GateRunBase, HandoverBase, UsedGateBase } from './gate-base.types.ts'
 import type { GateStep } from './gate-config.types.ts'
 import type { StepResult } from './gate.types.ts'
+import type { HookLot } from './hook-design.types.ts'
 import type {
 	HookAnswers,
 	HookGateParams,
@@ -73,7 +76,9 @@ import type {
 } from './hook-gate.types.ts'
 
 /**
- * `gate --hook` in the worktree `cwd`. A declared hook list's tdd step comes first: failed, its lines and the verdict
+ * `gate --hook` in the worktree `cwd`. On a commit of a lot's branch its guards come first, whatever the hook list
+ * declares: the scope step, then the design step; a failed one stops the commit, its lines and the verdict alone. A
+ * declared hook list's tdd step comes next: failed, its lines and the verdict
  * alone; else its line before the others. Every step answered: one reused line per step naming the run that really ran
  * it. Nothing answered: the running line, the steps' lines, one vitest summary line of their summed counts, then the
  * verdict. Some answered: their reused lines, then the lines of the steps run, then the verdict. With a scoped hook
@@ -87,20 +92,21 @@ export async function runHookGate(params: HookGateParams): Promise<CommandResult
 	const releaseRefusal = releaseBaseRefusalOf({ cwd: params.cwd, releaseBase: params.releaseBase })
 	if (releaseRefusal !== undefined)
 		return withNotices({ result: { exitCode: 1, output: textOf([releaseRefusal]) }, notices })
-	// the lot base, resolved once for the run: the design step and the tdd step read the same one (#57)
+	// the tree being committed, read once: the scope step holds it, the steps are keyed on it
+	const tree = readIndexTree({
+		root: params.cwd,
+		...(params.indexFile && { indexFile: params.indexFile }),
+	})
+	// the lot being committed and its base, resolved once for the run: the scope, design and tdd steps read them (#57)
 	const packageJson = readPackageJson(params.cwd)
-	const base = resolveHookLotBase({ cwd: params.cwd, packageJson })
-	// the design step first, whatever the hook list declares: a refused design stops the commit before any step
-	const designStarted = performance.now()
-	const design =
-		base === undefined ? undefined : runHookDesignStep({ cwd: params.cwd, packageJson, base })
-	const designDuration = performance.now() - designStarted
-	if (design?.status === 'failed')
-		return withNotices({
-			result: endFailedDesign({ params, design, duration: designDuration, notices }),
-			notices,
-		})
-	const prepared = prepareHookRun(params)
+	const lot = hookLotOf({ cwd: params.cwd })
+	const base = resolveHookLotBase({ cwd: params.cwd, packageJson, lot })
+	// the guards first, whatever the hook list declares: the scope step, then the design step; a refused one stops the
+	// commit before any other step
+	const guards = runHookGuards({ cwd: params.cwd, packageJson, lot, base, tree })
+	if (guards.results.some((result) => result.status === 'failed'))
+		return withNotices({ result: endFailedGuard({ params, guards, notices }), notices })
+	const prepared = prepareHookRun({ ...params, tree })
 	if ('result' in prepared) return withNotices({ result: prepared.result, notices })
 	// a live output gets the notices first and every line once: what it printed is never in the result again
 	if (params.live) for (const line of notices) params.live.writeLine(textOf([line]))
@@ -118,8 +124,7 @@ export async function runHookGate(params: HookGateParams): Promise<CommandResult
 		live: params.live,
 		recorder,
 		base,
-		design,
-		designDuration,
+		guards,
 	})
 	if (own.results.some((result) => result.status === 'failed'))
 		return endFailedOwnRun({ own, recorder, live: params.live, notices })
@@ -268,7 +273,8 @@ function findHookAnswers(params: {
  */
 function prepareHookRun(params: {
 	cwd: string
-	indexFile: string | undefined
+	/** The tree of the index git hands the hook, read once by the run. */
+	tree: string
 	/** False when git names another repository's index: the install is not checked against it. */
 	reusable: boolean
 	handoverBase: HandoverBase | undefined
@@ -295,10 +301,7 @@ function prepareHookRun(params: {
 	if (hookBase !== undefined && 'refusal' in hookBase)
 		return { result: { exitCode: 1, output: textOf([hookBase.refusal]) } }
 	const gateBase = hookBase?.base.commit
-	const tree = readIndexTree({
-		root: cwd,
-		...(params.indexFile && { indexFile: params.indexFile }),
-	})
+	const { tree } = params
 	// a node_modules that does not install the committed lock: no step runs, no record answers; an index of another
 	// repository is no commit of this one to check (its steps run, keyed on nothing they answer)
 	const installRefusal = params.reusable ? checkInstallMatchesTree({ root: cwd, tree }) : undefined
@@ -450,8 +453,8 @@ function endHookRun(params: {
 }
 
 /**
- * The hook's own steps, before the declared ones: the design step's result when it ran (a passed or skipped one: a
- * failed one stopped the run), then the tdd receipts of the lot (`runHookTddStep`, at the run's one base) when the
+ * The hook's own steps, before the declared ones: the guards' results when they ran (passed or skipped ones: a failed
+ * one stopped the run), then the tdd receipts of the lot (`runHookTddStep`, at the run's one base) when the
  * package declares `dialecte.gate.hook`, none otherwise (the default hook commits inside a hand-over's clones, which
  * hold no receipts). Timed for the run's events, shown live as a step.
  */
@@ -461,19 +464,16 @@ async function runOwnHookSteps(params: {
 	live: LiveOutput | undefined
 	recorder: StepHandle
 	base: TddBase | { failure: string } | undefined
-	design: StepResult | undefined
-	/** How long the design step took, in milliseconds. */
-	designDuration: number
+	/** The scope and design steps that ran, with how long each took. */
+	guards: OwnHookSteps
 }): Promise<OwnHookSteps> {
 	const { packageJson, tree } = params.prepared
-	const designPart = params.design === undefined ? [] : [params.design]
-	const designDurations = new Map(
-		params.design === undefined ? [] : [[params.design, params.designDuration] as const],
-	)
-	if (params.live && params.design)
-		for (const line of renderStepLines(params.design)) params.live.writeLine(textOf([line]))
+	const { results: guardParts, durations: guardDurations } = params.guards
+	if (params.live)
+		for (const guard of guardParts)
+			for (const line of renderStepLines(guard)) params.live.writeLine(textOf([line]))
 	if (packageJson.dialecte?.gate?.hook === undefined || params.base === undefined)
-		return { results: designPart, durations: designDurations }
+		return { results: guardParts, durations: guardDurations }
 	const progress = params.live
 		? createStepProgress({ live: params.live, clock: createSystemClock() })
 		: undefined
@@ -483,45 +483,65 @@ async function runOwnHookSteps(params: {
 	const duration = finishPart()
 	running?.finish(...renderStepLines(result).map((line) => textOf([line])))
 	return {
-		results: [...designPart, result],
-		durations: new Map([...designDurations, [result, duration]]),
+		results: [...guardParts, result],
+		durations: new Map([...guardDurations, [result, duration]]),
 	}
 }
 
 /**
- * A hook whose design step failed: nothing else runs; the run's events hold its start and its end with the design
- * part failed (as a failed tdd step's run does), the output is its line, the verdict and the next command under it
- * (a live output gets the design line first).
+ * The hook's guards, timed: the scope step, then the design step when the scope step did not fail; a step that does not
+ * apply (no lot being committed) gives no result.
  */
-function endFailedDesign(args: {
+function runHookGuards(params: {
+	cwd: string
+	packageJson: PackageJson
+	lot: HookLot | undefined
+	base: TddBase | { failure: string } | undefined
+	tree: string
+}): OwnHookSteps {
+	const { cwd, packageJson, lot, base } = params
+	const results: StepResult[] = []
+	const durations = new Map<StepResult, number>()
+	const scopeStarted = performance.now()
+	const scope = runHookScopeStep({ cwd, lot, base, tree: params.tree })
+	if (scope !== undefined) {
+		results.push(scope)
+		durations.set(scope, performance.now() - scopeStarted)
+		if (scope.status === 'failed') return { results, durations }
+	}
+	if (base === undefined) return { results, durations }
+	const designStarted = performance.now()
+	const design = runHookDesignStep({ cwd, packageJson, lot, base })
+	if (design !== undefined) {
+		results.push(design)
+		durations.set(design, performance.now() - designStarted)
+	}
+	return { results, durations }
+}
+
+/**
+ * A hook whose guard (its scope or design step) failed: nothing else runs; the run's events hold its start and its
+ * end with the guards' parts, the failed one last (as a failed tdd step's run does), the output is their lines, the
+ * verdict and the next command under it (a live output gets the guards' lines first).
+ */
+function endFailedGuard(args: {
 	params: HookGateParams
-	design: StepResult
-	duration: number
+	guards: OwnHookSteps
 	notices: readonly string[]
 }): CommandResult {
-	const { params, design } = args
+	const { params, guards } = args
 	const recorder = startStep({
 		cwd: params.cwd,
 		step: 'gate-hook',
 		heavy: false,
 		warn: params.warn,
 	})
-	const parts = partsOf({
-		results: [design],
-		durations: new Map([[design, args.duration]]),
-		reused: new Set(),
-	})
-	recorder.end({ exit: 1, parts, reuse: reuseOf(parts), stateHash: null })
 	const { live } = params
 	if (live)
-		for (const line of [...args.notices, ...renderStepLines(design)]) live.writeLine(textOf([line]))
-	return renderRunOutput({
-		ran: [design],
-		live,
-		leading: args.notices,
-		base: undefined,
-		headLines: [],
-	})
+		for (const line of [...args.notices, ...guards.results.flatMap(renderStepLines)])
+			live.writeLine(textOf([line]))
+	// then ended as a run whose own step failed: the guards' parts recorded, their lines and the verdict
+	return endFailedOwnRun({ own: guards, recorder, live, notices: args.notices })
 }
 
 /**

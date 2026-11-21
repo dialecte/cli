@@ -117,9 +117,14 @@ export const VERIFY_LINE_SCHEMA = 1
 /** `lot verify` before any `round-<n>/` snapshot. */
 export const NOTHING_LATE_REFUSAL = 'lot verify: nothing is late before the first snapshot'
 
-/** `lot verify` run in another work tree than the lot identity's worktree (R1-8): nothing written. */
-export const OTHER_WORKTREE_REFUSAL =
-	"lot verify: {here} is not the lot's worktree {lot}: run lot verify inside it, nothing written"
+/**
+ * Why a store lot has no tree for `lot verify`, `lot snapshot` or `lot delta` to read (SAFE 3.6): `{lot}` the lot's
+ * name, `{worktree}` the path its identity names.
+ */
+export const LOT_TREE_REFUSALS = {
+	none: 'lot {lot} has no worktree (a simulated lot): no tree to read, nothing written',
+	gone: "lot {lot}'s worktree {worktree} is no git work tree: no tree to read, nothing written",
+} as const
 
 export const DELTA_USAGE =
 	'lot delta: expected <id|folder> --round <n> (n >= 2: round 1 is a full review) [--worktree] [--json]'

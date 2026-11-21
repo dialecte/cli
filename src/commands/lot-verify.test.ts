@@ -1,10 +1,11 @@
 /**
  * `dialecte lot verify <id|folder> --by <who> --note <text>` (33L1 6b, D3, D8, D19; cases 46-51): appends
- * `{ schema, at, by, note, state }` to the lot folder's `verify.jsonl` in one write, run inside the lot's worktree;
+ * `{ schema, at, by, note, state }` to the lot folder's `verify.jsonl` in one write, the state read on the lot's own
+ * worktree from wherever it runs;
  * exit 2 for a usage fault, a forbidden word, or a lot with no snapshot, nothing written. Each case runs on a scratch
  * store lot.
  */
-import { readdirSync, realpathSync } from 'node:fs'
+import { readdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { FIRST_WORD } from '../../test/forbidden-words-workspace.constants.ts'
@@ -202,21 +203,21 @@ describe('lot verify - refused, nothing written', { timeout: STORE_CASE_TIMEOUT 
 		expect(verifyTextOf(lot)).toBeUndefined()
 	})
 
-	it('run outside any git work tree, the lot named by its folder -> exit 1 naming the work tree, nothing written', () => {
+	it("run outside any git work tree, the lot named by its folder -> exit 0, the lot's own worktree hashed", () => {
 		const lot = lotWithStory(SNAPSHOT_THEN_FIX)
-		const before = listing(lot)
 		const cwd = temporaryFolder('dialecte-no-work-tree-')
+		const state = computeStateHash(lot.cwd)
 
 		expect(
 			runLot({
 				cwd,
 				argv: ['verify', lot.lotFolder, '--by', FIRST_VERIFIER, '--note', 'one-line fix'],
+				now: SNAPSHOT_TIME,
 			}),
-		).toEqual({
-			exitCode: 1,
-			output: `lot verify: ${cwd} is in no git work tree: run lot verify inside the lot's worktree`,
-		})
-		expect(listing(lot)).toEqual(before)
+		).toEqual({ exitCode: 0, output: successLine({ lot, by: FIRST_VERIFIER, state }) })
+		expect(verifyTextOf(lot)).toBe(
+			verifyLineOf({ by: FIRST_VERIFIER, note: 'one-line fix', state }),
+		)
 	})
 })
 
@@ -224,22 +225,21 @@ describe(
 	'lot verify - the work tree and the line limit (R1-8, R1-12)',
 	{ timeout: STORE_CASE_TIMEOUT },
 	() => {
-		it('R1-8: run inside another git work tree than the lot worktree -> exit 2 naming both, nothing written', () => {
+		it("run inside another git work tree than the lot worktree -> exit 0, the lot's own worktree hashed, not the cwd's", () => {
 			const lot = lotWithStory(SNAPSHOT_THEN_FIX)
 			const other = createScratchRepository()
-			const before = listing(lot)
+			const state = computeStateHash(lot.cwd)
 
-			const result = runLot({
-				cwd: other,
-				argv: ['verify', lot.lotFolder, '--by', FIRST_VERIFIER, '--note', 'one-line fix'],
-				now: SNAPSHOT_TIME,
-			})
-
-			expect(result.exitCode).toBe(2)
-			expect(result.output).toContain(realpathSync(other))
-			expect(result.output).toContain(realpathSync(lot.worktree))
-			expect(listing(lot)).toEqual(before)
-			expect(verifyTextOf(lot)).toBeUndefined()
+			expect(
+				runLot({
+					cwd: other,
+					argv: ['verify', lot.lotFolder, '--by', FIRST_VERIFIER, '--note', 'one-line fix'],
+					now: SNAPSHOT_TIME,
+				}),
+			).toEqual({ exitCode: 0, output: successLine({ lot, by: FIRST_VERIFIER, state }) })
+			expect(verifyTextOf(lot)).toBe(
+				verifyLineOf({ by: FIRST_VERIFIER, note: 'one-line fix', state }),
+			)
 		})
 
 		it('R1-12: a --note over the event line limit -> exit 1 with the over-limit message, nothing written', () => {

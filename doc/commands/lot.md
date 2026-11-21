@@ -150,19 +150,20 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
             appends { schema, at, by, reason?, number, head } to the lot folder's approvals.jsonl,
             which review.jsonl shows as a person's approve verdict with that head (a pull request
             text rendered on another head, after a later commit or a rebase, leaves it out; the body
-            names it by kind only, never the name; the orchestrator in any casing is recorded as
-            orchestrator), renders the pull request's text again from the records, makes a draft
-            ready and queues it (gh pr merge --auto; a lot started with --on whose pull request
-            still merges into its parent's branch queues as a stack up to it, gh stack merge, and
-            only on a host with stacks once the parent's pull request, read by the parent's branch,
-            is queued (auto-merge on or in the merge queue), refused otherwise before anything is
-            recorded: approve the parent first, or land it again once the parent merged); the only
-            verb that queues, lot land never does; a queue the host refuses keeps the approval (exit
-            1) and the same approval run again answers already approved, writing nothing, and
-            queues; --by orchestrator (in any case) approves the cli's own lots only (the package
-            named @dialecte/cli), every other package waits for a person (exit 2); a forbidden word
-            in --by or --reason, or a --by holding what a public record never holds, refused (exit
-            2) before the host is asked; a lot without a landing names lot land <id>
+            names it by kind only, never the name; the orchestrator in any casing and spacing is
+            recorded as orchestrator), renders the pull request's text again from the records, makes
+            a draft ready and queues it (gh pr merge --auto; a lot started with --on whose pull
+            request still merges into its parent's branch queues as a stack up to it, gh stack
+            merge, and only on a host with stacks once the parent's pull request, read by the
+            parent's branch, is queued (auto-merge on or in the merge queue), refused otherwise
+            before anything is recorded: approve the parent first, or land it again once the parent
+            merged); the only verb that queues, lot land never does; a queue the host refuses keeps
+            the approval (exit 1) and the same approval run again answers already approved, writing
+            nothing, and queues; --by orchestrator (in any casing and spacing) approves the cli's
+            own lots only (the package named @dialecte/cli), every other package waits for a person
+            (exit 2); a forbidden word in --by or --reason, or a --by holding what a public record
+            never holds, refused (exit 2) before the host is asked; a lot without a landing names
+            lot land <id>
   design - a lot's design (design before code): --from <file> records it by the sha256 of its bytes,
            appending { schema, at, kind: recorded, file, hash, from } to the lot folder's
            design.jsonl and keeping its copy as design/<hash>.md (the copy rules once the source is
@@ -194,16 +195,16 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
            design row and the pull request body Design: <state> by <kind>
   design - the gate: while a lot's required design is missing, unapproved or stale, tdd red in its
            own worktree refuses (exit 2, nothing run), gate --hook's design step fails a commit of
-           the lot's branch, from any worktree, holding a production path (first, whatever
-           dialecte.gate.hook declares; a refused design recorded in the lot's events; a commit of
-           tests or docs only passes; a first or merge commit and a review throwaway on <lot
-           branch>-round-<n> skip it; a branch no lot names gives no line), lot land refuses after
-           its rebase (nothing pushed), handover write refuses a store lot (nothing written), lot
-           approve names design <state> among its reasons and the card's design line, read at the
-           card's worktree, fails (handover run refuses); each reads the shared areas of the lot
-           base its run resolved, through git, over the scope, the change's paths since that base
-           and the staged or landed ones; a refusing path without the lot's worktree refuses; lot
-           land records the base's shared areas again after its rebase
+           the lot's branch, from any worktree, holding a production path (after the scope step,
+           before every other, whatever dialecte.gate.hook declares; a refused design recorded in
+           the lot's events; a commit of tests or docs only passes; a first or merge commit and a
+           review throwaway on <lot branch>-round-<n> skip it; a branch no lot names gives no line),
+           lot land refuses after its rebase (nothing pushed), handover write refuses a store lot
+           (nothing written), lot approve names design <state> among its reasons and the card's
+           design line, read at the card's worktree, fails (handover run refuses); each reads the
+           shared areas of the lot base its run resolved, through git, over the scope, the change's
+           paths since that base and the staged or landed ones; a refusing path without the lot's
+           worktree refuses; lot land records the base's shared areas again after its rebase
   land - a lot started with --on lands as a stack: its pull request is based on the parent's branch,
          its body's depends-on part names the parent's pull request (a parent without one is
          refused: land it first); the host's stacks are probed once (gh stack): with them, the pull
@@ -247,6 +248,12 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
          each pair it does not clear printed (! <lot>: <why>), for information only; the pushed head
          is kept in landing.json at once, so a pull request the host refused to open does not make
          the next push one outside lot land; the host is GitHub through gh, which never prompts
+  land - before anything is written (after the committed-entry check, before the stack rebase, the
+         forecast and any entry), the lot's committed work (its lot base to HEAD) must lie inside
+         its effective scope, as gate --hook's scope step holds it: a path outside refuses (exit 1)
+         naming every such path and the lot scope <lot> --add ... --by lot-session to run, no entry,
+         no rebase, nothing pushed, no pull request; uncommitted work is not held; a lot base that
+         cannot be read refuses
   status - the state derived from the lot records (working, input-required, ready, committed,
            canceled, failed), the worktree and link checks, and the exact next command (and an also:
            line); a working real lot adds a station line (station <what> · round <r>/<cap> · effort
@@ -336,26 +343,27 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
           as its own entry; only an equal entry answers already holds, nothing written, exit 0);
           --drop and --add may come in one call to narrow a folder to files: one append, the drop
           line first; a drop is refused for a path that is no entry or lies inside a wider one, a
-          worktree that cannot be read, a drop leaving the lot no scope, or a file the lot's
-          worktree changed inside a dropped entry that no entry left covers (an equal entry, a
-          literal folder holding it, or a glob matching it; the call's adds count); an add is
-          refused when a path is no valid scope entry, or when it meets another open lot's scope and
-          that lot still holds it: the lot's work is forecast against it (trigger scope, recorded
-          only once the add stands) and a clean pair adds with no overlap record; a forecast
-          conflict (its files and ranges), a met lock file, a forecast that cannot run, or a damaged
-          or unreadable lot refuse, unless --overlap-ok accepts an overlap that names its paths (a
-          damaged lot whose scope reads too, its damage recorded) (recorded in overlaps.jsonl before
-          the add with the other lot, the met pairs, --by and --reason, undone with a taken-back
-          add; a lot whose scope cannot be read stays refused; --overlap-ok without --add is
-          refused); a call whose lines would pass the line limit is refused; an add a lot started or
-          widened meanwhile meets is taken back by an undo line, the entries a drop of the same call
-          removed put back (exit 2), a take-back that would pass the line limit refusing the call
-          first (exit 2), a take-back that cannot be written exiting 1 naming the paths and that
-          lot; each change is one line of scope-changes.jsonl ({ schema, at, op, paths, by?, reason?
-          }) and a scope.changed event; the effective scope (the brief's with the changes) is what
-          the overlap guard, lot status and the card read; a damaged, simulated, committed, canceled
-          or failed lot, a forbidden word and a change line that does not read are refused (exit 2),
-          nothing written; a line that cannot be written exits 1
+          worktree that cannot be read, a drop leaving the lot no scope, or a file the lot changed
+          in its worktree or committed since its lot base inside a dropped entry that no entry left
+          covers (an equal entry, a literal folder holding it, or a glob matching it; the call's
+          adds count), or a lot base that cannot be read; an add is refused when a path is no valid
+          scope entry, or when it meets another open lot's scope and that lot still holds it: the
+          lot's work is forecast against it (trigger scope, recorded only once the add stands) and a
+          clean pair adds with no overlap record; a forecast conflict (its files and ranges), a met
+          lock file, a forecast that cannot run, or a damaged or unreadable lot refuse, unless
+          --overlap-ok accepts an overlap that names its paths (a damaged lot whose scope reads too,
+          its damage recorded) (recorded in overlaps.jsonl before the add with the other lot, the
+          met pairs, --by and --reason, undone with a taken-back add; a lot whose scope cannot be
+          read stays refused; --overlap-ok without --add is refused); a call whose lines would pass
+          the line limit is refused; an add a lot started or widened meanwhile meets is taken back
+          by an undo line, the entries a drop of the same call removed put back (exit 2), a
+          take-back that would pass the line limit refusing the call first (exit 2), a take-back
+          that cannot be written exiting 1 naming the paths and that lot; each change is one line of
+          scope-changes.jsonl ({ schema, at, op, paths, by?, reason? }) and a scope.changed event;
+          the effective scope (the brief's with the changes) is what the overlap guard, lot status
+          and the card read; a damaged, simulated, committed, canceled or failed lot, a forbidden
+          word and a change line that does not read are refused (exit 2), nothing written; a line
+          that cannot be written exits 1
   keep - keeps a lot's items on purpose (its worktree, review throwaways and branches stay after it
          is committed or canceled): appends { schema, at, op: keep, by, reason } to the lot folder's
          keep.jsonl and a keep.changed event, in any state, damaged included; --by and --reason
@@ -388,6 +396,10 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
             takes the same fields plus phase (start|end) as one JSON object, unknown keys refused,
             every fault at once; --json { recorded: new|already, run, next }
   --by - one line, not empty, checked before the lot is read (answer and stop)
+  --by orchestrator - refused (exit 2, nothing run) for every verb that signs, run from a lot's
+    workplace (its own worktree, a -round-<n> or -verify throwaway beside it), whichever --by of the
+    line names it, in any casing and spacing: a lot signs --by lot-session; the orchestrator signs
+    from the main checkout
   <id> - an index (171 = 0171), a full name, a lot folder or .dialecte/lot; a write verb needs an
          index unique across every store of the store list, a word naming an existing folder is that
          folder
@@ -407,41 +419,47 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
              that the hand-over waits for
   finding - appends R<n>-<k> open to <folder>/findings-ledger.md (made when absent)
   decide - rewrites that finding's state cell, every other byte kept
-  snapshot - copies what git status lists to round-<n>/, the deletions to round-<n>.deleted, HEAD to
-             round-<n>.base, { schema, at, stateHash } to round-<n>.state; the folder is a lot
-             folder or stays outside every repository; -- ends the options; the risk class is
-             derived again from the diff first and appended to risk.jsonl as a derived line only
-             when the snapshot goes ahead, a refused snapshot writing nothing (a derivation that
-             cannot run prints ! risk class not derived: <reason> and appends nothing); the cap of
-             review rounds is the rounds of the higher of the effort's class and the class derived
-             now (else the last derived line's) (low or light 1, medium 2, high 3; the effort is the
-             last line of lot risk --effort, else the lot's; a class above the effort prints ! risk
-             class now <class> (<reason>): cap <cap>); with no effort recorded the cap is 1 and a
-             later round is refused (exit 2) naming dialecte lot risk <folder> --effort
-             low|medium|high --by <who>; a round above the cap of an effort is refused (exit 2),
-             naming what set the cap ((effort <e>), or (effort <e>, risk class <c>) when a class
-             raised it), unless --beyond-cap --by <who> --reason <text> gives the go-ahead, written
-             to decisions.md as round <n> beyond the cap of <cap>: <reason> before the snapshot
-             (once: a retry finds it); --beyond-cap within the cap, --by or --reason without it, and
-             --by or --reason holding a forbidden word are refused (exit 2), nothing written
+  snapshot - from anywhere, copies what git status lists in the lot's own worktree (a plain
+             hand-over folder: the work tree it runs in; a lot with no worktree, or whose worktree
+             is no work tree, refused naming it, nothing written) to round-<n>/, the deletions to
+             round-<n>.deleted, HEAD to round-<n>.base, { schema, at, stateHash } to
+             round-<n>.state; the folder is a lot folder or stays outside every repository; -- ends
+             the options; the risk class is derived again from the diff first and appended to
+             risk.jsonl as a derived line only when the snapshot goes ahead, a refused snapshot
+             writing nothing (a derivation that cannot run prints ! risk class not derived: <reason>
+             and appends nothing); the cap of review rounds is the rounds of the higher of the
+             effort's class and the class derived now (else the last derived line's) (low or light
+             1, medium 2, high 3; the effort is the last line of lot risk --effort, else the lot's;
+             a class above the effort prints ! risk class now <class> (<reason>): cap <cap>); with
+             no effort recorded the cap is 1 and a later round is refused (exit 2) naming dialecte
+             lot risk <folder> --effort low|medium|high --by <who>; a round above the cap of an
+             effort is refused (exit 2), naming what set the cap ((effort <e>), or (effort <e>, risk
+             class <c>) when a class raised it), unless --beyond-cap --by <who> --reason <text>
+             gives the go-ahead, written to decisions.md as round <n> beyond the cap of <cap>:
+             <reason> before the snapshot (once: a retry finds it); --beyond-cap within the cap,
+             --by or --reason without it, and --by or --reason holding a forbidden word are refused
+             (exit 2), nothing written
   choice - appends | decision | who | yyyy-mm-dd | to <folder>/decisions.md (made when absent)
   standard - writes <folder>/standard.json (state, note, time), read by the card's standard line;
              outside (the lot's asks answered outside the documents, written by ask itself) warns,
              and fails at effort high unless the record's confirmed flag is true (written by ask
              once a person confirmed every outside answer; by hand false): the flag decides, never
              the note text
-  delta - per file, the diff from round-<n-1>/ to the worktree now; --worktree adds a throwaway
-          worktree holding round n-1 and prints its removal command; for a lot kept on purpose it
-          prints kept by decision: <why> (by <who>, <date>): the throwaway stays with the lot
-          instead, and --json carries kept and no removal
+  delta - per file, the diff from round-<n-1>/ to the lot's own worktree now, from anywhere (a plain
+          hand-over folder: the work tree it runs in); --worktree adds a throwaway worktree holding
+          round n-1 and prints its removal command; for a lot kept on purpose it prints kept by
+          decision: <why> (by <who>, <date>): the throwaway stays with the lot instead, and --json
+          carries kept and no removal
   recap - the <details> part of a pull request from the hand-over's records only; writes nothing
-  verify - run inside the lot's worktree: appends { schema, at, by, note, state } to
-           <folder>/verify.jsonl in one write, state the worktree's state hash; a change of the tree
-           after the last round-<n>/ snapshot is a late fix: the card warns and handover run refuses
-           it (exit 2) until a verify covers the current state (one later change needs a new
-           verify); a snapshot with no round-<n>.state (an older cli) is not checked; no snapshot
-           yet (nothing is late), --by or --note missing, blank or not one line, or holding a
-           forbidden word are refused (exit 2), nothing written
+  verify - from anywhere (the main checkout included): appends { schema, at, by, note, state } to
+           <folder>/verify.jsonl in one write, state the state hash of the lot's own worktree (a
+           plain hand-over folder: the work tree it runs in); a lot with no worktree (a simulated
+           lot) or whose worktree is no work tree is refused naming it, nothing written; a change of
+           the tree after the last round-<n>/ snapshot is a late fix: the card warns and handover
+           run refuses it (exit 2) until a verify covers the current state (one later change needs a
+           new verify); a snapshot with no round-<n>.state (an older cli) is not checked; no
+           snapshot yet (nothing is late), --by or --note missing, blank or not one line, or holding
+           a forbidden word are refused (exit 2), nothing written
   report - reads files only (no git, no process, nothing written): the lot's stations, tokens,
            money, time, suites per station by time, heavy steps, folders and review rounds from its
            events.jsonl, transitions, ledger and cards.log; a number nobody reported is unknown,

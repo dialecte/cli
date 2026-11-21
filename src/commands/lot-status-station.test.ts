@@ -117,10 +117,12 @@ type SetupParams = {
 	/** The worktree package declares the contributor profile. */
 	producer?: boolean
 	moves: Move[]
+	/** The identity names the repository as the lot's worktree: a real folder its verbs read. */
+	ownWorktree?: boolean
 }
 
 function build(params: SetupParams): StationLot {
-	const lot = createStationLot()
+	const lot = createStationLot({ repositoryIsWorktree: params.ownWorktree })
 	if (params.steps !== undefined || params.noEffort)
 		writeLotBrief({ lot, stepCount: params.steps ?? 1 })
 	if (params.noEffort) setIdentityEffort({ lot, level: undefined })
@@ -673,7 +675,11 @@ const ROUNDS_CASES: RoundsCase[] = [
 
 describe('lot status - a go-ahead row stands (R1-3)', { timeout: STORE_CASE_TIMEOUT }, () => {
 	it('R1-3: cap 1 reached, the go-ahead row of round 2 written, no snapshot yet -> status asks the plain snapshot command and that command is taken', () => {
-		const lot = build({ effort: 'low', moves: [...FIXED, { check: 'gate-fast' }] })
+		const lot = build({
+			effort: 'low',
+			moves: [...FIXED, { check: 'gate-fast' }],
+			ownWorktree: true,
+		})
 		appendDecision({
 			path: join(lot.lotFolder, 'decisions.md'),
 			title: lot.name,

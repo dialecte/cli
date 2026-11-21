@@ -27,12 +27,12 @@ import { parseRound, readArguments } from '../lib/review-rounds/round-arguments.
 import {
 	handoverFolderRefusal,
 	readWorktreeState,
-	workTreeTopOf,
 	worktreeStateRefusal,
 } from '../lib/review-rounds/worktree-state.ts'
 import { lotFolderOf } from '../lib/store/lot-folder.ts'
 import { keptByDecision } from '../lib/store/lot-keep.ts'
 import { readCheckedLotState, registryOfLotFolder } from '../lib/store/lot-records.ts'
+import { lotTreeOf } from '../lib/store/lot-tree.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { StepHandle } from '../lib/events/record-step.types.ts'
@@ -68,15 +68,19 @@ function reviewDelta(params: { cwd: string; argv: string[]; now: Date }): Comman
 	if (words.length !== 1 || round === undefined || round < 2)
 		return resultOf({ exitCode: 2, lines: [DELTA_USAGE] })
 	const previous = round - 1
-	const root = workTreeTopOf(params.cwd)
-	if (!root)
+	const folder = resolve(params.cwd, words[0])
+	// a store lot's own worktree from anywhere, else the cwd's: the tree its snapshot read
+	const tree = lotTreeOf({ folder, cwd: params.cwd })
+	if (tree === undefined)
 		return resultOf({
 			exitCode: 1,
 			lines: [
 				`${verbPrefix('delta')}: ${params.cwd} is in no git work tree: run it inside the lot's worktree`,
 			],
 		})
-	const folder = resolve(params.cwd, words[0])
+	if ('refusal' in tree)
+		return resultOf({ exitCode: 1, lines: [`${verbPrefix('delta')}: ${tree.refusal}`] })
+	const { root } = tree
 	const folderRefusal = handoverFolderRefusal(folder)
 	if (folderRefusal)
 		return resultOf({ exitCode: 1, lines: [`${verbPrefix('delta')}: ${folderRefusal}`] })
