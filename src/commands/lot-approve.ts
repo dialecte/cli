@@ -24,8 +24,8 @@ import { stackQueueOf } from '../lib/handover/stack-queue.ts'
 import { createHost } from '../lib/host/select-host.ts'
 import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { readPackageJson } from '../lib/package-json.ts'
-import { keptPartOf } from '../lib/pr/compose-pull-request.ts'
-import { preparePullRequest } from '../lib/pr/pull-request-sources.ts'
+import { prepareChangeRequest } from '../lib/pr/change-request-sources.ts'
+import { keptPartOf } from '../lib/pr/compose-change-request.ts'
 import { forbiddenWordRefusal, isOneLine } from '../lib/review-rounds/option-checks.ts'
 import { openBlockingFindings, refreshReviewRecord } from '../lib/review-rounds/review-record.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
@@ -45,7 +45,7 @@ import {
 import { resolveLotPlace, sendRenderedText } from './lot-pr.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
-import type { HostAdapter, PullRequest, PullRequestChecks } from '../lib/host/host.types.ts'
+import type { HostAdapter, ChangeRequest, ChangeRequestChecks } from '../lib/host/host.types.ts'
 import type { ApprovalLine } from './lot-approve.types.ts'
 import type { LotPlace } from './lot-pr.types.ts'
 
@@ -86,12 +86,12 @@ export function runLotApprove(params: {
 			line: LOT_APPROVE_LINES.noLanding.replaceAll('{lot}', () => place.lot),
 		})
 	const host = params.host ?? createHost()
-	const pullRequest = openPullRequestOf({ host, place, number: landing.number })
-	if ('exitCode' in pullRequest) return pullRequest
-	const checks = host.readChecks({ root: place.worktree, number: pullRequest.number })
+	const changeRequest = openChangeRequestOf({ host, place, number: landing.number })
+	if ('exitCode' in changeRequest) return changeRequest
+	const checks = host.readChecks({ root: place.worktree, number: changeRequest.number })
 	if ('refusal' in checks)
 		return lineOf({ exitCode: 1, line: `${LOT_APPROVE_LINES.prefix}${checks.refusal}` })
-	const reasons = approvalRefusals({ place, pullRequest, checks, landed: landing.head })
+	const reasons = approvalRefusals({ place, changeRequest, checks, landed: landing.head })
 	if (reasons.length > 0)
 		return lineOf({
 			exitCode: 1,
@@ -100,22 +100,22 @@ export function runLotApprove(params: {
 				.replace('{reasons}', () => reasons.join('; ')),
 		})
 	// the text must render over the live body before the approval is recorded: a refusal leaves nothing behind
-	const early = preparePullRequest({ ...place, templateRefs: ['HEAD'] })
+	const early = prepareChangeRequest({ ...place, templateRefs: ['HEAD'] })
 	const kept =
-		'refusal' in early ? early : keptPartOf({ template: early.template, body: pullRequest.body })
+		'refusal' in early ? early : keptPartOf({ template: early.template, body: changeRequest.body })
 	if ('refusal' in kept)
 		return lineOf({ exitCode: 1, line: `${LOT_APPROVE_LINES.prefix}${kept.refusal}` })
 	return recordAndQueue({
 		host,
 		place,
-		pullRequest,
+		changeRequest,
 		approval: {
 			schema: APPROVAL_LINE_SCHEMA,
 			at: (params.now ?? new Date()).toISOString(),
 			// the orchestrator in any casing is recorded as the one word the body names
 			by: recordedByOf({ by }),
 			...(reason !== undefined && { reason }),
-			number: pullRequest.number,
+			number: changeRequest.number,
 			head: landing.head,
 		},
 	})
@@ -131,11 +131,11 @@ export function runLotApprove(params: {
  */
 export function approvalRefusals(params: {
 	place: LotPlace
-	pullRequest: PullRequest
-	checks: PullRequestChecks
+	changeRequest: ChangeRequest
+	checks: ChangeRequestChecks
 	landed: string
 }): string[] {
-	const { place, pullRequest } = params
+	const { place, changeRequest } = params
 	return [
 		...(APPROVABLE_STATES.includes(place.state)
 			? []
@@ -145,12 +145,12 @@ export function approvalRefusals(params: {
 						values: { state: place.state },
 					}),
 				]),
-		...(pullRequest.state === 'open'
+		...(changeRequest.state === 'open'
 			? []
 			: [
 					fillMessage({
 						template: LOT_APPROVE_LINES.notOpen,
-						values: { number: String(pullRequest.number), state: pullRequest.state },
+						values: { number: String(changeRequest.number), state: changeRequest.state },
 					}),
 				]),
 		...headReasons(params),
@@ -224,19 +224,19 @@ function approverRefusal(params: {
 }
 
 /** The lot's pull request `number`; the line of one the host refuses or cannot find. */
-function openPullRequestOf(params: {
+function openChangeRequestOf(params: {
 	host: HostAdapter
 	place: LotPlace
 	number: number
-}): PullRequest | CommandResult {
+}): ChangeRequest | CommandResult {
 	const { place, number } = params
-	const read = params.host.readPullRequest({ root: place.worktree, ref: String(number) })
+	const read = params.host.readChangeRequest({ root: place.worktree, ref: String(number) })
 	if (read !== undefined && 'refusal' in read)
 		return lineOf({ exitCode: 1, line: `${LOT_APPROVE_LINES.prefix}${read.refusal}` })
 	if (read === undefined)
 		return lineOf({
 			exitCode: 1,
-			line: LOT_APPROVE_LINES.noPullRequest
+			line: LOT_APPROVE_LINES.noChangeRequest
 				.replace('{number}', String(number))
 				.replace('{lot}', () => place.lot),
 		})
@@ -246,15 +246,15 @@ function openPullRequestOf(params: {
 /** Why the pull request's head is not the one approved: it is not the head the lot landed. */
 function headReasons(params: {
 	place: LotPlace
-	pullRequest: PullRequest
+	changeRequest: ChangeRequest
 	landed: string
 }): string[] {
-	const { pullRequest, landed } = params
-	if (pullRequest.head === landed) return []
+	const { changeRequest, landed } = params
+	if (changeRequest.head === landed) return []
 	return [
 		LOT_APPROVE_LINES.headElsewhere
-			.replace('{number}', String(pullRequest.number))
-			.replace('{pushed}', pullRequest.head.slice(0, SHORT_SHA_LENGTH))
+			.replace('{number}', String(changeRequest.number))
+			.replace('{pushed}', changeRequest.head.slice(0, SHORT_SHA_LENGTH))
 			.replace('{landed}', landed.slice(0, SHORT_SHA_LENGTH))
 			.replace('{lot}', () => params.place.lot),
 	]
@@ -282,13 +282,13 @@ function worktreeReasons(params: { place: LotPlace; landed: string }): string[] 
  * two reads), one failed, one still runs, or the head has none.
  */
 function checksReasons(params: {
-	pullRequest: PullRequest
-	checks: PullRequestChecks
+	changeRequest: ChangeRequest
+	checks: ChangeRequestChecks
 	landed: string
 }): string[] {
 	const { checks, landed } = params
 	// a pull request at another head is named once, by headReasons
-	if (params.pullRequest.head === landed && checks.head !== landed)
+	if (params.changeRequest.head === landed && checks.head !== landed)
 		return [
 			fillMessage({
 				template: LOT_APPROVE_LINES.checksElsewhere,
@@ -341,11 +341,11 @@ function blockingReasons(params: { folder: string }): string[] {
 function recordAndQueue(params: {
 	host: HostAdapter
 	place: LotPlace
-	pullRequest: PullRequest
+	changeRequest: ChangeRequest
 	approval: ApprovalLine
 }): CommandResult {
-	const { host, place, pullRequest, approval } = params
-	const route = stackQueueOf({ ...place, host, pullRequest })
+	const { host, place, changeRequest, approval } = params
+	const route = stackQueueOf({ ...place, host, changeRequest })
 	if ('refusal' in route)
 		return lineOf({
 			exitCode: 1,
@@ -369,24 +369,24 @@ function recordAndQueue(params: {
 		lot: place.lot,
 		by: approval.by,
 		head: approval.head.slice(0, SHORT_SHA_LENGTH),
-		number: String(pullRequest.number),
+		number: String(changeRequest.number),
 	}
-	const prepared = preparePullRequest({ ...place, templateRefs: ['HEAD'] })
+	const prepared = prepareChangeRequest({ ...place, templateRefs: ['HEAD'] })
 	const sent =
 		'refusal' in prepared
 			? prepared
-			: sendRenderedText({ host, worktree: place.worktree, prepared, pullRequest })
+			: sendRenderedText({ host, worktree: place.worktree, prepared, changeRequest })
 	const queueParams = {
 		root: place.worktree,
-		number: pullRequest.number,
-		draft: pullRequest.draft,
+		number: changeRequest.number,
+		draft: changeRequest.draft,
 	}
 	const queued =
 		'refusal' in sent
 			? sent
 			: route.route === 'stack'
 				? host.queueStack(queueParams)
-				: host.queuePullRequest(queueParams)
+				: host.queueChangeRequest(queueParams)
 	const line =
 		queued === undefined
 			? fillMessage({

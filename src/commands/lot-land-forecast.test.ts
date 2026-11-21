@@ -19,7 +19,7 @@ import { cliTemplate } from '../../test/lot-pr.ts'
 import { git } from '../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { readForecastRecord } from '../lib/coordination/forecast-record.ts'
-import { TEMPLATE_PATH } from '../lib/pr/pull-request.constants.ts'
+import { TEMPLATE_PATH } from '../lib/pr/change-request.constants.ts'
 import { runLotLand } from './lot-land.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'

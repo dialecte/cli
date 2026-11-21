@@ -75,7 +75,7 @@ describe('createGithubHost: stacks', () => {
 	it('retargetPullRequest → gh pr edit <number> --base <base>', () => {
 		const folder = fakeGh()
 
-		const moved = createGithubHost().retargetPullRequest({
+		const moved = createGithubHost().retargetChangeRequest({
 			root: process.cwd(),
 			number: 7,
 			base: 'main',
@@ -110,7 +110,7 @@ describe('createGithubHost: stacks', () => {
 			}),
 		})
 
-		const read = createGithubHost().readPullRequest({ root: process.cwd(), ref: '7' })
+		const read = createGithubHost().readChangeRequest({ root: process.cwd(), ref: '7' })
 
 		expect(read).toMatchObject({ number: 7, base: 'feat/x' })
 	})

@@ -1,11 +1,11 @@
-import type { PullRequest } from '../host/host.types.ts'
+import type { ChangeRequest } from '../host/host.types.ts'
 
 /**
  * How a stacked lot lands this time: the branch its pull request merges into, the ref its text is rendered against,
  * the route, whether it queues as a stack, the parent's pull request, and the lines the stack step printed.
  */
 export type StackLanding = {
-	pullBase: string
+	changeRequestBase: string
 	textBase: string
 	/** native: the host has stacks here (linked, or to link); branch: based on the parent's branch only. */
 	route: StackRoute
@@ -13,7 +13,7 @@ export type StackLanding = {
 	linked: boolean
 	parentMerged: boolean
 	/** The parent's pull request; undefined only for a parent merged without one (its work in the base). */
-	parentPull: PullRequest | undefined
+	parentChangeRequest: ChangeRequest | undefined
 	/** The head origin's branch holds after the host's own rewrite: the lease of the next push. */
 	lease?: string
 	lines: string[]

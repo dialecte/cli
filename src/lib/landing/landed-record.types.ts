@@ -12,7 +12,7 @@ export type LandedFact = {
 	/** The base branch it landed on, its short name. */
 	base: string
 	/** The pull request it landed through, when one is known. */
-	pull?: { number: number; url: string }
+	changeRequest?: { number: number; url: string }
 	/** When the fact was written (ISO). */
 	at: string
 }

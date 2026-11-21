@@ -11,6 +11,9 @@ export const LANDED_LINES = {
 	tree: 'landed on {base} at {commit}: its work is in {base} (a squash read offline)',
 } as const
 
+/** The host's line for a fact that names no change request (written before the key `changeRequest`): no number. */
+export const LANDED_HOST_UNNUMBERED_LINE = 'landed on {base} at {commit}: pull request merged'
+
 /** A lot `lot close` was asked for whose landing is not merged: `{lot}`, `{state}` and why. */
 export const NOT_LANDED_TEXTS = {
 	unlanded: 'not landed: its work is not in {base}',

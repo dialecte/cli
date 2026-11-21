@@ -33,8 +33,8 @@ import { readLandingState } from '../landing/landing-state.ts'
 import { workSinceLanding, workSinceLandingText } from '../landing/lost-work.ts'
 import { landedLineOf } from '../landing/lot-landing.ts'
 import { readPackageJson } from '../package-json.ts'
-import { composePullRequest, keptPartOf, linesOf } from '../pr/compose-pull-request.ts'
-import { preparePullRequest } from '../pr/pull-request-sources.ts'
+import { prepareChangeRequest } from '../pr/change-request-sources.ts'
+import { composeChangeRequest, keptPartOf, linesOf } from '../pr/compose-change-request.ts'
 import { readIdentity } from '../store/identity.ts'
 import { keepNextOf, keptByDecision } from '../store/lot-keep.ts'
 import { replaceWhole } from '../store/publish.ts'
@@ -54,11 +54,11 @@ import {
 } from './land-lot.constants.ts'
 import { NOTHING_BEYOND_BASE_LINE } from './land-push.constants.ts'
 import { readLanding, readRawLanding } from './land-record.ts'
-import { prepareStackLanding, settleStackedPull } from './land-stack.ts'
+import { prepareStackLanding, settleStackedChangeRequest } from './land-stack.ts'
 
-import type { HostAdapter, HostRefusal, PullRequest } from '../host/host.types.ts'
+import type { HostAdapter, HostRefusal, ChangeRequest } from '../host/host.types.ts'
 import type { LandedFact } from '../landing/landed-record.types.ts'
-import type { PullRequestText } from '../pr/pull-request.types.ts'
+import type { ChangeRequestText } from '../pr/change-request.types.ts'
 import type { KeepDecision } from '../store/keep-decisions.types.ts'
 import type { LandingRecord, LandingResult } from './land-lot.types.ts'
 import type { StackLanding } from './land-stack.types.ts'
@@ -86,11 +86,11 @@ export function landLot(params: {
 	const unready = unreadyRefusal({ worktree, branch, base, lotFolder: params.lotFolder })
 	if (unready !== undefined) return refused(unready)
 	const landing = readLanding({ lotFolder: params.lotFolder })
-	const known = readKnownPullRequest({ worktree, branch, landing, host })
+	const known = readKnownChangeRequest({ worktree, branch, landing, host })
 	if ('refusal' in known)
 		return refused(LANDING_LINES.hostRefused.replace('{reason}', () => known.refusal))
 	// a lot already merged is committed: its pull request merged, or its tip or work in the base (git alone)
-	const merged = mergedFactOf({ ...params, pullRequest: known.pullRequest })
+	const merged = mergedFactOf({ ...params, changeRequest: known.changeRequest })
 	if (merged !== undefined) return landedLot({ ...params, fact: merged })
 	// read, never written, before any refusal: a lot committed by a local hand-over gets the registry's committed answer
 	const committed = committedEntryRefusal({ worktree, lotFolder: params.lotFolder })
@@ -133,7 +133,7 @@ export function landLot(params: {
 	const text = renderedText({
 		...params,
 		baseRef,
-		kept: known.pullRequest?.body,
+		kept: known.changeRequest?.body,
 	})
 	if ('refusal' in text)
 		return {
@@ -142,14 +142,14 @@ export function landLot(params: {
 		}
 	const pushed = dequeueAndPush({
 		...params,
-		pullRequest: known.pullRequest,
+		changeRequest: known.changeRequest,
 		lease: stack?.lease,
 		lines,
 	})
 	if ('exitCode' in pushed) return pushed
 	return publishLanding({
 		...params,
-		known: known.pullRequest,
+		known: known.changeRequest,
 		text,
 		head: pushed.head,
 		entry,
@@ -169,7 +169,7 @@ function dequeueAndPush(params: {
 	base: string
 	lotFolder: string
 	host: HostAdapter
-	pullRequest: PullRequest | undefined
+	changeRequest: ChangeRequest | undefined
 	/** The head the host rewrote origin's branch to (a native stack whose parent merged): the push's lease. */
 	lease: string | undefined
 	lines: readonly string[]
@@ -181,7 +181,7 @@ function dequeueAndPush(params: {
 		host,
 		worktree,
 		lotFolder: params.lotFolder,
-		pullRequest: params.pullRequest,
+		changeRequest: params.changeRequest,
 		head,
 	})
 	if (dequeued !== undefined && 'refusal' in dequeued)
@@ -233,26 +233,31 @@ function dequeueUnapproved(params: {
 	host: HostAdapter
 	worktree: string
 	lotFolder: string
-	pullRequest: PullRequest | undefined
+	changeRequest: ChangeRequest | undefined
 	head: string
 }): { line: string } | HostRefusal | undefined {
-	const { pullRequest } = params
+	const { changeRequest } = params
 	// a draft never joins the merge queue: auto-merge alone can queue it
-	if (pullRequest === undefined || (pullRequest.draft && !pullRequest.queued)) return undefined
-	if (approvedHeadsOf({ lotFolder: params.lotFolder, number: pullRequest.number }).has(params.head))
+	if (changeRequest === undefined || (changeRequest.draft && !changeRequest.queued))
+		return undefined
+	if (
+		approvedHeadsOf({ lotFolder: params.lotFolder, number: changeRequest.number }).has(params.head)
+	)
 		return undefined
 	// a ready one may sit in the merge queue without auto-merge (a stack merge): asked only when auto-merge is off
-	const queued = pullRequest.queued
+	const queued = changeRequest.queued
 		? { queued: true }
-		: params.host.readQueued({ root: params.worktree, number: pullRequest.number })
+		: params.host.readQueued({ root: params.worktree, number: changeRequest.number })
 	if ('refusal' in queued) return queued
-	const drafted = params.host.draftPullRequest({
+	const drafted = params.host.draftChangeRequest({
 		root: params.worktree,
-		number: pullRequest.number,
+		number: changeRequest.number,
 		queued: queued.queued,
-		draft: pullRequest.draft,
+		draft: changeRequest.draft,
 	})
-	return drafted ?? { line: LANDING_LINES.drafted.replace('{number}', String(pullRequest.number)) }
+	return (
+		drafted ?? { line: LANDING_LINES.drafted.replace('{number}', String(changeRequest.number)) }
+	)
 }
 
 /** The heads a person approved for pull request `number`, from the lot folder's `approvals.jsonl`; none when absent. */
@@ -361,7 +366,7 @@ function fetchRefusal(params: { worktree: string; base: string }): string | unde
 /**
  * Why the lot cannot land yet, before anything is asked of the host or pushed: its worktree is not on its branch,
  * origin cannot be fetched or holds no base branch, or its records do not render a public pull request text
- * (`preparePullRequest`, the template of its head or of the base).
+ * (`prepareChangeRequest`, the template of its head or of the base).
  */
 function unreadyRefusal(params: {
 	worktree: string
@@ -380,7 +385,7 @@ function unreadyRefusal(params: {
 	if (fetched !== undefined) return fetched
 	// the lot's head, else the base's: a lot cut before the template changed takes it at its rebase, checked then
 	const baseRef = `${ORIGIN_BRANCH_REF_PREFIX}${params.base}`
-	const checked = preparePullRequest({
+	const checked = prepareChangeRequest({
 		lotFolder: params.lotFolder,
 		worktree,
 		baseRef,
@@ -405,9 +410,9 @@ function publishLanding(params: {
 	lotFolder: string
 	host: HostAdapter
 	now: Date
-	known: PullRequest | undefined
+	known: ChangeRequest | undefined
 	/** The lot's text, rendered on the head just pushed. */
-	text: PullRequestText
+	text: ChangeRequestText
 	head: string
 	entry: string
 	lines: string[]
@@ -417,25 +422,26 @@ function publishLanding(params: {
 }): LandingResult {
 	const { worktree, branch, host, known, text, stack } = params
 	const lines = [...params.lines]
-	const pull = known ?? openLot({ ...params, base: stack?.pullBase ?? params.base, text })
-	if ('refusal' in pull)
+	const changeRequest =
+		known ?? openLot({ ...params, base: stack?.changeRequestBase ?? params.base, text })
+	if ('refusal' in changeRequest)
 		return {
 			exitCode: 1,
-			lines: [...lines, LANDING_LINES.hostRefused.replace('{reason}', () => pull.refusal)],
+			lines: [...lines, LANDING_LINES.hostRefused.replace('{reason}', () => changeRequest.refusal)],
 		}
 	lines.push(
 		(known ? LANDING_LINES.existing : LANDING_LINES.opened)
-			.replace('{number}', String(pull.number))
-			.replace('{url}', () => pull.url),
+			.replace('{number}', String(changeRequest.number))
+			.replace('{url}', () => changeRequest.url),
 	)
 	writeLanding({
 		lotFolder: params.lotFolder,
-		pullRequest: pull,
+		changeRequest: changeRequest,
 		branch,
 		head: params.head,
 		now: params.now,
 	})
-	const edited = editLot({ worktree, host, pullRequest: pull, text })
+	const edited = editLot({ worktree, host, changeRequest: changeRequest, text })
 	if ('refusal' in edited)
 		return {
 			exitCode: 1,
@@ -443,11 +449,11 @@ function publishLanding(params: {
 		}
 	if (edited.line !== undefined) lines.push(edited.line)
 	if (stack !== undefined) {
-		const settled = settleStackedPull({
+		const settled = settleStackedChangeRequest({
 			worktree,
 			host,
 			stack,
-			pullRequest: pull,
+			changeRequest: changeRequest,
 			opened: known === undefined,
 		})
 		if ('refusal' in settled)
@@ -517,20 +523,20 @@ function registerLotEntry(params: {
  * The pull request the lot lands through, as the host holds it now: the one its landing recorded (by number), else
  * the branch's open one; a closed one is none (a new one is opened).
  */
-function readKnownPullRequest(params: {
+function readKnownChangeRequest(params: {
 	worktree: string
 	branch: string
 	landing: LandingRecord | undefined
 	host: HostAdapter
-}): { pullRequest: PullRequest | undefined } | { refusal: string } {
+}): { changeRequest: ChangeRequest | undefined } | { refusal: string } {
 	const ref =
 		params.landing?.branch === params.branch ? String(params.landing.number) : params.branch
-	const read = params.host.readPullRequest({ root: params.worktree, ref })
+	const read = params.host.readChangeRequest({ root: params.worktree, ref })
 	if (read !== undefined && 'refusal' in read) return read
-	if (read === undefined || read.state === 'closed') return { pullRequest: undefined }
+	if (read === undefined || read.state === 'closed') return { changeRequest: undefined }
 	// a merged pull request of the branch name that this lot never recorded is another lot's: a new one is opened
-	if (read.state === 'merged' && ref === params.branch) return { pullRequest: undefined }
-	return { pullRequest: read }
+	if (read.state === 'merged' && ref === params.branch) return { changeRequest: undefined }
+	return { changeRequest: read }
 }
 
 /**
@@ -542,18 +548,18 @@ function mergedFactOf(params: {
 	branch: string
 	base: string
 	lotFolder: string
-	pullRequest: PullRequest | undefined
+	changeRequest: ChangeRequest | undefined
 	now: Date
 }): LandedFact | undefined {
-	const { worktree, pullRequest } = params
+	const { worktree, changeRequest } = params
 	const at = params.now.toISOString()
-	if (pullRequest?.state === 'merged')
+	if (changeRequest?.state === 'merged')
 		return {
 			schema: LANDED_SCHEMA,
 			how: 'host',
-			tip: pullRequest.head,
+			tip: changeRequest.head,
 			base: params.base,
-			pull: { number: pullRequest.number, url: pullRequest.url },
+			changeRequest: { number: changeRequest.number, url: changeRequest.url },
 			at,
 		}
 	const baseRef = `${ORIGIN_BRANCH_REF_PREFIX}${params.base}`
@@ -813,9 +819,9 @@ function openLot(params: {
 	branch: string
 	base: string
 	host: HostAdapter
-	text: PullRequestText
-}): PullRequest | { refusal: string } {
-	return params.host.openPullRequest({
+	text: ChangeRequestText
+}): ChangeRequest | { refusal: string } {
+	return params.host.openChangeRequest({
 		root: params.worktree,
 		branch: params.branch,
 		base: params.base,
@@ -826,7 +832,7 @@ function openLot(params: {
 }
 
 /**
- * The lot's text rendered from its records on the tree just pushed (`preparePullRequest`, the template's parts), a
+ * The lot's text rendered from its records on the tree just pushed (`prepareChangeRequest`, the template's parts), a
  * person's part of the current body (`kept`) kept; the refusal of records that no longer pass.
  */
 function renderedText(params: {
@@ -835,8 +841,8 @@ function renderedText(params: {
 	baseRef: string
 	lotFolder: string
 	kept: string | undefined
-}): PullRequestText | { refusal: string } {
-	const prepared = preparePullRequest({
+}): ChangeRequestText | { refusal: string } {
+	const prepared = prepareChangeRequest({
 		lotFolder: params.lotFolder,
 		worktree: params.worktree,
 		baseRef: params.baseRef,
@@ -847,7 +853,7 @@ function renderedText(params: {
 			? { kept: undefined }
 			: keptPartOf({ template: prepared.template, body: params.kept })
 	if ('refusal' in kept) return kept
-	return composePullRequest({ ...prepared, kept: kept.kept })
+	return composeChangeRequest({ ...prepared, kept: kept.kept })
 }
 
 /**
@@ -857,33 +863,33 @@ function renderedText(params: {
 function editLot(params: {
 	worktree: string
 	host: HostAdapter
-	pullRequest: PullRequest
-	text: PullRequestText
+	changeRequest: ChangeRequest
+	text: ChangeRequestText
 }): { line?: string } | { refusal: string } {
-	const { pullRequest, text } = params
-	if (pullRequest.title === text.title && linesOf(pullRequest.body).join('\n') === text.body)
+	const { changeRequest, text } = params
+	if (changeRequest.title === text.title && linesOf(changeRequest.body).join('\n') === text.body)
 		return {}
-	const refused = params.host.editPullRequest({
+	const refused = params.host.editChangeRequest({
 		root: params.worktree,
-		number: pullRequest.number,
+		number: changeRequest.number,
 		...text,
 	})
 	if (refused !== undefined) return refused
-	return { line: LANDING_LINES.updated.replace('{number}', String(pullRequest.number)) }
+	return { line: LANDING_LINES.updated.replace('{number}', String(changeRequest.number)) }
 }
 
 /** The landing record of the lot (`landing.json` in its store folder). */
 function writeLanding(params: {
 	lotFolder: string
-	pullRequest: PullRequest
+	changeRequest: ChangeRequest
 	branch: string
 	head: string
 	now: Date
 }): void {
 	const record: LandingRecord = {
 		schema: LANDING_SCHEMA,
-		number: params.pullRequest.number,
-		url: params.pullRequest.url,
+		number: params.changeRequest.number,
+		url: params.changeRequest.url,
 		branch: params.branch,
 		head: params.head,
 		at: params.now.toISOString(),

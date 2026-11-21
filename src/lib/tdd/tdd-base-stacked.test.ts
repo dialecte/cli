@@ -7,7 +7,7 @@ import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { writeStoreLot } from '../../../test/brief-workspace.ts'
-import { landingHostOf, pullRequestOf } from '../../../test/landing-repository.ts'
+import { landingHostOf, changeRequestOf } from '../../../test/landing-repository.ts'
 import { createStartWorkspace, entriesOf } from '../../../test/lot-start-workspace.ts'
 import { git, writeFiles } from '../../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
@@ -139,7 +139,7 @@ describe('the lot base of a stacked lot', { timeout: STORE_CASE_TIMEOUT }, () =>
 			files: { 'landing.json': parentLandingText({ head: parentTip }) },
 		})
 		const host = landingHostOf({
-			byNumber: { 5: pullRequestOf({ number: 5, state: 'merged', head: parentTip }) },
+			byNumber: { 5: changeRequestOf({ number: 5, state: 'merged', head: parentTip }) },
 		}).host
 		runLotClose({
 			cwd: repository,

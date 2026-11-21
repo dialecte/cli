@@ -7,7 +7,7 @@ import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createBriefWorkspace, writeStoreLot } from '../../test/brief-workspace.ts'
-import { landingHostOf, pullRequestOf } from '../../test/landing-repository.ts'
+import { landingHostOf, changeRequestOf } from '../../test/landing-repository.ts'
 import { withLines } from '../../test/lot-start-workspace.ts'
 import { git, writeFiles } from '../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
@@ -82,30 +82,34 @@ function statusArgumentsOf(params: {
 }
 
 /** The parent's pull request #5 as the host holds it. */
-function parentPull(params: { state: 'open' | 'merged'; draft?: boolean; queued?: boolean }) {
-	return { byNumber: { 5: pullRequestOf({ number: 5, head: 'a1', ...params }) } }
+function parentChangeRequest(params: {
+	state: 'open' | 'merged'
+	draft?: boolean
+	queued?: boolean
+}) {
+	return { byNumber: { 5: changeRequestOf({ number: 5, head: 'a1', ...params }) } }
 }
 
 describe('the stack line', { timeout: STORE_CASE_TIMEOUT }, () => {
 	const STATE_ROWS: { title: string; answers: LandingHostAnswers; line: string }[] = [
 		{
 			title: 'its pull request open',
-			answers: parentPull({ state: 'open' }),
+			answers: parentChangeRequest({ state: 'open' }),
 			line: `stack: on ${PARENT} (#5, open)`,
 		},
 		{
 			title: 'its pull request a draft',
-			answers: parentPull({ state: 'open', draft: true }),
+			answers: parentChangeRequest({ state: 'open', draft: true }),
 			line: `stack: on ${PARENT} (#5, draft)`,
 		},
 		{
 			title: 'its pull request queued',
-			answers: parentPull({ state: 'open', queued: true }),
+			answers: parentChangeRequest({ state: 'open', queued: true }),
 			line: `stack: on ${PARENT} (#5, queued)`,
 		},
 		{
 			title: 'its pull request merged',
-			answers: parentPull({ state: 'merged' }),
+			answers: parentChangeRequest({ state: 'merged' }),
 			line: `stack: on ${PARENT} (#5, merged)`,
 		},
 		{
@@ -139,7 +143,11 @@ describe('the stack line', { timeout: STORE_CASE_TIMEOUT }, () => {
 		expect(
 			withLines(
 				runLot(
-					statusArgumentsOf({ workspace, lot: CHILD, answers: parentPull({ state: 'open' }) }),
+					statusArgumentsOf({
+						workspace,
+						lot: CHILD,
+						answers: parentChangeRequest({ state: 'open' }),
+					}),
 				),
 			).lines,
 		).toContain(`stack: on ${PARENT} (#5, merged)`)
@@ -159,7 +167,11 @@ describe('the stack line', { timeout: STORE_CASE_TIMEOUT }, () => {
 		expect(
 			withLines(
 				runLot(
-					statusArgumentsOf({ workspace, lot: PARENT, answers: parentPull({ state: 'open' }) }),
+					statusArgumentsOf({
+						workspace,
+						lot: PARENT,
+						answers: parentChangeRequest({ state: 'open' }),
+					}),
 				),
 			).lines.some((line) => line.startsWith('stack:')),
 		).toBe(false)

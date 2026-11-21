@@ -11,7 +11,7 @@ import { replaceRecord } from '../../../test/damaged-lot-workspace.ts'
 import {
 	LANDING_LOT_FILE,
 	LANDING_NOW,
-	LANDING_PULL_NUMBER,
+	LANDING_CHANGE_REQUEST_NUMBER,
 	MAIN_EDIT_TEXT,
 	MISSING_BASE_BRANCH,
 } from '../../../test/landing-lot.constants.ts'
@@ -25,7 +25,7 @@ import {
 	editOnOrigin,
 	landingHostOf,
 	mergeOnOrigin,
-	pullRequestOf,
+	changeRequestOf,
 	pushBranch,
 } from '../../../test/landing-repository.ts'
 import { temporaryFolder } from '../../../test/scratch-repository.ts'
@@ -114,8 +114,8 @@ describe('settleLotLanding: one settle per lot', { timeout: STORE_CASE_TIMEOUT }
 		editOnOrigin({ repository: lot.repository, files: { [LANDING_LOT_FILE]: MAIN_EDIT_TEXT } })
 		const { host } = landingHostOf({
 			byBranch: {
-				[lot.branch]: pullRequestOf({
-					number: LANDING_PULL_NUMBER,
+				[lot.branch]: changeRequestOf({
+					number: LANDING_CHANGE_REQUEST_NUMBER,
 					state: 'merged',
 					head: lot.tip,
 				}),
@@ -130,7 +130,7 @@ describe('settleLotLanding: one settle per lot', { timeout: STORE_CASE_TIMEOUT }
 			settled: {
 				landed: expect.objectContaining({
 					how: 'host',
-					pull: expect.objectContaining({ number: LANDING_PULL_NUMBER }),
+					changeRequest: expect.objectContaining({ number: LANDING_CHANGE_REQUEST_NUMBER }),
 				}),
 			},
 		})

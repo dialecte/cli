@@ -21,7 +21,7 @@ describe('dialecte lot review --pull: host refusals', { timeout: STORE_CASE_TIME
 	it.each([
 		{
 			label: 'the pull request',
-			refuse: { readPullRequest: () => ({ refusal: 'gh pr view: exit 1' }) },
+			refuse: { readChangeRequest: () => ({ refusal: 'gh pr view: exit 1' }) },
 			line: 'lot review: gh pr view: exit 1',
 		},
 		{
@@ -34,7 +34,7 @@ describe('dialecte lot review --pull: host refusals', { timeout: STORE_CASE_TIME
 		({ refuse, line }) => {
 			const lot = landedLot()
 			const { host } = recordingHost({
-				existing: lot.pullRequest,
+				existing: lot.changeRequest,
 				comments: [{ id: 101, path: 'src/x.ts', line: 1, body: 'blocking: x must be two' }],
 			})
 

@@ -11,7 +11,7 @@ export const MAIN_EDIT_TEXT = 'export const x = 2\n'
 export const AFTER_LANDING_FILE = 'src/after.ts'
 
 /** The pull request number the fake host gives the lot's pull request. */
-export const LANDING_PULL_NUMBER = 9
+export const LANDING_CHANGE_REQUEST_NUMBER = 9
 
 /** When the landing-lot cases run. */
 export const LANDING_NOW = new Date('2026-11-17T22:00:00.000Z')

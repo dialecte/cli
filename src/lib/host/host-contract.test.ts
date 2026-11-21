@@ -43,6 +43,10 @@ function otherImpliedFlagsOf(spec: HostCallSpec): string[] {
 
 const QUERY = 'query($n:Int!){repository(name:"x"){pullRequest(number:$n){id}}}'
 
+/** The schema's change-request field and type, under the names the query above uses. */
+const REQUEST_FIELD = 'pullRequest'
+const REQUEST_TYPE = 'PullRequest'
+
 const VENDORS: readonly VendorShape[] = [
 	{
 		label: 'the first vendor (gh-like flags)',
@@ -111,8 +115,8 @@ function contractOf(vendor: VendorShape): HostContract {
 		},
 		graphql: {
 			Query: { repository: { type: 'Repository', args: ['name'] } },
-			Repository: { pullRequest: { type: 'PullRequest', args: ['number'] } },
-			PullRequest: { id: { type: 'ID', args: [] } },
+			Repository: { [REQUEST_FIELD]: { type: REQUEST_TYPE, args: ['number'] } },
+			[REQUEST_TYPE]: { id: { type: 'ID', args: [] } },
 		},
 	}
 }

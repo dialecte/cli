@@ -14,23 +14,23 @@ import {
 	LOT_NAME,
 	LOT_SUMMARY,
 } from '../../test/lot-pr.constants.ts'
-import { cliTemplate, pullRequestLot } from '../../test/lot-pr.ts'
+import { cliTemplate, changeRequestLot } from '../../test/lot-pr.ts'
 import { git, writeFiles } from '../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { renderLotUsage } from '../lib/command-map/render-help.ts'
-import { TEMPLATE_PATH } from '../lib/pr/pull-request.constants.ts'
+import { TEMPLATE_PATH } from '../lib/pr/change-request.constants.ts'
 import { runLotPr } from './lot-pr.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { PullRequest } from '../lib/host/host.types.ts'
+import type { ChangeRequest } from '../lib/host/host.types.ts'
 
 afterEach(function restoreEnvironment() {
 	vi.unstubAllEnvs()
 })
 
 /** The lot's open pull request #7 as the host holds it. */
-function openPullRequest(params: { title: string; body: string }): PullRequest {
+function openChangeRequest(params: { title: string; body: string }): ChangeRequest {
 	return {
 		number: 7,
 		url: 'https://host.test/pull/7',
@@ -45,7 +45,7 @@ function openPullRequest(params: { title: string; body: string }): PullRequest {
 
 describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 	it('--print → the title and the body from the records, the host never asked', () => {
-		const lot = pullRequestLot()
+		const lot = changeRequestLot()
 		const { host, calls } = recordingHost()
 
 		const result = runLotPr({
@@ -64,7 +64,7 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 	})
 
 	it('no pull request yet → the text printed and lot land named, nothing sent, exit 0', () => {
-		const lot = pullRequestLot()
+		const lot = changeRequestLot()
 		const { host, calls } = recordingHost()
 
 		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
@@ -77,9 +77,9 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 	})
 
 	it('an open pull request that reads otherwise → its title and body replaced by the rendered ones', () => {
-		const lot = pullRequestLot()
+		const lot = changeRequestLot()
 		const { host, calls, bodies } = recordingHost({
-			existing: openPullRequest({ title: 'merge: main into feat/x', body: '' }),
+			existing: openChangeRequest({ title: 'merge: main into feat/x', body: '' }),
 		})
 
 		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
@@ -93,9 +93,9 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 	})
 
 	it('a pull request that already reads the records → nothing asked of the host but its read', () => {
-		const lot = pullRequestLot()
+		const lot = changeRequestLot()
 		const { host, calls } = recordingHost({
-			existing: openPullRequest({ title: 'old', body: '' }),
+			existing: openChangeRequest({ title: 'old', body: '' }),
 		})
 		runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
 
@@ -108,7 +108,7 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 	})
 
 	it("a person's ticks after the kept marker → kept in the new body", () => {
-		const lot = pullRequestLot()
+		const lot = changeRequestLot()
 		const kept = [
 			'### Checklist for the reviewer when doing the PR review',
 			'',
@@ -117,7 +117,7 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 			'Read twice.',
 		].join('\n')
 		const { host, bodies } = recordingHost({
-			existing: openPullRequest({ title: LOT_MESSAGE, body: `rendered before\n\n${kept}\n` }),
+			existing: openChangeRequest({ title: LOT_MESSAGE, body: `rendered before\n\n${kept}\n` }),
 		})
 
 		runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
@@ -127,7 +127,7 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 	})
 
 	it('a behaviour holding a forbidden word → refused, the word and its record named, nothing asked of the host', () => {
-		const lot = pullRequestLot({
+		const lot = changeRequestLot({
 			brief: {
 				steps: [
 					{ title: 'x', spec: '## Step 1', behaviours: [`x asked by ${FORBIDDEN_WORD} -> one`] },
@@ -150,7 +150,9 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 	})
 
 	it("a repository template without the renderer's markers → refused, the template named, exit 1", () => {
-		const lot = pullRequestLot({ template: '### What is included in this change?\n\n[Describe]\n' })
+		const lot = changeRequestLot({
+			template: '### What is included in this change?\n\n[Describe]\n',
+		})
 		const { host, calls } = recordingHost()
 
 		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
@@ -163,7 +165,7 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 	})
 
 	it('a tests record taken on another tree → the body says stale, never its counts', () => {
-		const lot = pullRequestLot({ staleTests: true })
+		const lot = changeRequestLot({ staleTests: true })
 		const { host } = recordingHost()
 
 		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME, '--print'], host })
@@ -175,9 +177,9 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 	})
 
 	it('a merged pull request → nothing sent, its state named, exit 1', () => {
-		const lot = pullRequestLot()
+		const lot = changeRequestLot()
 		const { host, calls } = recordingHost({
-			existing: { ...openPullRequest({ title: 'x', body: 'y' }), state: 'merged' },
+			existing: { ...openChangeRequest({ title: 'x', body: 'y' }), state: 'merged' },
 		})
 
 		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
@@ -188,8 +190,8 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 	})
 
 	it('--json → the title, the body, the pull request and whether it was sent', () => {
-		const lot = pullRequestLot()
-		const { host } = recordingHost({ existing: openPullRequest({ title: 'old', body: '' }) })
+		const lot = changeRequestLot()
+		const { host } = recordingHost({ existing: openChangeRequest({ title: 'old', body: '' }) })
 
 		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME, '--json'], host })
 
@@ -197,29 +199,29 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 		expect(JSON.parse(result.output)).toEqual({
 			title: LOT_MESSAGE,
 			body: expect.stringContaining(LOT_SUMMARY),
-			pullRequest: { number: 7, url: 'https://host.test/pull/7', head: '' },
+			changeRequest: { number: 7, url: 'https://host.test/pull/7', head: '' },
 			head: git({ root: lot.worktree, args: ['rev-parse', 'HEAD'] }).trim(),
 			sent: true,
 		})
 	})
 
 	it("--json for a pull request whose head is not the lot's → both heads given", () => {
-		const lot = pullRequestLot()
+		const lot = changeRequestLot()
 		const { host } = recordingHost({
-			existing: { ...openPullRequest({ title: 'old', body: '' }), head: 'a'.repeat(40) },
+			existing: { ...openChangeRequest({ title: 'old', body: '' }), head: 'a'.repeat(40) },
 		})
 
 		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME, '--json'], host })
 
 		expect(result.output).toMatch(/^\{/)
 		expect(JSON.parse(result.output)).toMatchObject({
-			pullRequest: { head: 'a'.repeat(40) },
+			changeRequest: { head: 'a'.repeat(40) },
 			head: git({ root: lot.worktree, args: ['rev-parse', 'HEAD'] }).trim(),
 		})
 	})
 
 	it('an unknown option → the usage, nothing read or sent, exit 2', () => {
-		const lot = pullRequestLot()
+		const lot = changeRequestLot()
 		const { host, calls } = recordingHost()
 
 		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME, '--prnit'], host })
@@ -230,7 +232,7 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 	})
 
 	it('a lot already landed → its pull request read by the landing number', () => {
-		const lot = pullRequestLot()
+		const lot = changeRequestLot()
 		writeFileSync(
 			join(lot.lotFolder, 'landing.json'),
 			JSON.stringify({
@@ -244,7 +246,7 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 			}),
 		)
 		const { host, calls } = recordingHost({
-			existing: openPullRequest({ title: 'old', body: '' }),
+			existing: openChangeRequest({ title: 'old', body: '' }),
 		})
 
 		runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
@@ -253,9 +255,9 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 	})
 
 	it('the host refusing the edit → its reason, exit 1', () => {
-		const lot = pullRequestLot()
+		const lot = changeRequestLot()
 		const { host } = recordingHost({
-			existing: openPullRequest({ title: 'old', body: '' }),
+			existing: openChangeRequest({ title: 'old', body: '' }),
 			editRefusal: 'gh pr edit: HTTP 403',
 		})
 
@@ -266,13 +268,13 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 	})
 
 	it('a body the host gives back with Windows line ends, the same text → nothing sent', () => {
-		const lot = pullRequestLot()
+		const lot = changeRequestLot()
 		const { host, bodies } = recordingHost({
-			existing: openPullRequest({ title: 'old', body: '' }),
+			existing: openChangeRequest({ title: 'old', body: '' }),
 		})
 		runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
 		const windows = recordingHost({
-			existing: openPullRequest({ title: LOT_MESSAGE, body: bodies[0].replaceAll('\n', '\r\n') }),
+			existing: openChangeRequest({ title: LOT_MESSAGE, body: bodies[0].replaceAll('\n', '\r\n') }),
 		})
 
 		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host: windows.host })
@@ -282,9 +284,9 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 	})
 
 	it("a pull request whose head is not the lot's HEAD → updated, and the line says lot land pushes the rest", () => {
-		const lot = pullRequestLot()
+		const lot = changeRequestLot()
 		const { host } = recordingHost({
-			existing: { ...openPullRequest({ title: 'old', body: '' }), head: 'a'.repeat(40) },
+			existing: { ...openChangeRequest({ title: 'old', body: '' }), head: 'a'.repeat(40) },
 		})
 
 		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
@@ -295,7 +297,7 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 	})
 
 	it('a template neither the lot head nor the base holds → refused, the template named as missing, exit 1', () => {
-		const lot = pullRequestLot({ lotDeletes: ['.github/pull_request_template.md'] })
+		const lot = changeRequestLot({ lotDeletes: ['.github/pull_request_template.md'] })
 		git({ root: lot.workspace.repository, args: ['rm', '-q', '.github/pull_request_template.md'] })
 		git({ root: lot.workspace.repository, args: ['commit', '-qm', 'chore: no template'] })
 		git({ root: lot.workspace.repository, args: ['push', '-q', 'origin', 'main'] })
@@ -310,7 +312,7 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 	})
 
 	it('a lot whose worktree is gone → refused, the worktree named, exit 1', () => {
-		const lot = pullRequestLot()
+		const lot = changeRequestLot()
 		rmSync(lot.worktree, { recursive: true, force: true })
 		const { host } = recordingHost()
 
@@ -326,7 +328,7 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 	})
 
 	it('--print of a body of several lines → printed line by line, no line break escaped', () => {
-		const lot = pullRequestLot()
+		const lot = changeRequestLot()
 		const { host } = recordingHost()
 
 		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME, '--print'], host })
@@ -335,9 +337,9 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 	})
 
 	it("a body holding a person's text and no kept heading → refused, nothing sent, the text never dropped", () => {
-		const lot = pullRequestLot()
+		const lot = changeRequestLot()
 		const { host, calls } = recordingHost({
-			existing: openPullRequest({ title: 'old', body: 'Notes a person wrote on the page.' }),
+			existing: openChangeRequest({ title: 'old', body: 'Notes a person wrote on the page.' }),
 		})
 
 		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
@@ -351,9 +353,9 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 	})
 
 	it("an open pull request with lot land's old placeholder body → replaced: no person wrote it", () => {
-		const lot = pullRequestLot()
+		const lot = changeRequestLot()
 		const { host, calls } = recordingHost({
-			existing: openPullRequest({
+			existing: openChangeRequest({
 				title: 'old',
 				body: `Lot ${LOT_NAME}. The full suite runs on CI; the merge queue lands it.`,
 			}),
@@ -365,7 +367,7 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 	})
 
 	it('a damaged lot (its brief edited by hand) → refused, nothing read or sent', () => {
-		const lot = pullRequestLot()
+		const lot = changeRequestLot()
 		replaceRecord({ folder: lot.lotFolder, name: 'brief.json', text: '{}' })
 		const { host, calls } = recordingHost()
 
@@ -379,7 +381,7 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 	})
 
 	it("a lot cut before the template's markers → lot pr reads origin's template", () => {
-		const lot = pullRequestLot({ template: '### No markers here\n' })
+		const lot = changeRequestLot({ template: '### No markers here\n' })
 		writeFiles({ root: lot.workspace.repository, files: { [TEMPLATE_PATH]: cliTemplate() } })
 		git({
 			root: lot.workspace.repository,

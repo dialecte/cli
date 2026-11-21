@@ -16,7 +16,7 @@ import { git, writeFiles } from './scratch-repository.ts'
 
 import type { StoreEntry } from '../src/lib/handover/handover.types.ts'
 import type { Transition } from '../src/lib/store/store.types.ts'
-import type { PullRequestLot } from './lot-pr.types.ts'
+import type { ChangeRequestLot } from './lot-pr.types.ts'
 
 /** The cli's own committed template: the one every dialecte repository holds. */
 export function cliTemplate(): string {
@@ -31,7 +31,7 @@ export function cliTemplate(): string {
  * `feat/x` one commit ahead (`src/x.ts` and its changelog fragment), its store folder whose brief holds the public
  * fields with `brief` applied, and its tests record taken on the landed tree (on another tree when `staleTests`).
  */
-export function pullRequestLot(
+export function changeRequestLot(
 	params: {
 		brief?: Record<string, unknown>
 		template?: string
@@ -47,7 +47,7 @@ export function pullRequestLot(
 		/** The lot's registry entry (a committed lot). */
 		registry?: StoreEntry['state']
 	} = {},
-): PullRequestLot {
+): ChangeRequestLot {
 	const workspace = createBriefWorkspace()
 	const { repository } = workspace
 	writeFiles({

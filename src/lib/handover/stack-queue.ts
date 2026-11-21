@@ -13,7 +13,7 @@ import { readIdentity } from '../store/identity.ts'
 import { readStack } from '../store/stack.ts'
 import { STACK_QUEUE_LINES } from './stack-queue.constants.ts'
 
-import type { HostAdapter, PullRequest } from '../host/host.types.ts'
+import type { HostAdapter, ChangeRequest } from '../host/host.types.ts'
 import type { StackQueueRoute } from './stack-queue.types.ts'
 
 /**
@@ -28,9 +28,9 @@ export function stackQueueOf(params: {
 	lotFolder: string
 	worktree: string
 	host: HostAdapter
-	pullRequest: PullRequest
+	changeRequest: ChangeRequest
 }): StackQueueRoute | { refusal: string } {
-	const { lot, host, pullRequest } = params
+	const { lot, host, changeRequest } = params
 	const record = readStack({ lotFolder: params.lotFolder })
 	if (record === undefined) return { route: 'single' }
 	if ('damage' in record)
@@ -43,29 +43,33 @@ export function stackQueueOf(params: {
 	const identity = readIdentity({ lotFolder: parentFolder })
 	if (identity === undefined)
 		return refusalOf({ template: STACK_QUEUE_LINES.noParent, values: { lot, parent } })
-	if (pullRequest.base === undefined)
+	if (changeRequest.base === undefined)
 		return refusalOf({
 			template: STACK_QUEUE_LINES.noBase,
-			values: { lot, parent, number: String(pullRequest.number) },
+			values: { lot, parent, number: String(changeRequest.number) },
 		})
 	// retargeted to the base once the parent merged: it queues alone
-	if (pullRequest.base !== identity.branch) return { route: 'single' }
-	const parentPull = host.readPullRequest({ root: params.worktree, ref: identity.branch })
-	if (parentPull !== undefined && 'refusal' in parentPull) return parentPull
-	if (parentPull === undefined || parentPull.state === 'closed')
+	if (changeRequest.base !== identity.branch) return { route: 'single' }
+	const parentChangeRequest = host.readChangeRequest({
+		root: params.worktree,
+		ref: identity.branch,
+	})
+	if (parentChangeRequest !== undefined && 'refusal' in parentChangeRequest)
+		return parentChangeRequest
+	if (parentChangeRequest === undefined || parentChangeRequest.state === 'closed')
 		return refusalOf({
-			template: STACK_QUEUE_LINES.noParentPull,
+			template: STACK_QUEUE_LINES.noParentChangeRequest,
 			values: { lot, parent, branch: identity.branch },
 		})
-	const values = { lot, parent, number: String(parentPull.number) }
-	if (parentPull.state === 'merged')
+	const values = { lot, parent, number: String(parentChangeRequest.number) }
+	if (parentChangeRequest.state === 'merged')
 		return refusalOf({ template: STACK_QUEUE_LINES.parentMerged, values })
 	if (!host.probeStacks({ root: params.worktree }).stacks)
 		return refusalOf({ template: STACK_QUEUE_LINES.waits, values })
 	// auto-merge on, else the merge queue asked (a parent queued by a stack merge has no auto-merge)
-	const parentQueued = parentPull.queued
+	const parentQueued = parentChangeRequest.queued
 		? { queued: true }
-		: host.readQueued({ root: params.worktree, number: parentPull.number })
+		: host.readQueued({ root: params.worktree, number: parentChangeRequest.number })
 	if ('refusal' in parentQueued) return parentQueued
 	if (!parentQueued.queued)
 		return refusalOf({ template: STACK_QUEUE_LINES.parentNotQueued, values })

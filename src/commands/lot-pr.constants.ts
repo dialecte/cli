@@ -4,7 +4,7 @@ export const LOT_PR_LINES = {
 	title: 'title: {title}',
 	updated: 'pull request #{number} updated from the lot records: {url}',
 	unchanged: 'pull request #{number} already reads the lot records: {url}',
-	noPullRequest: 'no pull request yet: dialecte lot land {lot} opens it with this text',
+	noChangeRequest: 'no pull request yet: dialecte lot land {lot} opens it with this text',
 	headElsewhere:
 		'! pull request #{number} is at {pushed}, the lot at {head}: the text describes the lot; dialecte lot land {lot} pushes it',
 	notOpen: 'lot pr: pull request #{number} is {state}: nothing sent',

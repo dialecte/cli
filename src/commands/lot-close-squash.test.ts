@@ -11,7 +11,7 @@ import { join } from 'node:path'
 import {
 	AFTER_LANDING_FILE,
 	LANDING_LOT_FILE,
-	LANDING_PULL_NUMBER,
+	LANDING_CHANGE_REQUEST_NUMBER,
 	MAIN_EDIT_TEXT,
 	OWN_DECLARATION,
 } from '../../test/landing-lot.constants.ts'
@@ -38,7 +38,7 @@ import {
 	editOnOrigin,
 	landingHostOf,
 	mergeOnOrigin,
-	pullRequestOf,
+	changeRequestOf,
 	rebaseOnto,
 	rebaseResolving,
 	strayCommitOf,
@@ -64,8 +64,8 @@ afterEach(function restoreEnvironment() {
 function mergedByHost(lot: LandingLot) {
 	return landingHostOf({
 		byBranch: {
-			[lot.branch]: pullRequestOf({
-				number: LANDING_PULL_NUMBER,
+			[lot.branch]: changeRequestOf({
+				number: LANDING_CHANGE_REQUEST_NUMBER,
 				state: 'merged',
 				head: lot.tip,
 			}),
@@ -82,8 +82,8 @@ function silentHost() {
 function mergedByNumber(lot: LandingLot) {
 	return landingHostOf({
 		byNumber: {
-			[LANDING_PULL_NUMBER]: pullRequestOf({
-				number: LANDING_PULL_NUMBER,
+			[LANDING_CHANGE_REQUEST_NUMBER]: changeRequestOf({
+				number: LANDING_CHANGE_REQUEST_NUMBER,
 				state: 'merged',
 				head: lot.tip,
 			}),
@@ -108,9 +108,16 @@ const CLOSE_ROWS: CloseRow[] = [
 			return { names: [lot.name], host: mergedByHost(lot) }
 		},
 		expected: (lot) => ({
-			outcomes: [{ closed: true, landed: expect.stringContaining(`#${LANDING_PULL_NUMBER}`) }],
+			outcomes: [
+				{ closed: true, landed: expect.stringContaining(`#${LANDING_CHANGE_REQUEST_NUMBER}`) },
+			],
 			worktreeGone: true,
-			landed: { how: 'host', tip: lot.tip, base: 'main', pull: { number: LANDING_PULL_NUMBER } },
+			landed: {
+				how: 'host',
+				tip: lot.tip,
+				base: 'main',
+				changeRequest: { number: LANDING_CHANGE_REQUEST_NUMBER },
+			},
 		}),
 	},
 	{
@@ -186,7 +193,7 @@ const CLOSE_ROWS: CloseRow[] = [
 		title:
 			'an entry an older close closed without a landed fact, squash then main edits the same lines, the host says merged → landed.json recorded, its landed line beside already closed, nothing moved',
 		arrange: (lot) => {
-			writeLandingRecord({ lot, number: LANDING_PULL_NUMBER })
+			writeLandingRecord({ lot, number: LANDING_CHANGE_REQUEST_NUMBER })
 			const entry = registerLotEntry({ lot, closed: true })
 			mergeOnOrigin({ repository: lot.repository, how: 'squash' })
 			editOnOrigin({ repository: lot.repository, files: { [LANDING_LOT_FILE]: MAIN_EDIT_TEXT } })
@@ -197,11 +204,15 @@ const CLOSE_ROWS: CloseRow[] = [
 				{
 					closed: true,
 					already: true,
-					landed: expect.stringContaining(`pull request #${LANDING_PULL_NUMBER} merged`),
+					landed: expect.stringContaining(`pull request #${LANDING_CHANGE_REQUEST_NUMBER} merged`),
 				},
 			],
 			worktreeGone: false,
-			landed: { how: 'host', tip: lot.tip, pull: { number: LANDING_PULL_NUMBER } },
+			landed: {
+				how: 'host',
+				tip: lot.tip,
+				changeRequest: { number: LANDING_CHANGE_REQUEST_NUMBER },
+			},
 		}),
 	},
 ]
@@ -274,8 +285,8 @@ const REMOVAL_ROWS: RemovalRow[] = [
 				names: [lot.name],
 				host: landingHostOf({
 					byBranch: {
-						[lot.branch]: pullRequestOf({
-							number: LANDING_PULL_NUMBER,
+						[lot.branch]: changeRequestOf({
+							number: LANDING_CHANGE_REQUEST_NUMBER,
 							state: 'merged',
 							head: resolved,
 						}),
@@ -300,9 +311,15 @@ const REMOVAL_ROWS: RemovalRow[] = [
 			return { names: [lot.name], host: mergedByHost(lot) }
 		},
 		expected: ({ lot }) => ({
-			outcomes: [{ closed: true, landed: expect.stringContaining(`#${LANDING_PULL_NUMBER}`) }],
+			outcomes: [
+				{ closed: true, landed: expect.stringContaining(`#${LANDING_CHANGE_REQUEST_NUMBER}`) },
+			],
 			worktreeGone: true,
-			landed: { how: 'host', tip: lot.tip, pull: { number: LANDING_PULL_NUMBER } },
+			landed: {
+				how: 'host',
+				tip: lot.tip,
+				changeRequest: { number: LANDING_CHANGE_REQUEST_NUMBER },
+			},
 			entry: undefined,
 			archived: OWN_DECLARATION,
 		}),
@@ -316,8 +333,8 @@ const REMOVAL_ROWS: RemovalRow[] = [
 				names: [lot.name],
 				host: landingHostOf({
 					byBranch: {
-						[lot.branch]: pullRequestOf({
-							number: LANDING_PULL_NUMBER,
+						[lot.branch]: changeRequestOf({
+							number: LANDING_CHANGE_REQUEST_NUMBER,
 							state: 'merged',
 							head: strayCommitOf({ root: lot.workspace.repository, parent: lot.repository.cut }),
 						}),

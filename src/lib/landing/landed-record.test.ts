@@ -17,7 +17,7 @@ const FACT: LandedFact = {
 	how: 'tree',
 	tip: 'a'.repeat(40),
 	base: 'main',
-	pull: { number: 7, url: 'https://host.test/pull/7' },
+	changeRequest: { number: 7, url: 'https://host.test/pull/7' },
 	at: '2026-11-17T20:00:00.000Z',
 }
 
@@ -41,6 +41,11 @@ describe('landed.json', () => {
 			text: JSON.stringify({ ...FACT, tip: undefined }),
 			reason: 'tip is no commit',
 		},
+		{
+			title: 'a change request without its url',
+			text: JSON.stringify({ ...FACT, changeRequest: { number: 7 } }),
+			reason: 'changeRequest is no pull request',
+		},
 	])('a landed.json with $title -> damaged naming why, never landed', ({ text, reason }) => {
 		const lotFolder = temporaryFolder('dialecte-landed-')
 		writeFileSync(join(lotFolder, 'landed.json'), text)
@@ -49,6 +54,28 @@ describe('landed.json', () => {
 			damage: `landed.json does not read as a landed fact: ${reason}`,
 		})
 	})
+
+	it.each([
+		{
+			title: 'its pull as lot land wrote it',
+			text: '{"schema":1,"how":"tree","tip":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","base":"main","pull":{"number":7,"url":"https://host.test/pull/7"},"at":"2026-11-17T20:00:00.000Z"}',
+		},
+		{
+			title: 'its pull unreadable',
+			text: '{"schema":1,"how":"tree","tip":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","base":"main","pull":"seven","at":"2026-11-17T20:00:00.000Z"}',
+		},
+	])(
+		'a landed.json written before the change request key, $title -> read undamaged, no change request known',
+		({ text }) => {
+			const lotFolder = temporaryFolder('dialecte-landed-')
+			writeFileSync(join(lotFolder, 'landed.json'), text)
+
+			const read = readLanded({ lotFolder })
+
+			expect(read).toEqual(JSON.parse(text))
+			expect(read).not.toHaveProperty('changeRequest')
+		},
+	)
 
 	it('no landed.json -> no fact', () => {
 		expect(readLanded({ lotFolder: temporaryFolder('dialecte-landed-') })).toBeUndefined()

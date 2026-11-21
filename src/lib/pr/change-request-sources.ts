@@ -1,6 +1,6 @@
 /**
  * The gathering half of `lot pr`: the lot's records read for its pull request, then checked as public text
- * (`preparePullRequest`). Every read is of the lot's store folder or of the committed head of its worktree (the tree
+ * (`prepareChangeRequest`). Every read is of the lot's store folder or of the committed head of its worktree (the tree
  * the pull request lands); a path it names passes only when a commit of the tree holds it. A record missing is undefined, never a guess.
  */
 import { readFileSync } from 'node:fs'
@@ -31,16 +31,16 @@ import { folderPlanEntryIds } from '../store/public-text.ts'
 import { readStackRecord } from '../store/stack.ts'
 import { STORE_FILES } from '../store/store.constants.ts'
 import { readTestsRecord } from '../tdd/tests-record.ts'
-import { linesOf, templateFaultOf } from './compose-pull-request.ts'
-import { publicPiecesOf, publicRefusalOf } from './public-body.ts'
 import {
 	ADDED_STATUS,
 	DOCS_STEP,
 	FRAGMENT_PATTERN,
 	HEAD_TREE,
-	PULL_REQUEST_LINES,
+	CHANGE_REQUEST_LINES,
 	TEMPLATE_PATH,
-} from './pull-request.constants.ts'
+} from './change-request.constants.ts'
+import { linesOf, templateFaultOf } from './compose-change-request.ts'
+import { publicPiecesOf, publicRefusalOf } from './public-body.ts'
 import { recordValueFault } from './record-values.ts'
 
 import type { BodyQuality } from '../quality/quality.types.ts'
@@ -48,11 +48,11 @@ import type { RuleName } from '../rules/check-code-rules.types.ts'
 import type { ReferencePattern } from '../rules/committed-text.types.ts'
 import type {
 	ChangedFile,
-	PreparedPullRequest,
-	PullRequestChangelog,
-	PullRequestSources,
-	PullRequestStep,
-} from './pull-request.types.ts'
+	PreparedChangeRequest,
+	ChangeRequestChangelog,
+	ChangeRequestSources,
+	ChangeRequestStep,
+} from './change-request.types.ts'
 
 /**
  * The lot's template and sources, checked: the repository's template holds every marker, and the free text of the
@@ -61,7 +61,7 @@ import type {
  * @intent render a lot's pull request from its records, public text only
  * @internal
  */
-export function preparePullRequest(params: {
+export function prepareChangeRequest(params: {
 	lotFolder: string
 	worktree: string
 	/** The base branch the pull request lands on, as git names it (`origin/main`). */
@@ -71,15 +71,15 @@ export function preparePullRequest(params: {
 	 * (the text it lands), or also the base (an early check of a lot cut before the template changed).
 	 */
 	templateRefs?: readonly string[]
-}): PreparedPullRequest | { refusal: string } {
+}): PreparedChangeRequest | { refusal: string } {
 	const template = templateOf({ worktree: params.worktree, refs: params.templateRefs ?? ['HEAD'] })
 	if ('refusal' in template) return template
-	const sources = readPullRequestSources(params)
+	const sources = readChangeRequestSources(params)
 	if ('refusal' in sources) return sources
 	const forged = recordValueFault(sources)
 	if (forged !== undefined)
 		return {
-			refusal: PULL_REQUEST_LINES.recordValue
+			refusal: CHANGE_REQUEST_LINES.recordValue
 				.replace('{record}', forged.record)
 				.replace('{field}', forged.field),
 		}
@@ -94,7 +94,7 @@ export function preparePullRequest(params: {
 	})
 	if (refused !== undefined)
 		return {
-			refusal: PULL_REQUEST_LINES.refused
+			refusal: CHANGE_REQUEST_LINES.refused
 				.replace('{label}', refused.label)
 				.replace('{word}', () => (refused.word === undefined ? '' : ` \`${refused.word}\``))
 				.replace('{record}', () => refused.record),
@@ -118,20 +118,20 @@ function templateOf(params: {
 	if (usable?.text !== undefined) return { text: usable.text }
 	const [first] = reads
 	if (first?.text === undefined)
-		return { refusal: PULL_REQUEST_LINES.noTemplateFile.replace('{template}', TEMPLATE_PATH) }
+		return { refusal: CHANGE_REQUEST_LINES.noTemplateFile.replace('{template}', TEMPLATE_PATH) }
 	return {
-		refusal: PULL_REQUEST_LINES.noTemplate
+		refusal: CHANGE_REQUEST_LINES.noTemplate
 			.replace('{template}', TEMPLATE_PATH)
 			.replace('{fault}', () => first.fault ?? ''),
 	}
 }
 
 /** The lot's sources for its pull request; the refusal when its brief does not read or names no commit message. */
-export function readPullRequestSources(params: {
+export function readChangeRequestSources(params: {
 	lotFolder: string
 	worktree: string
 	baseRef: string
-}): PullRequestSources | { refusal: string } {
+}): ChangeRequestSources | { refusal: string } {
 	const briefPath = join(params.lotFolder, STORE_FILES.brief)
 	let brief: Record<string, unknown>
 	try {
@@ -169,7 +169,7 @@ export function readPullRequestSources(params: {
 	})
 	const changelog = changelogOf({ worktree: params.worktree, changes })
 	const docsPassed = docsPassedOn({ worktree: params.worktree, treeHash })
-	const dependsOn = stackParentPullOf({ lotFolder: params.lotFolder })
+	const dependsOn = stackParentChangeRequestOf({ lotFolder: params.lotFolder })
 	const overlaps = readLotOverlaps({ lotFolder: params.lotFolder }).overlaps.map((record) => ({
 		lot: record.lot,
 		reason: record.reason,
@@ -253,21 +253,21 @@ function bodyQualityOf(params: { worktree: string; base: string }): BodyQuality 
 }
 
 /** The pull request number the lot's stack parent landed through (its `landing.json`); undefined when none. */
-function stackParentPullOf(params: { lotFolder: string }): number | undefined {
+function stackParentChangeRequestOf(params: { lotFolder: string }): number | undefined {
 	const stack = readStackRecord(params)
 	if (stack === undefined) return undefined
 	return readLanding({ lotFolder: join(dirname(params.lotFolder), stack.parent) })?.number
 }
 
 function unreadBrief(params: { brief: string; reason: string }): string {
-	return PULL_REQUEST_LINES.unreadBrief
+	return CHANGE_REQUEST_LINES.unreadBrief
 		.replace('{brief}', () => params.brief)
 		.replace('{reason}', () => params.reason)
 }
 
 /** The steps of the brief as the body shows them: their titles and behaviours; a malformed one left out. */
-function stepsOf(steps: unknown[]): PullRequestStep[] {
-	return steps.flatMap(function stepOf(step): PullRequestStep[] {
+function stepsOf(steps: unknown[]): ChangeRequestStep[] {
+	return steps.flatMap(function stepOf(step): ChangeRequestStep[] {
 		const { title, behaviours } = (step ?? {}) as { title?: unknown; behaviours?: unknown }
 		if (typeof title !== 'string' || !Array.isArray(behaviours)) return []
 		return [
@@ -314,7 +314,7 @@ function changedFilesOf(params: { worktree: string; base: string }): ChangedFile
 function changelogOf(params: {
 	worktree: string
 	changes: ChangedFile[]
-}): PullRequestChangelog | undefined {
+}): ChangeRequestChangelog | undefined {
 	const written = params.changes
 		.filter((change) => change.status === ADDED_STATUS && FRAGMENT_PATTERN.test(change.path))
 		.map((change) => change.path)
@@ -386,7 +386,7 @@ function referencePatternsOf(params: {
 		}
 	} catch (error) {
 		return {
-			refusal: PULL_REQUEST_LINES.unchecked.replace('{reason}', () => (error as Error).message),
+			refusal: CHANGE_REQUEST_LINES.unchecked.replace('{reason}', () => (error as Error).message),
 		}
 	}
 }

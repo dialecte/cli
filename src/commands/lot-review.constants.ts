@@ -9,9 +9,9 @@ export const LOT_REVIEW_OPTIONS = ['round'] as const
 export const LOT_REVIEW_LINES = {
 	prefix: 'lot review: ',
 	header: 'lot review {lot} · {state} · {branch}',
-	noPullRequest: 'no pull request yet: dialecte lot land {lot} opens it',
-	pullRequestGone: 'pull request #{number} cannot be found',
-	pullRequest: 'pull request #{number}{draft} · {url}',
+	noChangeRequest: 'no pull request yet: dialecte lot land {lot} opens it',
+	changeRequestGone: 'pull request #{number} cannot be found',
+	changeRequest: 'pull request #{number}{draft} · {url}',
 	draft: ' draft',
 	notOpen: ' {state}',
 	heads: 'heads: pull request {pushed}, landed {landed}, worktree {head}',
@@ -39,7 +39,7 @@ export const LOT_REVIEW_LINES = {
 	files: 'files: {files}',
 	filesOpened: 'files: {files} opened',
 	pulled: 'lot review: {id} {severity} {at} from comment {comment}',
-	pullCut: 'lot review: the pull stopped after {done}: {reason}',
+	commentsCut: 'lot review: the pull stopped after {done}: {reason}',
 	pulledNone: 'lot review: already: every comment of pull request #{number} is a finding',
 	filesNotOpened: 'files: {files} (not opened: {refusal})',
 } as const

@@ -1,4 +1,4 @@
-import type { HostAdapter, PullRequest } from '../src/lib/host/host.types.ts'
+import type { HostAdapter, ChangeRequest } from '../src/lib/host/host.types.ts'
 
 /** A repository with a bare origin, `main` pushed, and a lot branch cut from it with one commit. */
 export type LandingRepository = {
@@ -21,8 +21,8 @@ export type OriginMerge = 'fast-forward' | 'merge-commit' | 'squash'
 
 /** What the fake host answers a pull request read with: by number, by branch, or its refusal. */
 export type LandingHostAnswers = {
-	byNumber?: Record<number, PullRequest>
-	byBranch?: Record<string, PullRequest>
+	byNumber?: Record<number, ChangeRequest>
+	byBranch?: Record<string, ChangeRequest>
 	refusal?: string
 }
 

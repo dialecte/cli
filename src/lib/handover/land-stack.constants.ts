@@ -5,7 +5,7 @@ export const STACK_LANDING_LINES = {
 		'lot land: {lot} stacks on {parent}, whose records do not read: dialecte lot status {parent} says how, nothing pushed',
 	parentNotRecorded:
 		'lot land: {lot} stacks on {parent}, merged, whose landed fact cannot be written ({reason}): nothing pushed',
-	noParentPull:
+	noParentChangeRequest:
 		'lot land: {lot} stacks on {parent}, which has no pull request yet: lot land {parent} first, nothing pushed',
 	conflict:
 		'lot land: rebasing {lot} onto {onto} conflicts in {files}: the rebase is undone, nothing pushed',

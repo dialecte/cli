@@ -1,6 +1,6 @@
 /**
  * The pure half of `lot pr`: a lot's pull request text composed from its read records through the repository's one
- * template. No file, git or host read here (`pull-request-sources.ts` gathers). The body is the lot's final state:
+ * template. No file, git or host read here (`change-request-sources.ts` gathers). The body is the lot's final state:
  * each part from the record as it stands, "not recorded" for a record missing, never a guess.
  */
 import { counted } from '../counted.ts'
@@ -19,11 +19,11 @@ import {
 	NOT_RECORDED,
 	PART_MARKER_PATTERN,
 	PLACEHOLDER_BODY_PATTERN,
-	PULL_REQUEST_LINES,
+	CHANGE_REQUEST_LINES,
 	RENDERER_COMMENT_PATTERN,
 	REVIEWER_KINDS,
 	TEMPLATE_FAULTS,
-} from './pull-request.constants.ts'
+} from './change-request.constants.ts'
 
 import type {
 	DesignRow,
@@ -32,15 +32,15 @@ import type {
 	VerdictRow,
 } from '../review-rounds/review-record.types.ts'
 import type { TestsRecordGate, TestsRecordTdd } from '../tdd/tests-record.types.ts'
-import type { PullRequestSources, PullRequestText } from './pull-request.types.ts'
+import type { ChangeRequestSources, ChangeRequestText } from './change-request.types.ts'
 
 /** The title and body of the lot, or the refusal of a template that is not the renderer's. */
-export function composePullRequest(params: {
+export function composeChangeRequest(params: {
 	template: string
-	sources: PullRequestSources
+	sources: ChangeRequestSources
 	/** A person's part of the current body (`keptTextOf`); the template's own when undefined. */
 	kept: string | undefined
-}): PullRequestText | { refusal: string } {
+}): ChangeRequestText | { refusal: string } {
 	const fault = templateFaultOf(params.template)
 	if (fault !== undefined) return { refusal: fault }
 	const lines = linesOf(params.template)
@@ -110,7 +110,7 @@ export function keptPartOf(params: {
 	const heading = lines
 		.slice(lines.map(markerOf).indexOf(KEPT_PART) + 1)
 		.find((line) => line.trim() !== '')
-	return { refusal: PULL_REQUEST_LINES.keptMissing.replace('{heading}', () => heading ?? '') }
+	return { refusal: CHANGE_REQUEST_LINES.keptMissing.replace('{heading}', () => heading ?? '') }
 }
 
 /** The lines of a text, whatever line ends another system gave it. */
@@ -124,7 +124,7 @@ function markerOf(line: string): string | undefined {
 }
 
 /** The lines of one filled part. */
-function partLines(params: { part: string; sources: PullRequestSources }): string[] {
+function partLines(params: { part: string; sources: ChangeRequestSources }): string[] {
 	const { sources } = params
 	switch (params.part) {
 		case 'summary':
@@ -168,7 +168,7 @@ function partLines(params: { part: string; sources: PullRequestSources }): strin
  * One line per overlap the lot accepted (the same lot and reason once): the other lot by its index, never its branch's
  * words, and why; `none` without one.
  */
-function overlapLines(sources: PullRequestSources): string[] {
+function overlapLines(sources: ChangeRequestSources): string[] {
 	const overlaps = sources.overlaps ?? []
 	if (overlaps.length === 0) return [BODY_LINES.noOverlaps]
 	const lines = overlaps.map(function overlapLine(overlap) {
@@ -186,7 +186,7 @@ function indexOfLot(name: string): string {
 }
 
 /** The summary, then the brief's other commit messages: one squash commit holds them all. */
-function summaryLines(sources: PullRequestSources): string[] {
+function summaryLines(sources: ChangeRequestSources): string[] {
 	const others = sources.messages.slice(1)
 	return [
 		sources.summary ?? NOT_RECORDED,
@@ -197,7 +197,7 @@ function summaryLines(sources: PullRequestSources): string[] {
 }
 
 /** Each step's title in bold, then its behaviours; never its spec. */
-function behaviourLines(sources: PullRequestSources): string[] {
+function behaviourLines(sources: ChangeRequestSources): string[] {
 	if (sources.steps === undefined || sources.steps.length === 0) return [NOT_RECORDED]
 	return sources.steps
 		.flatMap(function stepLines(step) {
@@ -207,7 +207,7 @@ function behaviourLines(sources: PullRequestSources): string[] {
 }
 
 /** The fragments' sections, one heading per section in the order first met; or the no-entry note's reason. */
-function changelogLines(sources: PullRequestSources): string[] {
+function changelogLines(sources: ChangeRequestSources): string[] {
 	const { changelog } = sources
 	if (changelog === undefined) return [NOT_RECORDED]
 	if (changelog.kind === 'none')
@@ -224,7 +224,7 @@ function changelogLines(sources: PullRequestSources): string[] {
 }
 
 /** One line per part of `tests.json`: its counts on the tree it lands, "stale" for another tree. */
-function testsLines(sources: PullRequestSources): string[] {
+function testsLines(sources: ChangeRequestSources): string[] {
 	const { tests, treeHash } = sources
 	if (tests?.tdd === undefined && tests?.gate === undefined) return [NOT_RECORDED]
 	return [
@@ -262,7 +262,7 @@ function gateLine(params: { gate: TestsRecordGate; treeHash: string }): string {
 }
 
 /** The findings as a table (how each closed), then each review's verdict. */
-function reviewLines(sources: PullRequestSources): string[] {
+function reviewLines(sources: ChangeRequestSources): string[] {
 	const { review } = sources
 	if (review === undefined) return [NOT_RECORDED]
 	const findings =
@@ -333,7 +333,7 @@ export function reviewerName(by: ReviewerOf): string {
 }
 
 /** The author's boxes, each ticked from its record; none ticked on a guess. */
-function checklistLines(sources: PullRequestSources): string[] {
+function checklistLines(sources: ChangeRequestSources): string[] {
 	const boxes: [string, boolean][] = [
 		[
 			sources.tests?.gate === undefined
@@ -352,7 +352,7 @@ function checklistLines(sources: PullRequestSources): string[] {
  * Every case of the change done (green, or accepted / revised / unchanged) on the landed tree, and a gate record of
  * that tree without a failure; with no gate record the box stays for CI, the proof.
  */
-function testsDone(sources: PullRequestSources): boolean {
+function testsDone(sources: ChangeRequestSources): boolean {
 	const { tdd, gate } = sources.tests ?? {}
 	if (tdd === undefined || tdd.stateHash !== sources.treeHash || tdd.cases.length === 0)
 		return false

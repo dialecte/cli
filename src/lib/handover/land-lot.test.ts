@@ -16,7 +16,7 @@ import {
 	writeFiles,
 } from '../../../test/scratch-repository.ts'
 import { SCRATCH_GIT_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
-import { TEMPLATE_PATH } from '../pr/pull-request.constants.ts'
+import { TEMPLATE_PATH } from '../pr/change-request.constants.ts'
 import { readStoreEntries, registeredEntryOf } from './handover-store-read.ts'
 import { handoverStoreOf, recordHandoverState, registerHandover } from './handover-store.ts'
 import { landLot } from './land-lot.ts'
@@ -28,7 +28,7 @@ afterEach(function restoreEnvironment() {
 })
 
 import type { LandingRepository } from '../../../test/land-lot.types.ts'
-import type { HostAdapter, PullRequest } from '../host/host.types.ts'
+import type { HostAdapter, ChangeRequest } from '../host/host.types.ts'
 
 const NOW = new Date('2026-11-16T03:00:00Z')
 
@@ -73,12 +73,12 @@ function approveHead(params: { repository: LandingRepository; head: string }): v
 }
 
 /** Pull request #7 of the lot in `state`, its head at `head`, ready and not queued unless said. */
-function pullRequestOf(params: {
-	state: PullRequest['state']
+function changeRequestOf(params: {
+	state: ChangeRequest['state']
 	head: string
 	draft?: boolean
 	queued?: boolean
-}): PullRequest {
+}): ChangeRequest {
 	return {
 		number: 7,
 		url: 'https://host.test/pull/7',
@@ -287,7 +287,7 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		({ draft, queued, taken }) => {
 			const repository = landingRepository()
 			const { host, calls } = recordingHost({
-				existing: pullRequestOf({ state: 'open', head: '', draft, queued }),
+				existing: changeRequestOf({ state: 'open', head: '', draft, queued }),
 			})
 
 			land({ repository, host })
@@ -300,7 +300,7 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		const repository = landingRepository()
 		approveHead({ repository, head: tipOf(repository) })
 		const { host, calls } = recordingHost({
-			existing: pullRequestOf({ state: 'open', head: tipOf(repository), queued: true }),
+			existing: changeRequestOf({ state: 'open', head: tipOf(repository), queued: true }),
 		})
 
 		const landed = land({ repository, host })
@@ -315,7 +315,7 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		const repository = landingRepository()
 		approveHead({ repository, head: 'a'.repeat(40) })
 		const { host, calls } = recordingHost({
-			existing: pullRequestOf({ state: 'open', head: tipOf(repository), queued: true }),
+			existing: changeRequestOf({ state: 'open', head: tipOf(repository), queued: true }),
 		})
 
 		const landed = land({ repository, host })
@@ -329,23 +329,23 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 	it('a queued pull request and the edit refused after the push → exit 1, the pull request already out of the queue', () => {
 		const repository = landingRepository()
 		const { host, calls } = recordingHost({
-			existing: pullRequestOf({ state: 'open', head: '', queued: true }),
-			refusals: { editPullRequest: 'HTTP 502' },
+			existing: changeRequestOf({ state: 'open', head: '', queued: true }),
+			refusals: { editChangeRequest: 'HTTP 502' },
 		})
 
 		const landed = land({ repository, host })
 
 		expect({ exitCode: landed.exitCode, calls }).toEqual({
 			exitCode: 1,
-			calls: ['read feat/x', 'draft-back 7 queued ready', 'editPullRequest refused'],
+			calls: ['read feat/x', 'draft-back 7 queued ready', 'editChangeRequest refused'],
 		})
 	})
 
 	it('a queued pull request the host refuses to take out of the queue → exit 1, nothing pushed, the refusal named', () => {
 		const repository = landingRepository()
 		const { host } = recordingHost({
-			existing: pullRequestOf({ state: 'open', head: '', queued: true }),
-			refusals: { draftPullRequest: 'HTTP 502' },
+			existing: changeRequestOf({ state: 'open', head: '', queued: true }),
+			refusals: { draftChangeRequest: 'HTTP 502' },
 		})
 
 		const landed = land({ repository, host })
@@ -363,7 +363,7 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 	it('its pull request ready, in the merge queue without auto-merge, a new head to push → taken out of the queue before the push', () => {
 		const repository = landingRepository()
 		const { host, calls } = recordingHost({
-			existing: pullRequestOf({ state: 'open', head: '' }),
+			existing: changeRequestOf({ state: 'open', head: '' }),
 			mergeQueue: [7],
 		})
 
@@ -379,7 +379,7 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 	it('a closed pull request of the branch → never reused: a new draft opened, the closed one never taken back', () => {
 		const repository = landingRepository()
 		const { host, calls } = recordingHost({
-			existing: pullRequestOf({ state: 'closed', head: '' }),
+			existing: changeRequestOf({ state: 'closed', head: '' }),
 		})
 
 		land({ repository, host })
@@ -392,7 +392,7 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		const { host, calls } = recordingHost()
 		land({ repository, host })
 		const merged = recordingHost({
-			existing: pullRequestOf({ state: 'merged', head: tipOf(repository) }),
+			existing: changeRequestOf({ state: 'merged', head: tipOf(repository) }),
 		})
 
 		const landed = land({ repository, host: merged.host })
@@ -418,7 +418,7 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 			args: ['commit', '-q', '--allow-empty', '-m', 'feat(x): more'],
 		})
 		const { host, calls } = recordingHost({
-			existing: pullRequestOf({ state: 'merged', head: mergedHead }),
+			existing: changeRequestOf({ state: 'merged', head: mergedHead }),
 		})
 
 		expect({
@@ -432,7 +432,7 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 					expect.stringMatching(/1 commit\(s\) made since its landing: .*they land in a new lot/),
 				]),
 			},
-			fact: { how: 'host', tip: mergedHead, pull: { number: 7 } },
+			fact: { how: 'host', tip: mergedHead, changeRequest: { number: 7 } },
 			calls: ['read 7'],
 		})
 	})
@@ -453,7 +453,7 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 			root: repository.worktree,
 			args: ['commit', '-q', '--amend', '--allow-empty', '-m', 'feat(x): x answers one, again'],
 		})
-		const again = recordingHost({ existing: pullRequestOf({ state: 'open', head: '' }) })
+		const again = recordingHost({ existing: changeRequestOf({ state: 'open', head: '' }) })
 
 		const landed = land({ repository, host: again.host })
 
@@ -627,7 +627,7 @@ describe(
 			const repository = landingRepository()
 			const refusing: HostAdapter = {
 				...recordingHost().host,
-				openPullRequest: () => ({ refusal: 'gh pr create: offline' }),
+				openChangeRequest: () => ({ refusal: 'gh pr create: offline' }),
 			}
 			land({ repository, host: refusing })
 			writeFiles({ root: repository.worktree, files: { 'src/x.ts': 'export const x = 2\n' } })
@@ -665,7 +665,7 @@ describe(
 			const repository = landingRepository()
 			const { host, calls, bodies } = recordingHost({
 				existing: {
-					...pullRequestOf({ state: 'open', head: '' }),
+					...changeRequestOf({ state: 'open', head: '' }),
 					title: 'merge: main',
 					body: '',
 				},
@@ -758,7 +758,7 @@ describe(
 			land({ repository, host: first.host })
 			const { host, calls } = recordingHost({
 				existing: {
-					...pullRequestOf({ state: 'open', head: '' }),
+					...changeRequestOf({ state: 'open', head: '' }),
 					body: first.bodies[0].replaceAll('\n', '\r\n'),
 				},
 			})
@@ -773,7 +773,7 @@ describe(
 			const kept =
 				'### Checklist for the reviewer when doing the PR review\n\n- [x] Tests are complete'
 			const { host, bodies } = recordingHost({
-				existing: { ...pullRequestOf({ state: 'open', head: '' }), body: `old\n\n${kept}\n` },
+				existing: { ...changeRequestOf({ state: 'open', head: '' }), body: `old\n\n${kept}\n` },
 			})
 
 			land({ repository, host })
@@ -784,7 +784,7 @@ describe(
 		it('the host refusing the edit of a reused pull request → exit 1, the landing still recorded', () => {
 			const repository = landingRepository()
 			const { host } = recordingHost({
-				existing: { ...pullRequestOf({ state: 'open', head: '' }), body: '' },
+				existing: { ...changeRequestOf({ state: 'open', head: '' }), body: '' },
 				editRefusal: 'gh pr edit: HTTP 403',
 			})
 

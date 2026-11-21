@@ -17,7 +17,7 @@ import {
 	LOT_FILE,
 	LOT_TEXT,
 	NO_EDITOR,
-	PULL_URL,
+	CHANGE_REQUEST_URL,
 } from './landing-repository.constants.ts'
 import {
 	cloneRepository,
@@ -27,7 +27,7 @@ import {
 	writeFiles,
 } from './scratch-repository.ts'
 
-import type { PullRequest } from '../src/lib/host/host.types.ts'
+import type { ChangeRequest } from '../src/lib/host/host.types.ts'
 import type {
 	LandingHost,
 	LandingHostAnswers,
@@ -104,16 +104,16 @@ export function editOnOrigin(params: {
 }
 
 /** A pull request of the fake host. */
-export function pullRequestOf(params: {
+export function changeRequestOf(params: {
 	number: number
-	state: PullRequest['state']
+	state: ChangeRequest['state']
 	head: string
 	draft?: boolean
 	queued?: boolean
-}): PullRequest {
+}): ChangeRequest {
 	return {
 		number: params.number,
-		url: PULL_URL.replace('{number}', String(params.number)),
+		url: CHANGE_REQUEST_URL.replace('{number}', String(params.number)),
 		title: 'feat(x): x',
 		body: '',
 		state: params.state,
@@ -129,7 +129,7 @@ export function landingHostOf(answers: LandingHostAnswers): LandingHost {
 	const asked: string[] = []
 	const host = {
 		...recordingHost().host,
-		readPullRequest: function readPullRequest(call: { root: string; ref: string }) {
+		readChangeRequest: function readChangeRequest(call: { root: string; ref: string }) {
 			asked.push(call.ref)
 			if (answers.refusal !== undefined) return { refusal: answers.refusal }
 			const number = Number(call.ref)

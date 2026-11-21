@@ -18,7 +18,7 @@ export const LOT_APPROVE_LINES = {
 		"lot approve: {package} lots are approved by a person: --by orchestrator is for the cli's own lots",
 	notApprovable: 'lot approve: {lot} is {state}: only a lot at work is approved',
 	noLanding: 'lot approve: {lot} has no pull request yet: dialecte lot land {lot} opens it',
-	noPullRequest: 'lot approve: pull request #{number} of {lot} cannot be found',
+	noChangeRequest: 'lot approve: pull request #{number} of {lot} cannot be found',
 	notOpen: 'pull request #{number} is {state}',
 	lotNotApprovable: 'the lot is {state}',
 	worktreeElsewhere:

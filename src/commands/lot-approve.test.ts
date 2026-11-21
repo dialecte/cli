@@ -11,7 +11,7 @@ import { FORBIDDEN_WORD, LOT_NAME } from '../../test/lot-pr.constants.ts'
 import {
 	OTHER_HEAD,
 	OTHER_PACKAGE,
-	REVIEW_PULL_NUMBER,
+	REVIEW_CHANGE_REQUEST_NUMBER,
 	REVIEWER,
 } from '../../test/lot-review.constants.ts'
 import { landedLot } from '../../test/lot-review.ts'
@@ -25,10 +25,13 @@ import { runLotApprove } from './lot-approve.ts'
 
 import { describe, expect, it } from 'vitest'
 
-import type { PullRequestChecks } from '../lib/host/host.types.ts'
+import type { ChangeRequestChecks } from '../lib/host/host.types.ts'
 
 /** The checks on `head` in `state`, naming one failing or pending check when the state asks for it. */
-function checksOn(params: { head: string; state: PullRequestChecks['state'] }): PullRequestChecks {
+function checksOn(params: {
+	head: string
+	state: ChangeRequestChecks['state']
+}): ChangeRequestChecks {
 	return {
 		head: params.head,
 		state: params.state,
@@ -41,7 +44,7 @@ describe('dialecte lot approve', { timeout: STORE_CASE_TIMEOUT }, () => {
 	it('green checks on the landed head and no open blocking finding → a person approves, the body rendered again, queued', () => {
 		const lot = landedLot()
 		const { host, calls, bodies } = recordingHost({
-			existing: lot.pullRequest,
+			existing: lot.changeRequest,
 			checks: checksOn({ head: lot.head, state: 'green' }),
 		})
 
@@ -54,10 +57,10 @@ describe('dialecte lot approve', { timeout: STORE_CASE_TIMEOUT }, () => {
 
 		expect(result.exitCode).toBe(0)
 		expect(calls).toEqual([
-			`read ${REVIEW_PULL_NUMBER}`,
-			`checks ${REVIEW_PULL_NUMBER}`,
-			`edit ${REVIEW_PULL_NUMBER} "feat(x): x answers one"`,
-			`queue ${REVIEW_PULL_NUMBER}`,
+			`read ${REVIEW_CHANGE_REQUEST_NUMBER}`,
+			`checks ${REVIEW_CHANGE_REQUEST_NUMBER}`,
+			`edit ${REVIEW_CHANGE_REQUEST_NUMBER} "feat(x): x answers one"`,
+			`queue ${REVIEW_CHANGE_REQUEST_NUMBER}`,
 		])
 		const review = readFileSync(join(lot.lotFolder, STORE_FILES.review), 'utf8')
 			.trim()
@@ -74,7 +77,7 @@ describe('dialecte lot approve', { timeout: STORE_CASE_TIMEOUT }, () => {
 		expect(bodies.at(-1)).toContain('- person: approve')
 		expect(bodies.at(-1)).not.toContain(REVIEWER)
 		expect(result.output).toBe(
-			`lot approve: ${LOT_NAME} approved by ${REVIEWER} on ${lot.head.slice(0, 12)}, pull request #${REVIEW_PULL_NUMBER} queued`,
+			`lot approve: ${LOT_NAME} approved by ${REVIEWER} on ${lot.head.slice(0, 12)}, pull request #${REVIEW_CHANGE_REQUEST_NUMBER} queued`,
 		)
 	})
 
@@ -85,7 +88,7 @@ describe('dialecte lot approve', { timeout: STORE_CASE_TIMEOUT }, () => {
 	])('$state checks → refused, nothing recorded, nothing queued', ({ state, why }) => {
 		const lot = landedLot()
 		const { host, calls } = recordingHost({
-			existing: lot.pullRequest,
+			existing: lot.changeRequest,
 			checks: checksOn({ head: lot.head, state }),
 		})
 
@@ -99,14 +102,17 @@ describe('dialecte lot approve', { timeout: STORE_CASE_TIMEOUT }, () => {
 		expect(result.output).toBe(
 			`lot approve: ${LOT_NAME} not approved: ${why}; nothing recorded, nothing queued`,
 		)
-		expect(calls).toEqual([`read ${REVIEW_PULL_NUMBER}`, `checks ${REVIEW_PULL_NUMBER}`])
+		expect(calls).toEqual([
+			`read ${REVIEW_CHANGE_REQUEST_NUMBER}`,
+			`checks ${REVIEW_CHANGE_REQUEST_NUMBER}`,
+		])
 		expect(existsSync(join(lot.lotFolder, STORE_FILES.approvals))).toBe(false)
 	})
 
 	it("the pull request's head is not the lot's landed head → refused naming both heads", () => {
-		const lot = landedLot({ pullHead: OTHER_HEAD })
+		const lot = landedLot({ changeRequestHead: OTHER_HEAD })
 		const { host, calls } = recordingHost({
-			existing: lot.pullRequest,
+			existing: lot.changeRequest,
 			checks: checksOn({ head: OTHER_HEAD, state: 'green' }),
 		})
 
@@ -118,9 +124,9 @@ describe('dialecte lot approve', { timeout: STORE_CASE_TIMEOUT }, () => {
 
 		expect(result.exitCode).toBe(1)
 		expect(result.output).toBe(
-			`lot approve: ${LOT_NAME} not approved: pull request #${REVIEW_PULL_NUMBER} is at ${OTHER_HEAD.slice(0, 12)}, the lot landed ${lot.head.slice(0, 12)} (lot land ${LOT_NAME} pushes it); nothing recorded, nothing queued`,
+			`lot approve: ${LOT_NAME} not approved: pull request #${REVIEW_CHANGE_REQUEST_NUMBER} is at ${OTHER_HEAD.slice(0, 12)}, the lot landed ${lot.head.slice(0, 12)} (lot land ${LOT_NAME} pushes it); nothing recorded, nothing queued`,
 		)
-		expect(calls).not.toContain(`queue ${REVIEW_PULL_NUMBER}`)
+		expect(calls).not.toContain(`queue ${REVIEW_CHANGE_REQUEST_NUMBER}`)
 		expect(existsSync(join(lot.lotFolder, STORE_FILES.approvals))).toBe(false)
 	})
 
@@ -143,7 +149,7 @@ describe('dialecte lot approve', { timeout: STORE_CASE_TIMEOUT }, () => {
 			finding: 'a word',
 		})
 		const { host, calls } = recordingHost({
-			existing: lot.pullRequest,
+			existing: lot.changeRequest,
 			checks: checksOn({ head: lot.head, state: 'green' }),
 		})
 
@@ -157,7 +163,7 @@ describe('dialecte lot approve', { timeout: STORE_CASE_TIMEOUT }, () => {
 		expect(result.output).toBe(
 			`lot approve: ${LOT_NAME} not approved: findings open: R1-1 blocking; nothing recorded, nothing queued`,
 		)
-		expect(calls).not.toContain(`queue ${REVIEW_PULL_NUMBER}`)
+		expect(calls).not.toContain(`queue ${REVIEW_CHANGE_REQUEST_NUMBER}`)
 	})
 
 	it('an open should-fix finding beside a nit → refused naming the should-fix only, a nit never blocks', () => {
@@ -172,7 +178,7 @@ describe('dialecte lot approve', { timeout: STORE_CASE_TIMEOUT }, () => {
 				finding: 'a point',
 			})
 		const { host, calls } = recordingHost({
-			existing: lot.pullRequest,
+			existing: lot.changeRequest,
 			checks: checksOn({ head: lot.head, state: 'green' }),
 		})
 
@@ -186,13 +192,13 @@ describe('dialecte lot approve', { timeout: STORE_CASE_TIMEOUT }, () => {
 		expect(result.output).toBe(
 			`lot approve: ${LOT_NAME} not approved: findings open: R1-2 should-fix; nothing recorded, nothing queued`,
 		)
-		expect(calls).not.toContain(`queue ${REVIEW_PULL_NUMBER}`)
+		expect(calls).not.toContain(`queue ${REVIEW_CHANGE_REQUEST_NUMBER}`)
 	})
 
 	it('--by orchestrator on a package other than the cli → refused before the host is asked, a person approves', () => {
 		const lot = landedLot({ packageName: OTHER_PACKAGE })
 		const { host, calls } = recordingHost({
-			existing: lot.pullRequest,
+			existing: lot.changeRequest,
 			checks: checksOn({ head: lot.head, state: 'green' }),
 		})
 
@@ -212,7 +218,7 @@ describe('dialecte lot approve', { timeout: STORE_CASE_TIMEOUT }, () => {
 	it('--by orchestrator on the cli → approved, the body naming the orchestrator', () => {
 		const lot = landedLot()
 		const { host, calls, bodies } = recordingHost({
-			existing: lot.pullRequest,
+			existing: lot.changeRequest,
 			checks: checksOn({ head: lot.head, state: 'green' }),
 		})
 
@@ -223,7 +229,7 @@ describe('dialecte lot approve', { timeout: STORE_CASE_TIMEOUT }, () => {
 		})
 
 		expect(result.exitCode).toBe(0)
-		expect(calls.at(-1)).toBe(`queue ${REVIEW_PULL_NUMBER}`)
+		expect(calls.at(-1)).toBe(`queue ${REVIEW_CHANGE_REQUEST_NUMBER}`)
 		expect(bodies.at(-1)).toContain('- orchestrator: approve')
 	})
 
@@ -233,7 +239,7 @@ describe('dialecte lot approve', { timeout: STORE_CASE_TIMEOUT }, () => {
 			root: lot.workspace.repository,
 			args: ['config', 'dialecte.forbiddenWords', FORBIDDEN_WORD],
 		})
-		const { host, calls } = recordingHost({ existing: lot.pullRequest })
+		const { host, calls } = recordingHost({ existing: lot.changeRequest })
 
 		const result = runLotApprove({
 			cwd: lot.workspace.repository,
@@ -250,7 +256,7 @@ describe('dialecte lot approve', { timeout: STORE_CASE_TIMEOUT }, () => {
 	it('a lot never landed → refused naming lot land', () => {
 		const lot = landedLot()
 		rmSync(join(lot.lotFolder, LANDING_FILE))
-		const { host, calls } = recordingHost({ existing: lot.pullRequest })
+		const { host, calls } = recordingHost({ existing: lot.changeRequest })
 
 		const result = runLotApprove({
 			cwd: lot.workspace.repository,
@@ -267,7 +273,7 @@ describe('dialecte lot approve', { timeout: STORE_CASE_TIMEOUT }, () => {
 
 	it('no --by → usage, exit 2', () => {
 		const lot = landedLot()
-		const { host, calls } = recordingHost({ existing: lot.pullRequest })
+		const { host, calls } = recordingHost({ existing: lot.changeRequest })
 
 		const result = runLotApprove({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
 

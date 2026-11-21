@@ -19,13 +19,13 @@ import {
 	PRIVATE_PATH_LABEL,
 	TOKEN_SEPARATOR_PATTERN,
 	TOKEN_TRIM_PATTERN,
-} from './pull-request.constants.ts'
+} from './change-request.constants.ts'
 
 import type { ReferencePattern } from '../rules/committed-text.types.ts'
-import type { PublicPiece, PublicRefusal, PullRequestSources } from './pull-request.types.ts'
+import type { PublicPiece, PublicRefusal, ChangeRequestSources } from './change-request.types.ts'
 
 /** The free text of the records the body shows, each with its record; the cli's own rows are none. */
-export function publicPiecesOf(sources: PullRequestSources): PublicPiece[] {
+export function publicPiecesOf(sources: ChangeRequestSources): PublicPiece[] {
 	const messages = sources.messages.map((text, index) => ({
 		record: PIECE_RECORDS.message.replace('{index}', String(index)),
 		text,

@@ -22,7 +22,7 @@ import { UNTRACKED_STATUS_PREFIX } from './land-lot.constants.ts'
 import { readLanding } from './land-record.ts'
 import { STACK_CONFLICT_EXIT, STACK_LANDING_LINES } from './land-stack.constants.ts'
 
-import type { HostAdapter, PullRequest } from '../host/host.types.ts'
+import type { HostAdapter, ChangeRequest } from '../host/host.types.ts'
 import type { LandingState } from '../landing/landing-state.types.ts'
 import type { LotBase } from '../landing/lot-base.types.ts'
 import type { LotLanding } from '../landing/lot-landing.types.ts'
@@ -69,14 +69,19 @@ export function prepareStackLanding(params: {
 	})
 	if ('refusal' in base) return { exitCode: 1, refusal: `lot land: ${base.refusal}` }
 	if (parent.landing.kind === 'merged')
-		return offMergedParent({ ...params, record, lotBase: base, parentPull: parent.pullRequest })
+		return offMergedParent({
+			...params,
+			record,
+			lotBase: base,
+			parentChangeRequest: parent.changeRequest,
+		})
 	// the parent is open: its pull request is what the child's stacks on
-	const parentPull = parent.pullRequest
-	if (parentPull === undefined)
+	const parentChangeRequest = parent.changeRequest
+	if (parentChangeRequest === undefined)
 		return {
 			exitCode: 1,
 			refusal: fillMessage({
-				template: STACK_LANDING_LINES.noParentPull,
+				template: STACK_LANDING_LINES.noParentChangeRequest,
 				values: { lot: params.lot, parent: record.parent },
 			}),
 		}
@@ -88,17 +93,21 @@ export function prepareStackLanding(params: {
 		: [
 				fillMessage({
 					template: STACK_LANDING_LINES.basedOn,
-					values: { number: String(parentPull.number), branch: parent.branch, why: support.why },
+					values: {
+						number: String(parentChangeRequest.number),
+						branch: parent.branch,
+						why: support.why,
+					},
 				}),
 			]
 	return {
-		pullBase: parent.branch,
+		changeRequestBase: parent.branch,
 		textBase: base.ref,
 		route: support.stacks ? 'native' : 'branch',
 		// a pull request a landing opened on a host with stacks was linked then: the landing refuses otherwise
 		linked: support.stacks && params.landing?.branch === params.branch,
 		parentMerged: false,
-		parentPull,
+		parentChangeRequest,
 		lines: [...note, ...restacked.lines],
 	}
 }
@@ -111,46 +120,46 @@ export function prepareStackLanding(params: {
  * @intent keep a stacked pull request on the right base
  * @internal
  */
-export function settleStackedPull(params: {
+export function settleStackedChangeRequest(params: {
 	worktree: string
 	host: HostAdapter
 	stack: StackLanding
-	pullRequest: PullRequest
+	changeRequest: ChangeRequest
 	opened: boolean
 }): { lines: string[] } | { refusal: string } {
-	const { host, stack, pullRequest, worktree } = params
+	const { host, stack, changeRequest, worktree } = params
 	const lines: string[] = []
-	const parentPull = stack.parentPull
+	const parentChangeRequest = stack.parentChangeRequest
 	if (
 		stack.route === 'native' &&
 		!stack.linked &&
 		!stack.parentMerged &&
-		parentPull !== undefined
+		parentChangeRequest !== undefined
 	) {
 		const linked = host.linkStack({
 			root: worktree,
-			parent: parentPull.url,
-			child: pullRequest.url,
+			parent: parentChangeRequest.url,
+			child: changeRequest.url,
 		})
 		if (linked !== undefined) return linked
 		lines.push(
 			fillMessage({
 				template: STACK_LANDING_LINES.linked,
-				values: { number: String(parentPull.number) },
+				values: { number: String(parentChangeRequest.number) },
 			}),
 		)
 	}
-	if (!params.opened && pullRequest.base !== stack.pullBase) {
-		const moved = host.retargetPullRequest({
+	if (!params.opened && changeRequest.base !== stack.changeRequestBase) {
+		const moved = host.retargetChangeRequest({
 			root: worktree,
-			number: pullRequest.number,
-			base: stack.pullBase,
+			number: changeRequest.number,
+			base: stack.changeRequestBase,
 		})
 		if (moved !== undefined) return moved
 		lines.push(
 			fillMessage({
 				template: STACK_LANDING_LINES.retargeted,
-				values: { number: String(pullRequest.number), base: stack.pullBase },
+				values: { number: String(changeRequest.number), base: stack.changeRequestBase },
 			}),
 		)
 	}
@@ -168,7 +177,7 @@ function readParent(params: {
 	host: HostAdapter
 	record: StackRecord
 	now: Date
-}): { branch: string; landing: LandingState; pullRequest?: PullRequest } | StackRefusal {
+}): { branch: string; landing: LandingState; changeRequest?: ChangeRequest } | StackRefusal {
 	const { record, lot } = params
 	const parentFolder = join(dirname(params.lotFolder), record.parent)
 	const read = readLotLanding({ lotFolder: parentFolder, root: params.worktree, host: params.host })
@@ -187,16 +196,16 @@ function readParent(params: {
 	if (state.kind === 'unlanded' && state.hostRefusal !== undefined)
 		return { exitCode: 1, refusal: `lot land: ${state.hostRefusal}` }
 	const branch = read.identity.branch
-	const pull = 'pull' in state ? state.pull : undefined
-	if (pull !== undefined) return { branch, landing: state, pullRequest: pull }
+	const changeRequest = 'changeRequest' in state ? state.changeRequest : undefined
+	if (changeRequest !== undefined) return { branch, landing: state, changeRequest: changeRequest }
 	const number = readLanding({ lotFolder: parentFolder })?.number
 	const asked =
 		number === undefined
 			? undefined
-			: params.host.readPullRequest({ root: params.worktree, ref: String(number) })
+			: params.host.readChangeRequest({ root: params.worktree, ref: String(number) })
 	if (asked !== undefined && 'refusal' in asked)
 		return { exitCode: 1, refusal: `lot land: ${asked.refusal}` }
-	return { branch, landing: state, ...(asked !== undefined && { pullRequest: asked }) }
+	return { branch, landing: state, ...(asked !== undefined && { changeRequest: asked }) }
 }
 
 /** The parent's landed fact written when its landing is proven merged; the refusal when it cannot be written. */
@@ -269,7 +278,7 @@ function offMergedParent(params: {
 	base: string
 	record: StackRecord
 	lotBase: LotBase
-	parentPull: PullRequest | undefined
+	parentChangeRequest: ChangeRequest | undefined
 	landing: LandingRecord | undefined
 }): StackLanding | StackRefusal {
 	const originBase = `${ORIGIN_BRANCH_REF_PREFIX}${params.base}`
@@ -280,12 +289,12 @@ function offMergedParent(params: {
 			: followHost({ ...params, remote: rewritten.remote, pushed: rewritten.pushed })
 	if ('refusal' in moved) return moved
 	return {
-		pullBase: params.base,
+		changeRequestBase: params.base,
 		textBase: originBase,
 		route: rewritten === undefined ? 'branch' : 'native',
 		linked: rewritten !== undefined,
 		parentMerged: true,
-		parentPull: params.parentPull,
+		parentChangeRequest: params.parentChangeRequest,
 		...(moved.lease !== undefined && { lease: moved.lease }),
 		lines: moved.lines,
 	}
@@ -319,7 +328,7 @@ function offParentCommits(params: {
 	originBase: string
 	record: StackRecord
 	lotBase: LotBase
-	parentPull: PullRequest | undefined
+	parentChangeRequest: ChangeRequest | undefined
 }): { lines: string[] } | StackRefusal {
 	const { worktree, lotBase } = params
 	const baseTip = readGit({ root: worktree, args: ['rev-parse', params.originBase] }).trim()
@@ -342,7 +351,9 @@ function offParentCommits(params: {
 					base: params.base,
 					commit: baseTip.slice(0, SHORT_SHA_LENGTH),
 					merged:
-						params.parentPull === undefined ? params.record.parent : `#${params.parentPull.number}`,
+						params.parentChangeRequest === undefined
+							? params.record.parent
+							: `#${params.parentChangeRequest.number}`,
 				},
 			}),
 		],

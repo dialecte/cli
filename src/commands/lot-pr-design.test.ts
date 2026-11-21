@@ -9,7 +9,7 @@ import { DESIGN_TEXT, EDITED_DESIGN_TEXT, APPROVER } from '../../test/design-wor
 import { isolateTemporaryFolders } from '../../test/design-workspace.ts'
 import { recordingHost } from '../../test/land-lot.ts'
 import { LOT_NAME } from '../../test/lot-pr.constants.ts'
-import { pullRequestLot } from '../../test/lot-pr.ts'
+import { changeRequestLot } from '../../test/lot-pr.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { runLotPr } from './lot-pr.ts'
 import { runLot } from './lot.ts'
@@ -22,7 +22,7 @@ afterEach(function restoreEnvironment() {
 
 describe('lot pr - the design line', { timeout: STORE_CASE_TIMEOUT }, () => {
 	it('approved, then the source edited -> the body says the design is stale since its approval', () => {
-		const lot = pullRequestLot()
+		const lot = changeRequestLot()
 		const cwd = lot.workspace.repository
 		const file = join(cwd, 'DESIGN.md')
 		writeFileSync(file, DESIGN_TEXT)

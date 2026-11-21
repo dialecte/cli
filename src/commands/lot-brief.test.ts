@@ -11,17 +11,17 @@ import { createBriefWorkspace, writeStoreLot } from '../../test/brief-workspace.
 import { FIRST_WORD } from '../../test/forbidden-words-workspace.constants.ts'
 import { configureMachine } from '../../test/forbidden-words-workspace.ts'
 import { LOT_NAME, LOT_STEP } from '../../test/lot-pr.constants.ts'
-import { pullRequestLot } from '../../test/lot-pr.ts'
+import { changeRequestLot } from '../../test/lot-pr.ts'
 import { planEntryOf, writeMarkedPlan } from '../../test/plan-block.ts'
 import { temporaryFolder } from '../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
-import { preparePullRequest } from '../lib/pr/pull-request-sources.ts'
+import { prepareChangeRequest } from '../lib/pr/change-request-sources.ts'
 import { readTransitions } from '../lib/store/transitions.ts'
 import { runLot } from './lot.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { PullRequestLot } from '../../test/lot-pr.types.ts'
+import type { ChangeRequestLot } from '../../test/lot-pr.types.ts'
 
 afterEach(function restoreEnvironment() {
 	vi.unstubAllEnvs()
@@ -31,13 +31,13 @@ const BY = 'person-a'
 const REASON = 'the behaviour quoted a plan id'
 
 /** The lot's stored brief text and its parsed value. */
-function storedBriefOf(lot: PullRequestLot): { text: string; value: Record<string, unknown> } {
+function storedBriefOf(lot: ChangeRequestLot): { text: string; value: Record<string, unknown> } {
 	const text = readFileSync(join(lot.lotFolder, 'brief.json'), 'utf8')
 	return { text, value: JSON.parse(text) as Record<string, unknown> }
 }
 
 /** `lot brief <lot> --from <the stored brief with changes> --by --reason`; the new brief's text beside the result. */
-function rewrite(params: { lot: PullRequestLot; changes: Record<string, unknown> }) {
+function rewrite(params: { lot: ChangeRequestLot; changes: Record<string, unknown> }) {
 	const text = `${JSON.stringify({ ...storedBriefOf(params.lot).value, ...params.changes }, null, 2)}\n`
 	const from = join(temporaryFolder('dialecte-new-brief-'), 'brief.json')
 	writeFileSync(from, text)
@@ -59,7 +59,7 @@ function stepWith(behaviours: string[]): Record<string, unknown>[] {
 
 describe('dialecte lot brief', { timeout: STORE_CASE_TIMEOUT }, () => {
 	it('a new summary and behaviour → the stored brief replaced, a transition with both hashes, by and reason', () => {
-		const lot = pullRequestLot()
+		const lot = changeRequestLot()
 		const before = storedBriefOf(lot).text
 
 		const { result, text } = rewrite({
@@ -90,7 +90,7 @@ describe('dialecte lot brief', { timeout: STORE_CASE_TIMEOUT }, () => {
 		['its commit message', { lots: [{ paths: ['src/'], message: 'feat(x): other' }] }, 'lots'],
 		['its branch', { branch: 'feat/y' }, 'branch'],
 	])('a change of %s → refused, the field named, nothing written', (_name, changes, field) => {
-		const lot = pullRequestLot()
+		const lot = changeRequestLot()
 		const before = storedBriefOf(lot).text
 		const transitions = readTransitions({ lotFolder: lot.lotFolder }).length
 
@@ -105,7 +105,7 @@ describe('dialecte lot brief', { timeout: STORE_CASE_TIMEOUT }, () => {
 	})
 
 	it('a behaviour holding a forbidden word → refused with the start refusal, nothing written', () => {
-		const lot = pullRequestLot()
+		const lot = changeRequestLot()
 		configureMachine({ userFileLines: [FIRST_WORD] })
 		const before = storedBriefOf(lot).text
 
@@ -122,7 +122,7 @@ describe('dialecte lot brief', { timeout: STORE_CASE_TIMEOUT }, () => {
 	})
 
 	it('without --by and --reason → the usage, exit 2', () => {
-		const lot = pullRequestLot()
+		const lot = changeRequestLot()
 
 		const result = runLot({
 			cwd: lot.workspace.repository,
@@ -133,14 +133,14 @@ describe('dialecte lot brief', { timeout: STORE_CASE_TIMEOUT }, () => {
 	})
 
 	it("a brief quoting the lot's plan entry id → no pull request text; rewritten → its body renders", () => {
-		const lot = pullRequestLot({ brief: { steps: stepWith(['x asked as SUB1 says -> one']) } })
+		const lot = changeRequestLot({ brief: { steps: stepWith(['x asked as SUB1 says -> one']) } })
 		writeMarkedPlan({
 			briefFolder: lot.workspace.briefFolder,
 			file: 'lot-plan.md',
 			lots: [planEntryOf({ id: 'SUB1', branch: String(storedBriefOf(lot).value.branch) })],
 		})
 		function prepare() {
-			return preparePullRequest({
+			return prepareChangeRequest({
 				lotFolder: lot.lotFolder,
 				worktree: lot.worktree,
 				baseRef: 'main',
@@ -175,7 +175,7 @@ describe('dialecte lot brief', { timeout: STORE_CASE_TIMEOUT }, () => {
 	})
 
 	it('a --from path relative to the command folder → read from there', () => {
-		const lot = pullRequestLot()
+		const lot = changeRequestLot()
 		const text = `${JSON.stringify({ ...storedBriefOf(lot).value, summary: 'X answers one, again.' })}\n`
 		writeFileSync(join(lot.workspace.repository, 'new-brief.json'), text)
 
@@ -191,7 +191,7 @@ describe('dialecte lot brief', { timeout: STORE_CASE_TIMEOUT }, () => {
 	})
 
 	it('a --from file that cannot be read → refused, exit 1, nothing written', () => {
-		const lot = pullRequestLot()
+		const lot = changeRequestLot()
 
 		function run() {
 			return runLot({
@@ -208,7 +208,7 @@ describe('dialecte lot brief', { timeout: STORE_CASE_TIMEOUT }, () => {
 	})
 
 	it('a canceled lot → refused, its state named', () => {
-		const lot = pullRequestLot()
+		const lot = changeRequestLot()
 		runLot({ cwd: lot.workspace.repository, argv: ['stop', LOT_NAME, '--reason', 'done'] })
 
 		const { result } = rewrite({ lot, changes: { summary: 'X answers one, now.' } })
@@ -219,7 +219,7 @@ describe('dialecte lot brief', { timeout: STORE_CASE_TIMEOUT }, () => {
 	})
 
 	it('the same brief with its keys in another order → already held, no transition', () => {
-		const lot = pullRequestLot()
+		const lot = changeRequestLot()
 		const transitions = readTransitions({ lotFolder: lot.lotFolder }).length
 		const reordered = Object.fromEntries(Object.entries(storedBriefOf(lot).value).reverse())
 		const from = join(temporaryFolder('dialecte-new-brief-'), 'brief.json')
@@ -243,7 +243,7 @@ describe('dialecte lot brief', { timeout: STORE_CASE_TIMEOUT }, () => {
 			'lot brief: issue must be a positive integer: nothing written',
 		],
 	])('%s → %s', (_name, issue, exitCode, line) => {
-		const lot = pullRequestLot()
+		const lot = changeRequestLot()
 
 		const { result } = rewrite({ lot, changes: { issue } })
 
@@ -254,7 +254,7 @@ describe('dialecte lot brief', { timeout: STORE_CASE_TIMEOUT }, () => {
 	})
 
 	it('a rewrite → the stored brief stays read-only, the state and position kept', () => {
-		const lot = pullRequestLot()
+		const lot = changeRequestLot()
 		const before = readTransitions({ lotFolder: lot.lotFolder }).at(-1)
 
 		rewrite({ lot, changes: { summary: 'X answers one, now.' } })
@@ -268,7 +268,7 @@ describe('dialecte lot brief', { timeout: STORE_CASE_TIMEOUT }, () => {
 	})
 
 	it('its transition cannot be written → refused, the stored brief and the transitions as they were, no next brief left', () => {
-		const lot = pullRequestLot()
+		const lot = changeRequestLot()
 		const before = storedBriefOf(lot).text
 		const transitions = readTransitions({ lotFolder: lot.lotFolder }).length
 		const folder = join(lot.lotFolder, 'transitions')

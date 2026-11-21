@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process'
 import { chmodSync, writeFileSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
 
-import { parentPullRequest, recordingHost, stackedRepository } from '../../../test/land-lot.ts'
+import { parentChangeRequest, recordingHost, stackedRepository } from '../../../test/land-lot.ts'
 import { git, temporaryFolder, writeFiles } from '../../../test/scratch-repository.ts'
 import { SCRATCH_GIT_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
 import { landLot } from './land-lot.ts'
@@ -50,7 +50,7 @@ describe('a stack rebase whose abort fails', { timeout: SCRATCH_GIT_CASE_TIMEOUT
 		const stack = stackedRepository({ childFiles: { 'src/x.ts': 'export const x = 2\n' } })
 		writeFiles({ root: stack.parent.worktree, files: { 'src/x.ts': 'export const x = 3\n' } })
 		git({ root: stack.parent.worktree, args: ['commit', '-qam', 'feat(x): x answers three'] })
-		const host = recordingHost({ parent: parentPullRequest() })
+		const host = recordingHost({ parent: parentChangeRequest() })
 		failRebaseAbort({ stderr: ABORT_ERROR })
 
 		const landed = landLot({

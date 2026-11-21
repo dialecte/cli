@@ -4,7 +4,7 @@
  * what to run next.
  */
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
-import { reviewerName } from '../pr/compose-pull-request.ts'
+import { reviewerName } from '../pr/compose-change-request.ts'
 import {
 	DESIGN_BY_PART,
 	DESIGN_NEED_LINES,

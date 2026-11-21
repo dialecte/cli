@@ -5,9 +5,9 @@
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
-import { parentPullRequest, recordingHost } from '../../test/land-lot.ts'
+import { parentChangeRequest, recordingHost } from '../../test/land-lot.ts'
 import { LOT_NAME } from '../../test/lot-pr.constants.ts'
-import { REVIEW_PULL_NUMBER, REVIEWER } from '../../test/lot-review.constants.ts'
+import { REVIEW_CHANGE_REQUEST_NUMBER, REVIEWER } from '../../test/lot-review.constants.ts'
 import { landedLot } from '../../test/lot-review.ts'
 import { git, writeFiles } from '../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
@@ -16,7 +16,7 @@ import { runLotApprove } from './lot-approve.ts'
 
 import { describe, expect, it } from 'vitest'
 
-import type { PullRequest } from '../lib/host/host.types.ts'
+import type { ChangeRequest } from '../lib/host/host.types.ts'
 
 const PARENT = '0000-repo-p'
 
@@ -54,10 +54,10 @@ function stackedLandedLot() {
 }
 
 /** Approve the lot as a person, its pull request merging into `feat/p`, the parent `parent`, on a host with stacks. */
-function approveOnParent(params: { parent: PullRequest }) {
+function approveOnParent(params: { parent: ChangeRequest }) {
 	const lot = stackedLandedLot()
 	const recording = recordingHost({
-		existing: { ...lot.pullRequest, base: 'feat/p' },
+		existing: { ...lot.changeRequest, base: 'feat/p' },
 		checks: { head: lot.head, state: 'green', failing: [], pending: [] },
 		stacks: true,
 		parent: params.parent,
@@ -74,17 +74,19 @@ function approveOnParent(params: { parent: PullRequest }) {
 
 describe('dialecte lot approve of a stacked lot', { timeout: STORE_CASE_TIMEOUT }, () => {
 	it('the parent queued, host with stacks → the stack queued up to it, never auto-merge', () => {
-		const { result, calls } = approveOnParent({ parent: { ...parentPullRequest(), queued: true } })
+		const { result, calls } = approveOnParent({
+			parent: { ...parentChangeRequest(), queued: true },
+		})
 
 		expect({
 			exitCode: result.exitCode,
-			stackQueued: calls.includes(`stack-queue ${REVIEW_PULL_NUMBER}`),
-			autoQueued: calls.includes(`queue ${REVIEW_PULL_NUMBER}`),
+			stackQueued: calls.includes(`stack-queue ${REVIEW_CHANGE_REQUEST_NUMBER}`),
+			autoQueued: calls.includes(`queue ${REVIEW_CHANGE_REQUEST_NUMBER}`),
 		}).toEqual({ exitCode: 0, stackQueued: true, autoQueued: false })
 	})
 
 	it('the parent not queued → refused naming the parent, nothing recorded, nothing queued', () => {
-		const { lot, result, calls } = approveOnParent({ parent: parentPullRequest() })
+		const { lot, result, calls } = approveOnParent({ parent: parentChangeRequest() })
 
 		expect({
 			result,

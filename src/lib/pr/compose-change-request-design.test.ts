@@ -1,9 +1,9 @@
+import { FILLED_PARTS, KEPT_PART } from './change-request.constants.ts'
 /**
  * The review part of a pull request names the lot's design first (DESIGN-GATE section 4): its state and who approved
  * or waived it, by kind only; never a name, a path, a hash or a reason; no line for a lot whose record holds no design.
  */
-import { composePullRequest } from './compose-pull-request.ts'
-import { FILLED_PARTS, KEPT_PART } from './pull-request.constants.ts'
+import { composeChangeRequest } from './compose-change-request.ts'
 
 import { describe, expect, it } from 'vitest'
 
@@ -16,7 +16,7 @@ const TEMPLATE = [...FILLED_PARTS, KEPT_PART]
 
 /** The review part of the body a record renders. */
 function reviewPartOf(review: ReviewRecord): string {
-	const text = composePullRequest({
+	const text = composeChangeRequest({
 		template: TEMPLATE,
 		sources: {
 			messages: [],
