@@ -49,7 +49,7 @@ export type RemovingInput = {
 	id: string
 	at: string
 	lot: string | null
-	item: 'worktree' | 'throwaway' | 'branch'
+	item: 'worktree' | 'throwaway' | 'branch' | 'clone'
 	path: string
 	branch: string | null
 	/** The full sha of the branch tip. */

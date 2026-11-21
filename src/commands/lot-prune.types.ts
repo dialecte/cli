@@ -24,9 +24,12 @@ export type LotPruneParams = {
 /** What became of one item once the acts ran: removed (where to), kept (why), or waiting (on what). */
 export type ItemOutcome = { removed: string } | { kept: string } | { waiting: string }
 
-/** One item of `lot prune --json`: what it is, its name (a path or a branch), its decision, and, after `--yes`, its outcome. */
+/**
+ * One item of `lot prune --json` (and `lot close --feature --json`): what it is, its name (a path or a branch), its
+ * decision, and, after `--yes`, its outcome. A rehearsal clone is `lot close --feature`'s only.
+ */
 export type LotPruneItemOutput = {
-	item: 'worktree' | 'throwaway' | 'branch'
+	item: 'worktree' | 'throwaway' | 'branch' | 'clone'
 	name: string
 	decision: ItemDecision
 	outcome?: ItemOutcome

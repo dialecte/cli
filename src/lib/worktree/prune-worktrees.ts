@@ -152,7 +152,7 @@ export function planPrune(params: {
 		return readdirSync(scratchRoot)
 			.filter((name) => name.startsWith(REHEARSAL_FOLDER_PREFIX))
 			.sort()
-			.map((name) => planRehearsalClone({ scratchRoot, name, links }))
+			.map((name) => planRehearsalClone({ scratchRoot, name, links, worktreesFolder }))
 	})
 	// a rehearsal hook's temporary folder left in a rehearsal root (a killed rehearsal), judged by its scratch.json
 	const hookFolders = scratchRoots
@@ -749,6 +749,7 @@ function planRehearsalClone(params: {
 	scratchRoot: string
 	name: string
 	links: readonly FolderLink[]
+	worktreesFolder: string
 }): PruneItem {
 	const clone = join(params.scratchRoot, params.name)
 	if (isLink(clone)) return { kind: 'rehearsal clone', name: clone, kept: PRUNE_LINK_REASON }
@@ -771,10 +772,10 @@ function planRehearsalClone(params: {
 	return {
 		kind: 'rehearsal clone',
 		name: clone,
-		// the scratch root's own trash: a move never crosses file systems (/tmp is often its own)
+		// the workspace's trash for its own scratch root, else the root's own: a move never crosses file systems
 		command: trashMoveCommand({
 			folder: clone,
-			trash: join(params.scratchRoot, REHEARSAL_TRASH_FOLDER),
+			trash: scratchTrashOf({ root: params.scratchRoot, worktreesFolder: params.worktreesFolder }),
 		}),
 	}
 }
@@ -785,7 +786,9 @@ function planRehearsalClone(params: {
  * systems).
  */
 export function scratchTrashOf(params: { root: string; worktreesFolder: string }): string {
-	return params.root === join(params.worktreesFolder, WORKSPACE_SCRATCH_FOLDER)
+	// one folder spelled two ways (a temporary folder through its link) is still the workspace's own scratch root
+	return realPathThroughAncestors(params.root) ===
+		realPathThroughAncestors(join(params.worktreesFolder, WORKSPACE_SCRATCH_FOLDER))
 		? join(params.worktreesFolder, TRASH_FOLDER)
 		: join(params.root, REHEARSAL_TRASH_FOLDER)
 }
@@ -848,8 +851,13 @@ function whyKeepScratchFolder(params: {
 	return reachedBy ? `the link ${reachedBy} points to it` : undefined
 }
 
-/** The marker of the rehearsal in `entry`: in its own git folder, else in that of a clone inside it. */
-function rehearsalMarkerPath(entry: string): string {
+/**
+ * The marker of the rehearsal in `entry`: in its own git folder, else in that of a clone inside it.
+ *
+ * @intent find a rehearsal's marker in the shape this cli and earlier ones left it
+ * @internal
+ */
+export function rehearsalMarkerPath(entry: string): string {
 	const ownMarker = join(entry, '.git', REHEARSAL_MARKER_FILE)
 	if (existsSync(ownMarker) || !isDirectory(entry)) return ownMarker
 	const inside = readdirSync(entry, { withFileTypes: true })

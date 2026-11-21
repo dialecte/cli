@@ -4,7 +4,7 @@
  * when there is no such line, gone when there is neither; an unreadable tdd ledger; `next` with the plan command for a
  * terminal lot whose worktree or round folder is on disk. Scratch stores on disk, no git.
  */
-import { mkdirSync, realpathSync } from 'node:fs'
+import { mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import {
@@ -241,6 +241,58 @@ describe(
 
 			expect(
 				readLotReport({ lotFolder: join(lot.workspace.store, 'no-such-lot'), now: REPORT_NOW }),
+			).toBeUndefined()
+		})
+	},
+)
+
+describe(
+	'readLotReport: a rehearsal clone lot close moved',
+	{ timeout: STORE_CASE_TIMEOUT },
+	() => {
+		it('a clone removal line of the lot and a mutation run file naming the clone’s path → no throwaway mutation row: the clone is none of the lot’s worktrees', () => {
+			const lot = createRecordedLot({ state: 'committed' })
+			const clone = join(lot.workspace.registry, '..', '..', 'gone-dialecte-rehearse-clone')
+			appendCardsLog({
+				registry: lot.workspace.registry,
+				lines: [
+					{
+						schema: 1,
+						kind: 'removing',
+						id: 'removal-clone',
+						at: timeOf('11:00'),
+						lot: lot.name,
+						item: 'clone',
+						path: clone,
+						branch: null,
+						tip: null,
+						records: null,
+						by: 'lot-close',
+					},
+					{
+						schema: 1,
+						kind: 'removed',
+						id: 'removal-clone',
+						at: timeOf('11:00'),
+						outcome: 'trashed',
+					},
+				],
+			})
+			const runs = join(lot.workspace.registry, '..', 'dialecte-mutation', 'runs')
+			mkdirSync(runs, { recursive: true })
+			writeFileSync(
+				join(runs, 'run-1.json'),
+				JSON.stringify({
+					runId: 'run-1',
+					pid: 1,
+					startedAt: timeOf('10:30'),
+					state: 'reported',
+					worktree: clone,
+				}),
+			)
+
+			expect(
+				readLotReport({ lotFolder: lot.lotFolder, now: REPORT_NOW })?.suites.throwaways.mutation,
 			).toBeUndefined()
 		})
 	},

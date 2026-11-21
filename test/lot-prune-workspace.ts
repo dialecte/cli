@@ -4,22 +4,32 @@
  * it, as `lot snapshot` and `lot delta --worktree` do.
  */
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, realpathSync } from 'node:fs'
+import { existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 
 import { readCardsLog, writeRemoved, writeRemoving } from '../src/lib/events/cards-log.ts'
 import { startStep } from '../src/lib/events/record-step.ts'
 import { realPathThroughAncestors } from '../src/lib/file-system.ts'
+import {
+	handoverStoreOf,
+	recordHandoverState,
+	registerHandover,
+} from '../src/lib/handover/handover-store.ts'
+import { REHEARSAL_MARKER_FILE } from '../src/lib/handover/handover.constants.ts'
+import { processStartTime } from '../src/lib/process-start-time.ts'
 import { addThrowaway } from '../src/lib/review-rounds/review-delta.ts'
 import { takeSnapshot } from '../src/lib/review-rounds/snapshot-round.ts'
 import { readWorktreeState } from '../src/lib/review-rounds/worktree-state.ts'
 import { LANDING_NOW } from './landing-lot.constants.ts'
-import { cardsLogOf } from './landing-lot.ts'
+import { addLandingLot, cardsLogOf, registerLotEntry } from './landing-lot.ts'
 import { commitIn, landingHostOf } from './landing-repository.ts'
+import { writeHookRecordAtHead } from './lot-close-final-record.ts'
 import {
 	ALLOWED_NEW_LOT_FILES,
 	KILLED_REMOVAL_ID,
 	NO_JSON,
+	REHEARSAL_CLONE_FOLDER,
+	REHEARSAL_STARTED_AT,
 	ROUND_COMMIT_MESSAGE,
 	THROWAWAY_LOT_BRANCH,
 	THROWAWAY_WORKSPACE_NOW,
@@ -34,6 +44,10 @@ import type { Removal } from '../src/lib/events/cards-log.types.ts'
 import type { StepHandle } from '../src/lib/events/record-step.types.ts'
 import type { LandingLot } from './landing-lot.types.ts'
 import type {
+	CloneFate,
+	CloseFeatureParams,
+	ClosedFeatureOutput,
+	ClosedFeatureRun,
 	PrunedItems,
 	PruneRun,
 	RecordedRound,
@@ -351,4 +365,159 @@ export function changedBeyondAppends(params: {
 export function trashPathAt(params: { lot: LandingLot; name: string; at: Date }): string {
 	const stamp = params.at.toISOString().replace(/[-:]/g, '').slice(0, 'yyyymmddThhmmss'.length)
 	return join(params.lot.workspace.workspace, '.worktrees', '_trash', `${params.name}-${stamp}`)
+}
+
+/**
+ * A lot of `feature` beside `lot`, on its own worktree and branch, committed through its own hand-over entry with the
+ * hook's record at its HEAD: the hand-over flow, nothing pushed.
+ */
+export function addCommittedFeatureLot(params: {
+	lot: LandingLot
+	name: string
+	branch: string
+	feature: string
+}): LandingLot {
+	const added = addLandingLot(params)
+	registerLotEntry({ lot: added })
+	writeHookRecordAtHead(added.worktree)
+	return added
+}
+
+/**
+ * A hand-over folder outside the store, registered and committed for the lot's worktree and branch, the hook's record
+ * at its HEAD (the lot committed through a hand-over run from `_commit-plan`, its only entry): its real path.
+ */
+export function addHandoverFolderOf(lot: LandingLot): string {
+	const folder = realpathSync(temporaryFolder('dialecte-handover-'))
+	registerHandover({ root: lot.worktree, folder, branch: lot.branch, now: LANDING_NOW })
+	recordHandoverState({
+		store: handoverStoreOf(lot.workspace.repository),
+		folder,
+		state: 'committed',
+	})
+	writeHookRecordAtHead(lot.worktree)
+	return folder
+}
+
+/**
+ * A rehearsal folder `<scratchRoot>/<name>` as a rehearsal leaves it: the clone inside it, named as its repository,
+ * its marker in the clone's git folder naming the owner `pid`, the hand-over folder `handover` and, unless `null`, the
+ * owner's start time (the running process's own when left out). The rehearsal folder's path.
+ */
+export function addRehearsalFolder(params: {
+	scratchRoot: string
+	name: string
+	pid: number
+	handover: string
+	startTime?: string | null
+}): string {
+	const folder = join(params.scratchRoot, params.name)
+	const gitFolder = join(folder, REHEARSAL_CLONE_FOLDER, '.git')
+	mkdirSync(gitFolder, { recursive: true })
+	const startTime = params.startTime === undefined ? processStartTime(params.pid) : params.startTime
+	writeFileSync(
+		join(gitFolder, REHEARSAL_MARKER_FILE),
+		`${JSON.stringify({
+			pid: params.pid,
+			startedAt: REHEARSAL_STARTED_AT,
+			handover: params.handover,
+			...(startTime !== null && { startTime }),
+		})}\n`,
+	)
+	return folder
+}
+
+/**
+ * The arguments of `lot close --feature <feature>` from the lot's main checkout (`words` added after the feature),
+ * `--json`, at the landing cases' time, no process listed, the rehearsal clones looked for in `scratchRoots`, the host
+ * knowing no pull request, the background removals recorded.
+ */
+export function closeFeatureArgumentsOf(params: {
+	lot: LandingLot
+	feature: string
+	scratchRoots: readonly string[]
+	words?: string[]
+	json?: false
+	readStartTime?: CloseFeatureParams['readStartTime']
+}): CloseFeatureParams {
+	return {
+		cwd: params.lot.workspace.repository,
+		argv: [
+			'--feature',
+			params.feature,
+			...(params.words ?? []),
+			...(params.json === false ? [] : ['--json']),
+		],
+		now: LANDING_NOW,
+		spawner: createRecordingSpawner().spawner,
+		listProcesses: function none() {
+			return []
+		},
+		scratchRoots: params.scratchRoots,
+		host: landingHostOf({}).host,
+		...(params.readStartTime !== undefined && { readStartTime: params.readStartTime }),
+	}
+}
+
+/**
+ * The exit code, the `--json` output and the text of a `lot close --feature` run; the output undefined when the run
+ * printed no JSON object holding `open`, `lots` and `clones` (another verb's answer, or a text).
+ */
+export function closedFeatureOf(result: CommandResult): ClosedFeatureRun {
+	const run = { exitCode: result.exitCode, text: result.output }
+	let parsed: unknown
+	try {
+		parsed = JSON.parse(result.output)
+	} catch {
+		return { ...run, output: undefined }
+	}
+	const holdsEveryList =
+		typeof parsed === 'object' &&
+		parsed !== null &&
+		['open', 'lots', 'clones'].every((key) =>
+			Array.isArray((parsed as Record<string, unknown>)[key]),
+		)
+	return { ...run, output: holdsEveryList ? (parsed as ClosedFeatureOutput) : undefined }
+}
+
+/**
+ * What a `lot close --feature --json` run did with the rehearsal clone `clone`: moved (its outcome), kept (the
+ * outcome's or the decision's why, or the why of a clone of no lot of the feature), or not named at all.
+ */
+export function cloneFateOf(params: { result: CommandResult; clone: string }): CloneFate {
+	const { output } = closedFeatureOf(params.result)
+	const item = output?.lots
+		.flatMap((lot) => lot.items)
+		.find((one) => one.item === 'clone' && one.name === params.clone)
+	if (item !== undefined) {
+		const fate = item.outcome ?? item.decision
+		if (typeof fate.removed === 'string') return { removed: fate.removed }
+		if (typeof fate.kept === 'string') return { kept: fate.kept }
+	}
+	const other = output?.clones.find((one) => one.clone === params.clone)
+	return other === undefined ? { unnamed: true } : { kept: other.kept }
+}
+
+/** A hand-over folder outside the store registered for the lot's worktree and branch, left pending: its real path. */
+export function addPendingHandoverFolderOf(lot: LandingLot): string {
+	const folder = realpathSync(temporaryFolder('dialecte-handover-'))
+	registerHandover({ root: lot.worktree, folder, branch: lot.branch, now: LANDING_NOW })
+	return folder
+}
+
+/**
+ * A rehearsal folder `<scratchRoot>/<name>` whose clone's git folder holds `marker` as its whole marker file (a
+ * marker without a pid, one that does not parse), or none when `marker` is undefined. The rehearsal folder's path.
+ */
+export function addRehearsalFolderWithMarker(params: {
+	scratchRoot: string
+	name: string
+	marker: string | undefined
+}): string {
+	const folder = join(params.scratchRoot, params.name)
+	const gitFolder = join(folder, REHEARSAL_CLONE_FOLDER, '.git')
+	mkdirSync(gitFolder, { recursive: true })
+	if (params.marker !== undefined)
+		writeFileSync(join(gitFolder, REHEARSAL_MARKER_FILE), params.marker)
+	return folder
 }

@@ -49,6 +49,7 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
   dialecte lot design <id> [--from <file> | --from-plan | --approve --by <who> [--reason <text>] | --waive --by <who> --reason <text>] [--json]
   dialecte lot land <id>
   dialecte lot close <hand-over name|lot id|index>... [--json]
+  dialecte lot close --feature <name> [--json]
   dialecte lot prune [<id>...] [--feature <name>] [--all] [--yes] [--json]
 
   start - checks the brief (every refusal at once, exit 2), claims the next index, publishes the lot
@@ -537,6 +538,26 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
           such removal: nothing to close), its lot's landed fact still recorded when the host proves
           the merge (its landed line beside already closed); exit 1 when one is kept, 2 when a name
           or index is neither a hand-over nor a lot (the others are still closed)
+  close - --feature <name> closes a feature at a pipeline's last step: its lots in every store of
+          the list (simulated ones left out); none answers no lot of the feature, exit 1; a lot of
+          it neither committed nor canceled refuses the whole close, listing each with its state,
+          exit 2, nothing moved; else lot prune's plan without branches, acted at once (removing
+          lines by lot-close): every lot worktree and recorded review throwaway of the feature
+          closed on its own proof, branches untouched and not listed (lot prune removes them); then
+          the rehearsal clones of the machine's scratch roots whose marker names a hand-over folder
+          of a lot of the feature (its lot folder, or the folder of a committed or abandoned entry
+          naming its worktree and branch): a dead one (its pid gone, or running with another start
+          time) that no process works in and no link reaches (links read in this workspace and every
+          workspace of the feature's lots; processes, links and keeps read again before the moves)
+          moved to the workspace's .worktrees/_trash for its own .worktrees/_scratch, else its
+          scratch root's dialecte-trash, with removing and removed lines (item clone); one alive,
+          whose marker cannot tell (no marker, no pid, no start time, an unreadable one), a process
+          works in, or the processes or links cannot be read, kept and named for dialecte worktree
+          prune; a kept lot keeps every item, clones included, with its kept text; a clone of
+          another hand-over is listed, never moved; --json { open, lots: [{ lot, state, landing,
+          items: [{ item: worktree|throwaway|clone, name, decision, outcome }] }], clones: [{ clone,
+          kept }] }; a lot name beside --feature is a usage error (exit 2); exit 0 when every item
+          of the feature went, 1 when one was kept
 
 exit codes:
   1  risk --effort: the line could not be written
