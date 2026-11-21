@@ -101,6 +101,8 @@ export const EVENT_FIELDS_BY_KIND: EventFieldsByKind = {
 	[HYGIENE_BASELINE_MOVED_KIND]: ['from', 'to'],
 	// `lot scope` writes one per change of a lot's scope (FIX-lot-scope D6)
 	'scope.changed': ['op', 'paths'],
+	// `lot keep` and `lot unkeep` write one per keep line (KEEP 3.3)
+	'keep.changed': ['op', 'reason'],
 	// `lot forecast` writes one per forecast run: the verdict counts and the time spent (33CO CO2a)
 	forecast: ['run', 'trigger', 'verdict', 'verdicts', 'durationMs'],
 }
@@ -140,3 +142,25 @@ export const FOLDER_KIND = 'folder'
 
 /** The kinds that close a run. */
 export const RUN_END_KINDS: readonly string[] = ['station.end', 'step.end']
+
+/**
+ * How `lot report` names a lot kept on purpose (KEEP 3.6): the label of its kept line and the prefix of the keep text
+ * that label replaces; a `lot report --kept` line's keep part, its items, the count, none, and the next of a kept lot
+ * whose identity does not read.
+ */
+export const KEPT_REPORT_TEXTS = {
+	label: 'kept',
+	since: 'kept since {day} by {by}: {reason}',
+	line: '{lot}  {state}  {keep}  · worktree {worktree} · branch {branch}',
+	count: '{count} kept lot(s)',
+	none: 'no kept lot',
+	identityNext: 'repair identity.json by hand, then: {next}',
+} as const
+
+/** The leading word of a keep text the report's `kept` label stands for (`kept by decision: ...`, `kept: ...`). */
+export const KEPT_TEXT_PREFIX = /^kept:?\s+/
+
+/** Whether a kept lot's own item is still there, as `lot report --kept` names it. */
+export const PRESENT = 'present' as const
+export const GONE = 'gone' as const
+export const UNKNOWN_PRESENCE = 'unknown' as const

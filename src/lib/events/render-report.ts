@@ -4,10 +4,14 @@
  * `formatTokens`, unknown as `unknown`, a lower bound as `≥ n`.
  */
 import { counted } from '../counted.ts'
+import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { escapeControlCharacters } from '../print/print.ts'
 import { formatDuration } from '../progress/format-duration.ts'
+import { KEEP_DAY_LENGTH } from '../store/keep-decisions.constants.ts'
+import { keptByDecision } from '../store/lot-keep.ts'
 import { MS_PER_SECOND } from './attribute-steps.constants.ts'
 import { OUTSIDE_OWNER, SHARED_OWNER } from './attribute-steps.constants.ts'
+import { KEPT_REPORT_TEXTS, KEPT_TEXT_PREFIX } from './events.constants.ts'
 import { formatAgentTime } from './format-agent-time.ts'
 import { AT_LEAST_PREFIX, UNKNOWN_TEXT } from './format-tokens.constants.ts'
 import { formatLotTokens, formatTokens, formatTokenTotal } from './format-tokens.ts'
@@ -39,12 +43,14 @@ import {
 } from './render-report.constants.ts'
 import { SUITE_FAMILIES } from './unrecorded-steps.constants.ts'
 
+import type { KeepJson } from '../store/keep-decisions.types.ts'
 import type { RunAttributedStep } from './attribute-steps.types.ts'
 import type { AgentCount, SkillCount, StationRunRow } from './lot-report.types.ts'
 import type {
 	FeatureLot,
 	FeatureReport,
 	FeatureTotals,
+	KeptLot,
 	ReportedLot,
 } from './read-lot-report.types.ts'
 import type { LotTokenTotal, MoneySum } from './token-totals.types.ts'
@@ -68,6 +74,14 @@ export function renderLotReport(params: { report: ReportedLot }): string[] {
 		labelled({ label: 'review', value: reviewText({ report }) }),
 		labelled({ label: 'folders', value: foldersText({ report }) }),
 		labelled({ label: 'events', value: eventsText({ report }) }),
+		...(report.keptText === undefined
+			? []
+			: [
+					labelled({
+						label: KEPT_REPORT_TEXTS.label,
+						value: report.keptText.replace(KEPT_TEXT_PREFIX, ''),
+					}),
+				]),
 		labelled({
 			label: 'next',
 			value: report.next === null ? NOTHING_TEXT : report.next,
@@ -76,6 +90,42 @@ export function renderLotReport(params: { report: ReportedLot }): string[] {
 			labelled({ label: index === 0 ? LEGEND_LABEL : '', value: line }),
 		),
 	]
+}
+
+/**
+ * The lines of `lot report --kept` (KEEP 3.6): one per kept lot - its state, since when, by whom and why it is kept (or
+ * the text of a keep file that cannot be trusted), its worktree and branch - then the count; `no kept lot` for none.
+ */
+export function renderKeptLots(params: { lots: readonly KeptLot[] }): string[] {
+	const { lots } = params
+	if (lots.length === 0) return [KEPT_REPORT_TEXTS.none]
+	return [
+		...lots.map((lot) =>
+			fillMessage({
+				template: KEPT_REPORT_TEXTS.line,
+				values: {
+					lot: lot.lot,
+					state: lot.state,
+					keep: keepPartOf({ kept: lot.kept }),
+					worktree: lot.worktree,
+					branch: lot.branch,
+				},
+			}),
+		),
+		fillMessage({ template: KEPT_REPORT_TEXTS.count, values: { count: String(lots.length) } }),
+	]
+}
+
+/** The keep part of a `--kept` line: `kept since <day> by <who>: <why>`, or the text of a keep that cannot be trusted. */
+function keepPartOf(params: { kept: KeepJson }): string {
+	const { kept } = params
+	if (kept === null) return ''
+	if ('reason' in kept)
+		return fillMessage({
+			template: KEPT_REPORT_TEXTS.since,
+			values: { day: kept.at.slice(0, KEEP_DAY_LENGTH), by: kept.by, reason: kept.reason },
+		})
+	return keptByDecision({ keep: kept }) ?? ''
 }
 
 /** The lines of a feature report: one per lot, then the totals; the simulated lots listed only with `simulated`. */
@@ -437,6 +487,7 @@ function featureLotLine(params: { lot: FeatureLot }): string {
 		`findings ${lot.findings ?? UNKNOWN_TEXT}`,
 		`suites ${suitesValue}`,
 		...(lot.fromCardsLog ? ['from cards.log'] : []),
+		...(lot.kept ? [KEPT_REPORT_TEXTS.label] : []),
 		...(lot.simulated ? ['simulated'] : []),
 	].join(PART_SEPARATOR)
 }

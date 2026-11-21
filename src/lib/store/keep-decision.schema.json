@@ -1,0 +1,29 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "keep-decision.schema.json",
+	"title": "A line of keep.jsonl",
+	"type": "object",
+	"required": ["schema", "at", "op", "by", "reason"],
+	"additionalProperties": false,
+	"properties": {
+		"schema": {
+			"const": 1
+		},
+		"at": {
+			"type": "string"
+		},
+		"op": {
+			"enum": ["keep", "unkeep"]
+		},
+		"by": {
+			"type": "string",
+			"minLength": 1,
+			"pattern": "\\S"
+		},
+		"reason": {
+			"type": "string",
+			"minLength": 1,
+			"pattern": "\\S"
+		}
+	}
+}

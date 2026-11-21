@@ -13,4 +13,6 @@ export const STOP_TEXTS = {
 		'lot stop: pull request #{number} could not be closed ({reason}): nothing stopped; close it on the host, then stop again',
 	damagedPending:
 		'lot stop: {name} is damaged and its hand-over {entry} is pending: nothing moved; first: dialecte handover abandon {entry}',
+	// a damaged lot kept on purpose is never moved aside: its worktree would be named by no lot (KEEP 3.7)
+	damagedKept: 'lot stop: {name} is damaged and {kept}; first: {next}',
 } as const

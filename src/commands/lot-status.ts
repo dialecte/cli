@@ -21,13 +21,14 @@ import { snapshotRounds } from '../lib/review-rounds/round-names.ts'
 import { goAheadText } from '../lib/risk/risk-reason.ts'
 import { riskCapOf, riskStandingOf } from '../lib/risk/risk-records.ts'
 import { RISK_EFFORT_BELOW_LINE, RISK_LINE_SOURCE } from '../lib/risk/risk.constants.ts'
+import { keepJsonOf } from '../lib/store/keep-decisions.ts'
 import { lotDamagedExit, lotRefusalExit, lotUsageExit } from '../lib/store/lot-exits.ts'
+import { keptByDecision } from '../lib/store/lot-keep.ts'
 import { nextCommandsOf } from '../lib/store/lot-next.ts'
 import {
 	lotScopeOf,
 	readBriefStepCount,
 	readCheckedLotState,
-	readLotStateInput,
 	registryOfLotFolder,
 } from '../lib/store/lot-records.ts'
 import { lotState } from '../lib/store/lot-state.ts'
@@ -50,6 +51,7 @@ import {
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { StoreEntry } from '../lib/handover/handover.types.ts'
 import type { StatusLanding } from '../lib/landing/lot-landing.types.ts'
+import type { KeepDecision } from '../lib/store/keep-decisions.types.ts'
 import type {
 	LinkCheck,
 	LotIdentity,
@@ -96,6 +98,7 @@ export function lotStatus(params: {
 	if ('damage' in checked) return lotDamagedExit({ lotFolder, damage: checked.damage, json })
 	const status = lotStatusOfInput({
 		input: withMergedTip({ input: checked.input, lotFolder, landing: params.landing }),
+		keep: checked.keep,
 		lotFolder,
 		entries,
 		landing: params.landing,
@@ -119,8 +122,9 @@ export function lotStatusOf(params: {
 	const { lotFolder } = params
 	const registry = registryOfLotFolder(lotFolder)
 	const entries = params.entries ?? readStoreEntries(registry)
-	const input = readLotStateInput({ lotFolder, registry, entries })
-	return input && lotStatusOfInput({ input, lotFolder, entries })
+	const checked = readCheckedLotState({ lotFolder, registry, entries })
+	if (checked === undefined || !('input' in checked)) return undefined
+	return lotStatusOfInput({ input: checked.input, keep: checked.keep, lotFolder, entries })
 }
 
 /**
@@ -130,6 +134,8 @@ export function lotStatusOf(params: {
  */
 export function lotStatusOfInput(params: {
 	input: LotStateInput
+	/** The lot's keep as its one reader read it (KEEP 3.6); undefined when not kept. Required: every builder says. */
+	keep: KeepDecision | undefined
 	lotFolder: string
 	entries: readonly StoreEntry[]
 	/** The landing reads beyond the files (the stack line through the one lot reader); files only when left out. */
@@ -140,7 +146,12 @@ export function lotStatusOfInput(params: {
 	const report = lotState(input)
 	const last = input.transitions.at(-1)
 	const station = readStationNext({ input, lotFolder })
-	const { next, also } = nextCommandsOf({ input, report, station })
+	const { next, also } = nextCommandsOf({
+		input,
+		report,
+		station,
+		kept: keptByDecision({ keep: params.keep }),
+	})
 	return {
 		lot: identity.name,
 		index: identity.index,
@@ -172,6 +183,7 @@ export function lotStatusOfInput(params: {
 		rounds: roundsOf({ input, lotFolder }),
 		...stackStatusOf({ lotFolder, landing: params.landing }),
 		...designStatusOf({ lotFolder }),
+		kept: keepJsonOf({ keep: params.keep }),
 	}
 }
 

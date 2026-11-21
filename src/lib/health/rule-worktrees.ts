@@ -46,12 +46,12 @@ export function findIdleWorktrees(params: {
 	]
 }
 
-/** The worktree paths the open lots' identities name. */
+/** The worktree paths the open lots' identities name, and those of the lots kept on purpose (KEEP 3.5.5). */
 function heldPathsOf(params: { lots: readonly HealthLot[] }): Set<string> {
 	const held = new Set<string>()
 	for (const lot of params.lots) {
 		if (lot.worktree === undefined || lot.state === undefined) continue
-		if (LOTS_KEEPING_NOTHING.some((closed) => closed === lot.state)) continue
+		if (lot.kept !== true && LOTS_KEEPING_NOTHING.some((closed) => closed === lot.state)) continue
 		held.add(lot.worktree)
 	}
 	return held

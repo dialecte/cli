@@ -32,6 +32,7 @@ import {
 	GOAL_MAX_LENGTH,
 	HEADING_LINE_PATTERN,
 	ISSUE_DETAIL,
+	KEEP_FIELD,
 	LINE_BREAK_PATTERN,
 	PARENT_SEGMENT,
 	PLAN_LINE_SEPARATOR,
@@ -47,6 +48,7 @@ import {
 	WHOLE_BRIEF_FIELD,
 } from './brief.constants.ts'
 import { readIdentity } from './identity.ts'
+import { KEEP_REASON_LIMIT } from './keep-decisions.constants.ts'
 import { isAcceptableOverlap } from './lot-overlaps.ts'
 import {
 	overlapLotLabelOf,
@@ -117,6 +119,7 @@ export function checkBriefFields(params: { value: unknown }): BriefFieldsResult 
 		...effortFaults(value.effort),
 		...summaryFaults(value.summary),
 		...issueFaults(value.issue),
+		...keepFaults(value.keep),
 		...stepFaults(value.steps),
 		...scope.refused,
 		...lots.refused,
@@ -139,6 +142,7 @@ export function checkBriefFields(params: { value: unknown }): BriefFieldsResult 
 			effort: value.effort as BriefEffort | undefined,
 			...(value.summary !== undefined && { summary: value.summary as string }),
 			...(value.issue !== undefined && { issue: value.issue as number }),
+			...(value.keep !== undefined && { keep: value.keep as string }),
 		},
 	}
 }
@@ -274,6 +278,7 @@ function checkedOf(params: {
 		effort: brief.effort,
 		...(brief.summary !== undefined && { summary: brief.summary }),
 		...(brief.issue !== undefined && { issue: brief.issue }),
+		...(brief.keep !== undefined && { keep: brief.keep }),
 		caseInsensitive: params.caseInsensitive,
 		wouldRefuse: params.findings,
 		acceptedOverlaps: params.acceptedOverlaps,
@@ -378,6 +383,15 @@ function summaryFaults(value: unknown): Refusal[] {
 	if (shape.length > 0) return shape
 	if (!holdsPathOrLink(value as string)) return []
 	return [refusalOf({ field: 'summary', rule: 'public-text', detail: SUMMARY_PATH_DETAIL })]
+}
+
+/**
+ * The faults of an optional keep (KEEP 3.4): one line of at most `KEEP_REASON_LIMIT` characters; its words are checked
+ * by the start, which knows the repository.
+ */
+function keepFaults(value: unknown): Refusal[] {
+	if (value === undefined) return []
+	return textFaults({ field: KEEP_FIELD, value, oneLine: true, maxLength: KEEP_REASON_LIMIT })
 }
 
 /** The fault of an optional issue that is not a positive integer. */

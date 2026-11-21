@@ -44,6 +44,7 @@ import { runLotClose } from './lot-close.ts'
 import { runLotDesign } from './lot-design.ts'
 import { lotExport } from './lot-export.ts'
 import { lotForecast } from './lot-forecast.ts'
+import { runLotKeepDecision } from './lot-keep-decision.ts'
 import { runLotLand } from './lot-land.ts'
 import { runLotPr } from './lot-pr.ts'
 import { runLotPrune } from './lot-prune.ts'
@@ -240,6 +241,8 @@ export function runLot(params: {
 	}
 	if (verb === 'risk') return runRiskVerb({ cwd: params.cwd, words, now: params.now })
 	if (verb === 'scope') return runLotScope({ cwd: params.cwd, argv: words, now: params.now })
+	if (verb === 'keep' || verb === 'unkeep')
+		return runLotKeepDecision({ cwd: params.cwd, argv: [verb, ...words], now: params.now })
 	const reviewRound = runReviewRoundVerb({ cwd: params.cwd, verb, words, now: params.now })
 	if (reviewRound) return reviewRound
 	const mutationRefusal = verb === 'mutation' ? refuseMutationWords(words) : undefined

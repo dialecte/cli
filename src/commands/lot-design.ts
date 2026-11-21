@@ -46,8 +46,9 @@ import {
 import { lotState } from '../lib/store/lot-state.ts'
 import { PUBLIC_TEXT_REFUSAL } from '../lib/store/public-text.constants.ts'
 import { folderPlanEntryIds, publicTextLabel } from '../lib/store/public-text.ts'
-import { lotOfWorktree, requiredLotOf } from '../lib/store/resolve-lot.ts'
-import { APPROVABLE_STATES, ORCHESTRATOR_APPROVER } from './lot-approve.constants.ts'
+import { requiredLotOf } from '../lib/store/resolve-lot.ts'
+import { ownWorktreeRefusal, recordedByOf } from '../lib/store/signer-rules.ts'
+import { APPROVABLE_STATES } from './lot-approve.constants.ts'
 import {
 	DESIGN_FLAGS,
 	SYSTEM_TEMPORARY_ROOTS,
@@ -102,7 +103,14 @@ export function runLotDesign(params: {
 		})
 	const refusal =
 		byRefusal({ place, by: request.by, reason: request.reason }) ??
-		ownWorktreeRefusal({ place, cwd: params.cwd, verb: request.kind })
+		ownWorktreeRefusal({
+			lotFolder: place.lotFolder,
+			cwd: params.cwd,
+			command: fillMessage({
+				template: LOT_DESIGN_LINES.ownWorktreeCommand,
+				values: { verb: request.kind },
+			}),
+		})
 	if (refusal !== undefined) return lineOf({ exitCode: 2, line: refusal })
 	return request.kind === 'approve'
 		? approveDesign({ place, by: request.by, reason: request.reason, at })
@@ -323,7 +331,7 @@ function approveDesign(params: {
 				values: { file: last.file, lot: place.lot },
 			}),
 		})
-	const by = recordedByOf(params.by)
+	const by = recordedByOf({ by: params.by })
 	try {
 		appendDesignLine({
 			lotFolder: place.lotFolder,
@@ -363,7 +371,7 @@ function waiveDesign(params: {
 			exitCode: 2,
 			line: fillMessage({ template: LOT_DESIGN_LINES.notRequired, values: { lot: place.lot } }),
 		})
-	const by = recordedByOf(params.by)
+	const by = recordedByOf({ by: params.by })
 	try {
 		appendDesignLine({
 			lotFolder: place.lotFolder,
@@ -417,18 +425,6 @@ function byRefusal(params: {
 			})
 }
 
-/** The refusal of an approval or a waiver from the lot's own worktree (or its review throwaway); undefined elsewhere. */
-function ownWorktreeRefusal(params: {
-	place: DesignLotPlace
-	cwd: string
-	verb: 'approve' | 'waive'
-}): string | undefined {
-	const here = lotOfWorktree({ cwd: params.cwd })
-	if (here === undefined || realPathOf(here) !== realPathOf(params.place.lotFolder))
-		return undefined
-	return fillMessage({ template: LOT_DESIGN_LINES.ownWorktree, values: { verb: params.verb } })
-}
-
 /** The lot's design standing, held to the shared areas a refusing verb reads: its base's through git. */
 function gitStandingOf(place: DesignLotPlace): DesignStanding {
 	return lotDesignStandingOf({
@@ -447,11 +443,6 @@ function gitNeedOf(place: DesignLotPlace): DesignNeed {
 
 function isRecorded(line: DesignLine): line is DesignRecordedLine {
 	return line.kind === 'recorded'
-}
-
-/** The orchestrator in any casing is recorded as the one word every view names. */
-function recordedByOf(by: string): string {
-	return by.toLowerCase() === ORCHESTRATOR_APPROVER ? ORCHESTRATOR_APPROVER : by
 }
 
 /** A write's answer: its line, the standing after it, and the review record's warning when it could not be written. */

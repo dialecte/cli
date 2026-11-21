@@ -1,7 +1,14 @@
 import { TEMPORARY_INFIX } from '../lib/store/store.constants.ts'
 
 /** The options `lot start` takes followed by a value, and its flags, without the dashes. */
-export const START_VALUE_OPTIONS: readonly string[] = ['effort', 'simulate', 'by', 'reason', 'on']
+export const START_VALUE_OPTIONS: readonly string[] = [
+	'effort',
+	'simulate',
+	'by',
+	'reason',
+	'on',
+	'keep',
+]
 export const START_FLAGS: readonly string[] = ['dry-run', 'json', 'overlap-ok']
 
 /** Why `lot start` is a usage error: `{extra}` the words beyond the brief, `{effort}` and `{efforts}` the flag's. */
@@ -13,6 +20,21 @@ export const START_USAGE_REASONS = {
 	goAheadLine: '{option} takes one non-empty line',
 	overlapOk: '--overlap-ok takes --by <who> and --reason <text>: who accepts the overlap and why',
 	asked: 'no effort among {efforts} after {attempts} answers',
+} as const
+
+/**
+ * The keep of a start (KEEP 3.4): how its refusal names the flag and the brief field, its refusals (given twice, not
+ * one line, over the limit), the dry run's line and the started line.
+ */
+export const START_KEEP_TEXTS = {
+	flagLabel: '--keep',
+	briefLabel: 'keep',
+	twice: "lot start: keep given twice: the brief's keep and --keep",
+	notOneLine: 'lot start: --keep takes one non-empty line: nothing written',
+	overLimit:
+		'lot start: --keep holds {length} characters, over the limit of {limit}: nothing written',
+	dryRun: 'keep: {reason}',
+	started: 'kept: {reason}',
 } as const
 
 /** The line a start prints per accepted overlap: `{overlap}` its text. */

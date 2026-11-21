@@ -142,11 +142,12 @@ describe('@dialecte/cli/lookups', () => {
 		])
 	})
 
-	it('ships the seven JSON schemas the commands print in dist/schemas', () => {
+	it('ships the eight JSON schemas the commands print in dist/schemas', () => {
 		expect(readdirSync(join(BUILT, 'dist', 'schemas')).sort()).toEqual([
 			'config-list.schema.json',
 			'config-yml.schema.json',
 			'dialecterc.schema.json',
+			'keep-decision.schema.json',
 			'lot-risk.schema.json',
 			'risk-line.schema.json',
 			'rules.schema.json',

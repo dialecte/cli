@@ -269,3 +269,43 @@ describe.each(tables)('findIdleWorktrees: $title', ({ cases }) => {
 		expect(findIdleWorktrees({ repository, now: WORKTREES_NOW })).toEqual(expected)
 	})
 })
+
+/** The repository of a case whose lots are each kept on purpose (`HealthLot.kept`). */
+function keptRepositoryOf(params: Pick<IdleCase, 'worktrees' | 'lots'>) {
+	const repository = worktreesRepositoryOf(params)
+	return { ...repository, lots: repository.lots.map((lot) => ({ ...lot, kept: true as const })) }
+}
+
+const keptCases: IdleCase[] = [
+	{
+		name: 'its own worktree held by a committed lot kept on purpose, idle 5 d -> not counted',
+		worktrees: [{ name: '0001-cli-a', idleMs: 5 * DAY_MS }],
+		lots: [{ state: 'committed', worktree: worktreePathOf('0001-cli-a') }],
+		expected: [],
+	},
+	{
+		name: 'its own worktree held by a canceled lot kept on purpose, idle 2 d -> not counted',
+		worktrees: [{ name: '0001-cli-a', idleMs: 2 * DAY_MS }],
+		lots: [{ state: 'canceled', worktree: worktreePathOf('0001-cli-a') }],
+		expected: [],
+	},
+	{
+		name: 'a kept committed lot holds the older of two idle worktrees -> only the other is counted',
+		worktrees: [
+			{ name: '0001-cli-a', idleMs: 2 * DAY_MS },
+			{ name: '0002-cli-b', idleMs: 5 * DAY_MS },
+		],
+		lots: [{ state: 'committed', worktree: worktreePathOf('0002-cli-b') }],
+		expected: [
+			idleFinding({ text: '1 idle worktree with no open lot (oldest 0001-cli-a, idle 48 h 0 m)' }),
+		],
+	},
+]
+
+describe('findIdleWorktrees: a lot kept on purpose holds its own worktree', () => {
+	it.each(keptCases)('$name', ({ worktrees, lots, expected }) => {
+		expect(
+			findIdleWorktrees({ repository: keptRepositoryOf({ worktrees, lots }), now: WORKTREES_NOW }),
+		).toEqual(expected)
+	})
+})

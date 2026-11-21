@@ -12,8 +12,10 @@ import { join } from 'node:path'
 import { copyFileOrLink, isFileOrLink } from '../copy-file-or-link.ts'
 import { tabsExpanded } from '../expand-tabs.ts'
 import { mainCheckoutOf, readGit } from '../git.ts'
+import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { textOf } from '../print/print.ts'
 import { shellQuote } from '../shell-quote.ts'
+import { KEEP_TEXTS } from '../store/keep-decisions.constants.ts'
 import { addWorktree, checkoutOf } from '../worktree/add-worktree.ts'
 import { worktreeIndexOf } from '../worktree/worktree-index.ts'
 import { LOT_FILE_PATTERN } from '../worktree/worktree.constants.ts'
@@ -211,11 +213,8 @@ export function addThrowaway(params: {
 			: message
 	}
 	if (typeof added === 'string') return added
-	const throwaway: ReviewThrowaway = {
-		path: added.worktree,
-		branch,
-		removal: removalCommand({ main: added.repository, path: added.worktree, branch }),
-	}
+	const removal = removalCommand({ main: added.repository, path: added.worktree, branch })
+	const throwaway: ReviewThrowaway = { path: added.worktree, branch, removal }
 	const names = roundNames(params.previous)
 	const deletedFile = join(params.folder, names.deleted)
 	const snapshot = join(params.folder, names.folder)
@@ -236,7 +235,7 @@ export function addThrowaway(params: {
 			if (!LOT_FILE_PATTERN.test(path))
 				copyFileOrLink({ from: join(snapshot, path), to: join(added.worktree, path) })
 	} catch (error) {
-		return `${(error as Error).message}; the throwaway worktree is half made, remove it: ${throwaway.removal}`
+		return `${(error as Error).message}; the throwaway worktree is half made, remove it: ${removal}`
 	}
 	return throwaway
 }
@@ -262,7 +261,10 @@ export function renderDelta(delta: ReviewDelta): PrintedText {
 	if (delta.throwaway)
 		lines.push(
 			`throwaway worktree: ${delta.throwaway.path} (branch ${delta.throwaway.branch}, ${previous} applied)`,
-			`remove it: ${delta.throwaway.removal}`,
+			// a kept lot's throwaway stays with it: no line points at removing it (KEEP 3.8)
+			delta.kept === undefined
+				? `remove it: ${delta.throwaway.removal ?? ''}`
+				: fillMessage({ template: KEEP_TEXTS.throwawayStays, values: { kept: delta.kept } }),
 		)
 	return textOf(lines)
 }

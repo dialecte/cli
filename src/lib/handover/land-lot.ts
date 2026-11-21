@@ -36,6 +36,7 @@ import { readPackageJson } from '../package-json.ts'
 import { composePullRequest, keptPartOf, linesOf } from '../pr/compose-pull-request.ts'
 import { preparePullRequest } from '../pr/pull-request-sources.ts'
 import { readIdentity } from '../store/identity.ts'
+import { keepNextOf, keptByDecision } from '../store/lot-keep.ts'
 import { replaceWhole } from '../store/publish.ts'
 import { STORE_FILES, STORE_REFUSAL } from '../store/store.constants.ts'
 import { resolveTddBase } from '../tdd/tdd-base.ts'
@@ -58,6 +59,7 @@ import { prepareStackLanding, settleStackedPull } from './land-stack.ts'
 import type { HostAdapter, HostRefusal, PullRequest } from '../host/host.types.ts'
 import type { LandedFact } from '../landing/landed-record.types.ts'
 import type { PullRequestText } from '../pr/pull-request.types.ts'
+import type { KeepDecision } from '../store/keep-decisions.types.ts'
 import type { LandingRecord, LandingResult } from './land-lot.types.ts'
 import type { StackLanding } from './land-stack.types.ts'
 
@@ -77,6 +79,8 @@ export function landLot(params: {
 	lotFolder: string
 	host: HostAdapter
 	now: Date
+	/** The lot's keep (KEEP 3.8): a kept lot's hints name no `lot close`; absent when it is not kept. */
+	keep?: KeepDecision
 }): LandingResult {
 	const { worktree, branch, base, host } = params
 	const unready = unreadyRefusal({ worktree, branch, base, lotFolder: params.lotFolder })
@@ -409,6 +413,7 @@ function publishLanding(params: {
 	lines: string[]
 	/** The stack step's answer: the base the pull request merges into, how it queues. */
 	stack: StackLanding | undefined
+	keep?: KeepDecision
 }): LandingResult {
 	const { worktree, branch, host, known, text, stack } = params
 	const lines = [...params.lines]
@@ -452,10 +457,16 @@ function publishLanding(params: {
 			}
 		lines.push(...settled.lines)
 	}
+	const kept = keptByDecision({ keep: params.keep })
 	lines.push(
-		LANDING_LINES.closeWhenMerged
-			.replace('{entry}', () => params.entry)
-			.replace('{lot}', () => params.lot),
+		kept === undefined
+			? LANDING_LINES.closeWhenMerged
+					.replace('{entry}', () => params.entry)
+					.replace('{lot}', () => params.lot)
+			: fillMessage({
+					template: LANDING_LINES.closeWhenMergedKept,
+					values: { lot: params.lot, kept },
+				}),
 		LANDING_LINES.draft.replace('{lot}', () => params.lot),
 	)
 	return { exitCode: 0, lines }
@@ -572,6 +583,7 @@ function landedLot(params: {
 	base: string
 	lotFolder: string
 	fact: LandedFact
+	keep?: KeepDecision
 }): LandingResult {
 	const { fact, worktree } = params
 	writeLanded({ lotFolder: params.lotFolder, fact })
@@ -602,9 +614,21 @@ function landedLot(params: {
 							values: { work: workSinceLandingText(since) },
 						}),
 					]),
-			fillMessage({ template: LANDING_LINES.closeLanded, values: { lot: params.lot } }),
+			closeLandedLineOf({ lot: params.lot, keep: params.keep }),
 		],
 	}
+}
+
+/** The last line of a committed lot: its close; for a lot kept on purpose, its keep and how to release it (KEEP 3.8). */
+function closeLandedLineOf(params: { lot: string; keep: KeepDecision | undefined }): string {
+	const { lot, keep } = params
+	const kept = keptByDecision({ keep })
+	if (keep === undefined || kept === undefined)
+		return fillMessage({ template: LANDING_LINES.closeLanded, values: { lot } })
+	return fillMessage({
+		template: LANDING_LINES.closeLandedKept,
+		values: { kept, next: keepNextOf({ name: lot, keep }) },
+	})
 }
 
 /**

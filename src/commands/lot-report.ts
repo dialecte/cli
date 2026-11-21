@@ -3,14 +3,25 @@
  * sections 7 and 12): reads files only, writes nothing, starts no process (nothing this module reaches imports a
  * child process).
  */
-import { readFeatureReport, readLotReport } from '../lib/events/read-lot-report.ts'
-import { renderFeatureReport, renderLotReport } from '../lib/events/render-report.ts'
+import { readFeatureReport, readKeptLots, readLotReport } from '../lib/events/read-lot-report.ts'
+import {
+	renderFeatureReport,
+	renderKeptLots,
+	renderLotReport,
+} from '../lib/events/render-report.ts'
+import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { JSON_FLAG } from '../lib/parse-invocation.constants.ts'
 import { jsonOf, textOf } from '../lib/print/print.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
 import { lotFailureExit, lotRefusalExit, lotUsageExit } from '../lib/store/lot-exits.ts'
 import { noLotRefusal, requiredLotOf } from '../lib/store/resolve-lot.ts'
-import { FEATURE_OPTION, REPORT_FLAGS, REPORT_VALUE_OPTIONS } from './lot-report.constants.ts'
+import {
+	FEATURE_OPTION,
+	KEPT_FLAG,
+	KEPT_USAGE_TEXTS,
+	REPORT_FLAGS,
+	REPORT_VALUE_OPTIONS,
+} from './lot-report.constants.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { ReportedLot } from '../lib/events/read-lot-report.types.ts'
@@ -37,6 +48,14 @@ export function lotReport(params: {
 	const now = params.now ?? new Date()
 	const feature = read.values.get(FEATURE_OPTION)
 	const [id, ...extra] = read.words
+	if (read.flags.has(KEPT_FLAG))
+		return keptReport({
+			cwd: params.cwd,
+			id,
+			feature,
+			simulated: read.flags.has('simulated'),
+			json,
+		})
 	if (feature !== undefined) {
 		if (id !== undefined)
 			return lotUsageExit({ reason: `lot report --feature takes no id, not ${id}`, json })
@@ -60,6 +79,34 @@ export function lotReport(params: {
 	return {
 		exitCode: 0,
 		output: json ? jsonOf(lotReportJson({ report }), 2) : textOf(renderLotReport({ report })),
+	}
+}
+
+/**
+ * Every kept lot of the stores (KEEP 3.6), exit 0, `no kept lot` for none; an id, `--feature` or `--simulated` beside
+ * `--kept` is refused (exit 2) with its own line.
+ */
+function keptReport(params: {
+	cwd: string
+	id: string | undefined
+	feature: string | undefined
+	simulated: boolean
+	json: boolean
+}): CommandResult {
+	const { json } = params
+	const refusal =
+		params.id === undefined
+			? params.feature !== undefined
+				? KEPT_USAGE_TEXTS.feature
+				: params.simulated
+					? KEPT_USAGE_TEXTS.simulated
+					: undefined
+			: fillMessage({ template: KEPT_USAGE_TEXTS.id, values: { id: params.id } })
+	if (refusal !== undefined) return lotRefusalExit({ lines: [refusal], json })
+	const lots = readKeptLots({ cwd: params.cwd })
+	return {
+		exitCode: 0,
+		output: json ? jsonOf({ lots }, 2) : textOf(renderKeptLots({ lots })),
 	}
 }
 
@@ -120,5 +167,6 @@ function lotReportJson(params: { report: ReportedLot }): LotReportJson {
 		events: report.events,
 		next: report.next,
 		simulated: report.simulated === true,
+		kept: report.kept ?? null,
 	}
 }

@@ -3,11 +3,13 @@ import { basename, dirname, join } from 'node:path'
 
 import { pairRuns } from '../events/pair-runs.ts'
 import { readEvents } from '../events/read-events.ts'
+import { realPathOf } from '../file-system.ts'
 import { readStoredRecords } from '../gate-records/check-records.ts'
 import { CHECK_STORE_FOLDER } from '../gate-records/gate-records.constants.ts'
 import { readStoreEntries, registryOfCommonFolder } from '../handover/handover-store-read.ts'
 import { REHEARSAL_DECISIONS_FILE } from '../handover/handover.constants.ts'
 import { readIdentity } from '../store/identity.ts'
+import { keptByDecision } from '../store/lot-keep.ts'
 import { readCheckedLotState } from '../store/lot-records.ts'
 import { lotState } from '../store/lot-state.ts'
 import { listLotFolderNames } from '../store/store-folder.ts'
@@ -56,7 +58,7 @@ function readHealthLot(params: {
 	const events = readLotEvents({ file: join(folder, STORE_FILES.events) })
 	const { runs } = pairRuns({ events })
 	const rehearsal = readRehearsalPlan({ file: join(folder, REHEARSAL_DECISIONS_FILE) })
-	const state = readLotStateName(params)
+	const { state, kept } = readLotStateName(params)
 	const worktree = readIdentity({ lotFolder: folder })?.worktree
 	return {
 		name,
@@ -65,24 +67,28 @@ function readHealthLot(params: {
 		runs,
 		...(rehearsal === undefined ? {} : { rehearsal }),
 		...(state === undefined ? {} : { state }),
-		...(typeof worktree === 'string' ? { worktree } : {}),
+		// by real path, as git registers it: a lot held by an identity spelled through a link is held all the same
+		...(typeof worktree === 'string' ? { worktree: realPathOf(worktree) } : {}),
+		...(kept ? { kept } : {}),
 	}
 }
 
 /**
  * The lot's state as the store reads it, `damaged` when a record does not hold (an identity that does not read
- * included); undefined when the folder holds no `identity.json` (no lot records, only events for instance).
+ * included), and whether it is kept on purpose (`keptByDecision`, KEEP 3.5.5); no state when the folder holds no
+ * `identity.json` (no lot records, only events for instance).
  */
 function readLotStateName(params: {
 	folder: string
 	registry: string
 	entries: readonly StoreEntry[]
-}): HealthLot['state'] {
+}): Pick<HealthLot, 'state' | 'kept'> {
 	const { folder, registry, entries } = params
-	if (!existsSync(join(folder, STORE_FILES.identity))) return undefined
+	if (!existsSync(join(folder, STORE_FILES.identity))) return {}
 	const checked = readCheckedLotState({ lotFolder: folder, registry, entries })
-	if (checked === undefined) return undefined
-	return 'damage' in checked ? DAMAGED_STATE : lotState(checked.input).state
+	if (checked === undefined) return {}
+	const state = 'damage' in checked ? DAMAGED_STATE : lotState(checked.input).state
+	return keptByDecision({ keep: checked.keep }) === undefined ? { state } : { state, kept: true }
 }
 
 /** The lot's events, sorted; none when the file cannot be read (no access, for instance). */

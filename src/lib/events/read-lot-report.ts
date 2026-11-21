@@ -8,19 +8,25 @@ import { basename, dirname, join } from 'node:path'
 
 import { realPathOf } from '../file-system.ts'
 import { registryOfCommonFolder } from '../handover/handover-store-read.ts'
+import { readStoreEntries } from '../handover/handover-store-read.ts'
+import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { BRANCH_REF_PREFIX } from '../landing/lost-work.constants.ts'
 import { findLedgerTable, tableCells } from '../review-rounds/findings-ledger.ts'
 import { LEDGER_FILE } from '../review-rounds/review-rounds.constants.ts'
 import { lotsOfFeature, storesOf } from '../store/feature-lots.ts'
+import { keepJsonOf } from '../store/keep-decisions.ts'
+import { keepNextOf, keptByDecision } from '../store/lot-keep.ts'
 import { nextCommandsOf } from '../store/lot-next.ts'
 import {
 	commonFolderOfLotFolder,
-	readLotStateInput,
+	readCheckedLotState,
 	registryOfLotFolder,
 } from '../store/lot-records.ts'
 import { lotState } from '../store/lot-state.ts'
 import { readStationNext } from '../store/station-records.ts'
+import { listLotFolderNames } from '../store/store-folder.ts'
 import {
+	DAMAGED_STATE,
 	LOTS_KEEPING_NOTHING,
 	NEXT_COMMANDS,
 	PACKED_REFS_FILE,
@@ -28,7 +34,13 @@ import {
 } from '../store/store.constants.ts'
 import { CARDS_LOG_FILE } from './cards-log.constants.ts'
 import { finalCardOf, linesOfLot, readCardsLog } from './cards-log.ts'
-import { STEP_KIND_PREFIX } from './events.constants.ts'
+import {
+	GONE,
+	KEPT_REPORT_TEXTS,
+	PRESENT,
+	STEP_KIND_PREFIX,
+	UNKNOWN_PRESENCE,
+} from './events.constants.ts'
 import { buildLotReport, skillCounts } from './lot-report.ts'
 import { readEvents } from './read-events.ts'
 import { SEVERITY_CELL, STATE_CELL, STATE_WORD_PATTERN } from './read-lot-report.constants.ts'
@@ -36,7 +48,8 @@ import { readMutationRunFiles, readRecordTimes } from './record-times.ts'
 import { sumLotTotals, sumStationTotals } from './token-totals.ts'
 import { SUITE_FAMILIES } from './unrecorded-steps.constants.ts'
 
-import type { LotStateInput, LotStateName } from '../store/store.types.ts'
+import type { KeepDecision } from '../store/keep-decisions.types.ts'
+import type { CheckedLotState, LotStateInput, LotStateName } from '../store/store.types.ts'
 import type { QuestionTime } from './attribute-steps.types.ts'
 import type { CardLine, FrozenRecords, Removal } from './cards-log.types.ts'
 import type { AgentCount, LedgerFinding } from './lot-report.types.ts'
@@ -44,6 +57,8 @@ import type {
 	FeatureLot,
 	FeatureReport,
 	FeatureTotals,
+	KeptItemPresence,
+	KeptLot,
 	ReportedLot,
 } from './read-lot-report.types.ts'
 import type { LotTokenTotal, StationTokenTotal } from './token-totals.types.ts'
@@ -58,8 +73,9 @@ import type { WorktreeRecordTimes } from './unrecorded-steps.types.ts'
 export function readLotReport(params: { lotFolder: string; now: Date }): ReportedLot | undefined {
 	const { lotFolder } = params
 	const registry = registryOfLotFolder(lotFolder)
-	const input = readLotStateInput({ lotFolder, registry })
-	if (input === undefined) return undefined
+	const checked = readCheckedLotState({ lotFolder, registry })
+	if (checked === undefined || !('input' in checked)) return undefined
+	const { input, keep } = checked
 	const { identity } = input
 	const state = lotState(input)
 	const read = readEvents({ file: join(lotFolder, STORE_FILES.events) })
@@ -112,10 +128,86 @@ export function readLotReport(params: { lotFolder: string; now: Date }): Reporte
 			(run) => ({ ...run, worktree: realOf(run.worktree) }),
 		),
 	})
+	const keptText = keptByDecision({ keep })
 	return {
 		...report,
-		next: nextOf({ input, lotFolder, state: state.state, worktree: identity.worktree }),
+		next: nextOf({ input, keep, lotFolder, state: state.state, worktree: identity.worktree }),
 		simulated: identity.simulated,
+		kept: keepJsonOf({ keep }),
+		...(keptText !== undefined && { keptText }),
+	}
+}
+
+/**
+ * Every lot kept on purpose of the stores of the user's store list and of `cwd` (KEEP 3.6), real, simulated and
+ * damaged, sorted by name: per store the registry read once, then each lot folder read once, and only a kept one goes on;
+ * each line is built from that read alone (no events, no `cards.log`).
+ */
+export function readKeptLots(params: { cwd: string }): KeptLot[] {
+	return storesOf({ cwd: params.cwd })
+		.flatMap(function keptOfStore(store) {
+			const registry = registryOfCommonFolder(dirname(store))
+			// the registry read once for every lot of the store
+			const entries = readStoreEntries(registry)
+			return listLotFolderNames({ store }).flatMap(function keptOfFolder(name): KeptLot[] {
+				const lotFolder = join(store, name)
+				const checked = readCheckedLotState({ lotFolder, registry, entries })
+				if (checked?.keep === undefined) return []
+				return [keptLotOf({ lotFolder, name, checked, keep: checked.keep })]
+			})
+		})
+		.sort((left, right) => left.lot.localeCompare(right.lot))
+}
+
+/** The `--kept` line of one kept lot, from its checked read: its state, keep, items and next. */
+function keptLotOf(params: {
+	lotFolder: string
+	name: string
+	checked: CheckedLotState
+	keep: KeepDecision
+}): KeptLot {
+	const { lotFolder, name, checked, keep } = params
+	const kept = keepJsonOf({ keep })
+	if ('input' in checked) {
+		const { input } = checked
+		const { state } = lotState(input)
+		const left = lotItemsLeftOf({
+			lotFolder,
+			worktree: input.identity.worktree,
+			branch: input.identity.branch,
+		})
+		return {
+			lot: name,
+			state,
+			kept,
+			...presenceOf(left),
+			next: nextOf({ input, keep, lotFolder, state, worktree: input.identity.worktree }),
+		}
+	}
+	const next = keepNextOf({ name, keep })
+	const { identity } = checked
+	// an identity that does not read names no worktree nor branch: its repair comes first
+	if (identity === undefined)
+		return {
+			lot: name,
+			state: DAMAGED_STATE,
+			kept,
+			worktree: UNKNOWN_PRESENCE,
+			branch: UNKNOWN_PRESENCE,
+			next: fillMessage({ template: KEPT_REPORT_TEXTS.identityNext, values: { next } }),
+		}
+	const left = lotItemsLeftOf({ lotFolder, worktree: identity.worktree, branch: identity.branch })
+	return { lot: name, state: DAMAGED_STATE, kept, ...presenceOf(left), next }
+}
+
+/** `present` or `gone` for each of a lot's own items. */
+function presenceOf(left: { worktree: boolean; branch: boolean }): {
+	worktree: KeptItemPresence
+	branch: KeptItemPresence
+} {
+	return {
+		worktree: left.worktree ? PRESENT : GONE,
+		branch: left.branch ? PRESENT : GONE,
 	}
 }
 
@@ -277,28 +369,48 @@ function folderNamesOf(params: { folder: string }): string[] {
 /**
  * The lot's next command: the state's (`nextCommandsOf`, with the next station as `lot status` reads it); for a
  * committed or canceled lot whose worktree is on disk or whose branch is still there, `lot prune` of the lot (dry: it
- * prints what would go); none once nothing remains.
+ * prints what would go), or for a kept one its `lot unkeep` (KEEP 3.6); none once nothing remains.
  */
 function nextOf(params: {
 	input: LotStateInput
+	keep: KeepDecision | undefined
 	lotFolder: string
 	state: LotStateName
 	worktree: string | null
 }): string | null {
-	const { input, state, worktree } = params
+	const { input, keep, state, worktree } = params
 	if (!LOTS_KEEPING_NOTHING.includes(state))
 		return nextCommandsOf({
 			input,
 			report: lotState(input),
 			station: readStationNext({ input, lotFolder: params.lotFolder }),
+			kept: keptByDecision({ keep }),
 		}).next
 	const { identity } = input
-	const worktreeLeft = worktree !== null && existsSync(worktree)
-	const branchLeft = branchRefExists({
-		commonFolder: commonFolderOfLotFolder(params.lotFolder),
-		branch: identity.branch,
-	})
-	return worktreeLeft || branchLeft ? NEXT_COMMANDS.prune.replace('{name}', identity.name) : null
+	const left = lotItemsLeftOf({ lotFolder: params.lotFolder, worktree, branch: identity.branch })
+	if (!left.worktree && !left.branch) return null
+	// a kept lot's prune would keep everything: releasing it is the one thing left to decide
+	return keep === undefined
+		? NEXT_COMMANDS.prune.replace('{name}', identity.name)
+		: keepNextOf({ name: identity.name, keep })
+}
+
+/**
+ * Which of a lot's own items are still there, from files only: its worktree on disk, its branch's ref in the git folder
+ * of the store's repository.
+ */
+export function lotItemsLeftOf(params: {
+	lotFolder: string
+	worktree: string | null
+	branch: string
+}): { worktree: boolean; branch: boolean } {
+	return {
+		worktree: params.worktree !== null && existsSync(params.worktree),
+		branch: branchRefExists({
+			commonFolder: commonFolderOfLotFolder(params.lotFolder),
+			branch: params.branch,
+		}),
+	}
 }
 
 /**
@@ -343,6 +455,7 @@ function featureLotOf(params: { report: ReportedLot }): FeatureLot {
 		state: report.state,
 		simulated: report.simulated === true,
 		fromCardsLog: false,
+		kept: report.kept !== undefined && report.kept !== null,
 		tokens: report.totals.tokens.total,
 		elapsed: report.totals.time.elapsed,
 		runs: report.runs.length,
@@ -366,6 +479,7 @@ function cardLotOf(params: { card: CardLine }): FeatureLot {
 		state: params.card.state,
 		simulated: false,
 		fromCardsLog: true,
+		kept: false,
 		tokens: usageTokensOf({ usage }),
 		elapsed: null,
 		runs: countOf({ value: usage?.runs }),

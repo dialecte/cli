@@ -66,6 +66,8 @@ export type LotFacts = {
 	branches: BranchFacts[]
 	/** Its landed tip, when git's garbage collection pruned that commit: named, never handed to git. */
 	landedTipGone?: string
+	/** Why the lot is kept on purpose (`keptByDecision`): every item of it kept with this text (KEEP 3.5.2). */
+	kept?: string
 }
 
 /** A lot's worktree and what `lot close`'s own rules decide for it (`decideCloseTargets`): it may close, or why not. */
@@ -107,6 +109,11 @@ export type StoreLot = {
 	lotFolder: string
 	identity: LotIdentity
 	state: LotStateName | 'damaged'
+	/**
+	 * Why the lot holds its items at the move (KEEP 3.5.3): its kept text, else for a damaged lot its damaged text;
+	 * absent for a lot not kept whose records hold.
+	 */
+	kept?: string
 }
 
 /** What a repository's lots share, read once for the run. */
@@ -166,4 +173,6 @@ export type ReadLot = {
 	landedTip: string | undefined
 	/** Its landed tip, when git's garbage collection pruned that commit. */
 	landedTipGone: string | undefined
+	/** Why the lot is kept on purpose (`keptByDecision`), damaged or not; absent when it is not kept (KEEP 3.5.2). */
+	kept?: string
 }

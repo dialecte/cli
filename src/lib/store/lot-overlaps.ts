@@ -27,7 +27,7 @@ import {
 } from './lot-overlaps.constants.ts'
 import { PUBLIC_TEXT_REFUSAL, PUBLIC_TEXT_UNCHECKED_REFUSAL } from './public-text.constants.ts'
 import { publicTextLabel } from './public-text.ts'
-import { STORE_FILES } from './store.constants.ts'
+import { GO_AHEAD_LABELS, STORE_FILES } from './store.constants.ts'
 
 import type {
 	LotOverlapRecord,
@@ -134,8 +134,8 @@ export function overlapsOverLimit(records: readonly LotOverlapRecord[]): string 
 }
 
 /**
- * Why `--by` or `--reason` of an accepted overlap may not be recorded: a person's forbidden word, then (each reaches the
- * public records) a path, a link, a reference or a plan entry id; undefined when both pass.
+ * Why `--by` or `--reason` of an accepted overlap (or of a keep) may not be recorded: a person's forbidden word, then
+ * (each reaches the public records) a path, a link, a reference or a plan entry id; undefined when both pass.
  */
 export function overlapGoAheadRefusal(params: {
 	root: string
@@ -143,11 +143,14 @@ export function overlapGoAheadRefusal(params: {
 	by: string
 	reason: string
 	ids: ReadonlySet<string>
+	/** How the refusal names each text: `--by` and `--reason` unless said (a start's keep names `--keep` or `keep`). */
+	labels?: { by: string; reason: string }
 }): string | undefined {
 	const { root, verb } = params
+	const labels = params.labels ?? GO_AHEAD_LABELS
 	const options = [
-		{ option: '--by', text: params.by },
-		{ option: '--reason', text: params.reason },
+		{ option: labels.by, text: params.by },
+		{ option: labels.reason, text: params.reason },
 	]
 	const wordRefusal = forbiddenWordRefusal({ root, verb, options })
 	if (wordRefusal) return wordRefusal

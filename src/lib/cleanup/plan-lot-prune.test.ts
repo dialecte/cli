@@ -389,3 +389,130 @@ describe('planLotPrune: the run', () => {
 		])
 	})
 })
+
+/** The text a kept lot's items are kept with (`keptByDecision`). */
+const KEPT = 'kept by decision: performance audit, rerun later (by person, 2026-11-20)'
+
+/** A throwaway its proof lets go, on the round branch. */
+const GOING_THROWAWAY = {
+	path: THROWAWAY,
+	branch: ROUND_BRANCH,
+	handMade: false,
+	decision: { goes: true },
+} as const
+
+describe('planLotPrune: a lot kept on purpose (KEEP 3.5.2)', () => {
+	it('a committed landed lot, kept, a throwaway its proof lets go → every item kept with the kept text', () => {
+		const facts = factsOf({
+			lots: [
+				lotOf({
+					kept: KEPT,
+					throwaways: [GOING_THROWAWAY],
+					branches: [branchOf(), branchOf({ branch: ROUND_BRANCH, own: false })],
+				}),
+			],
+		})
+
+		expect(decisionsOf(planLotPrune(facts))).toEqual({
+			[LOT]: {
+				[`worktree ${WORKTREE}`]: { kept: KEPT },
+				[`throwaway ${THROWAWAY}`]: { kept: KEPT },
+				[`branch ${BRANCH}`]: { kept: KEPT },
+				[`branch ${ROUND_BRANCH}`]: { kept: KEPT },
+			},
+		})
+	})
+
+	it('a canceled lot, kept, whose branch deletion would lose a commit → the branch kept with the kept text, never the delete-anyway line', () => {
+		const facts = factsOf({
+			lots: [
+				lotOf({
+					state: 'canceled',
+					settled: { canceled: true },
+					kept: KEPT,
+					branches: [branchOf({ lost: [{ commit: DROPPED, why: 'dropped' }] })],
+				}),
+			],
+		})
+
+		expect(decisionsOf(planLotPrune(facts))).toEqual({
+			[LOT]: { [`worktree ${WORKTREE}`]: { kept: KEPT }, [`branch ${BRANCH}`]: { kept: KEPT } },
+		})
+	})
+
+	it('a damaged lot, kept → every item kept with the kept text, before its damage', () => {
+		const facts = factsOf({
+			lots: [
+				lotOf({
+					state: 'damaged',
+					damage: 'a transition holds a time the store does not write',
+					kept: KEPT,
+					throwaways: [GOING_THROWAWAY],
+					branches: [branchOf(), branchOf({ branch: ROUND_BRANCH, own: false })],
+				}),
+			],
+		})
+
+		expect(decisionsOf(planLotPrune(facts))).toEqual({
+			[LOT]: {
+				[`worktree ${WORKTREE}`]: { kept: KEPT },
+				[`throwaway ${THROWAWAY}`]: { kept: KEPT },
+				[`branch ${BRANCH}`]: { kept: KEPT },
+				[`branch ${ROUND_BRANCH}`]: { kept: KEPT },
+			},
+		})
+	})
+
+	it('a working lot, kept → every item kept with the kept text, before its open state', () => {
+		const facts = factsOf({
+			lots: [
+				lotOf({
+					state: 'working',
+					settled: { open: 'working', why: 'not landed: its work is not in main' },
+					kept: KEPT,
+				}),
+			],
+		})
+
+		expect(decisionsOf(planLotPrune(facts))).toEqual({
+			[LOT]: { [`worktree ${WORKTREE}`]: { kept: KEPT }, [`branch ${BRANCH}`]: { kept: KEPT } },
+		})
+	})
+
+	it('a kept lot, the processes not known → kept with the kept text, before the processes', () => {
+		const facts = factsOf({
+			lots: [lotOf({ kept: KEPT })],
+			repository: { processes: 'the processes could not be listed' },
+		})
+
+		expect(decisionsOf(planLotPrune(facts))).toEqual({
+			[LOT]: { [`worktree ${WORKTREE}`]: { kept: KEPT }, [`branch ${BRANCH}`]: { kept: KEPT } },
+		})
+	})
+
+	it('a kept committed lot whose worktree is gone, its landing not proven → still listed stale, its branch kept with the kept text', () => {
+		const facts = factsOf({
+			holders: holdersOf({ checkedOut: new Map() }),
+			lots: [
+				lotOf({
+					settled: { notLanded: 'not landed: its work is not in main' },
+					kept: KEPT,
+					worktree: undefined,
+					worktreeGone: true,
+				}),
+			],
+		})
+
+		expect(
+			lotsOf(planLotPrune(facts)).map((lot) => ({
+				stale: lot.stale,
+				items: lot.items.map((item) => ({ name: item.name, decision: item.decision })),
+			})),
+		).toEqual([
+			{
+				stale: expect.stringContaining('stale: worktree gone'),
+				items: [{ name: BRANCH, decision: { kept: KEPT } }],
+			},
+		])
+	})
+})

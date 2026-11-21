@@ -31,8 +31,10 @@ export type HealthLot = {
 	rehearsal?: RehearsalPlan
 	/** The lot's state as the store reads it (`damaged` for a damaged lot); absent when the folder holds no lot records. */
 	state?: LotStateName | typeof DAMAGED_STATE
-	/** The worktree the lot's identity names; absent when the identity names none or does not read. */
+	/** The worktree the lot's identity names, by real path; absent when the identity names none or does not read. */
 	worktree?: string
+	/** The lot is kept on purpose (`keep.jsonl`): its own worktree is held, never idle (KEEP 3.5.5). */
+	kept?: true
 }
 export type HealthRepository = {
 	name: string

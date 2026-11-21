@@ -4,8 +4,8 @@ export type ReviewThrowaway = {
 	path: string
 	/** Its branch: `<lot branch>-round-<n-1>`. */
 	branch: string
-	/** The removal command, with its absolute `cd` into the main checkout. */
-	removal: string
+	/** The removal command, with its absolute `cd` into the main checkout; left out for a lot kept on purpose. */
+	removal?: string
 }
 
 /** How a file's fix diff is taken, by where the file is. */
@@ -27,6 +27,8 @@ export type ReviewDelta = {
 	root: string
 	files: ReviewDeltaFile[]
 	throwaway?: ReviewThrowaway
+	/** The lot's keep text (`keptByDecision`, KEEP 3.8): its throwaway stays with it; absent when it is not kept. */
+	kept?: string
 }
 
 /** One row of the findings ledger table, by its line in the file. */

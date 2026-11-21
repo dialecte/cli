@@ -170,9 +170,8 @@ function readStore(params: { listed: ListedStore; reading: InboxReading }): Stor
 		const { input } = checked
 		if (!matchesRepository({ repository: input.identity.repository, wanted: reading.repository }))
 			continue
-		lots.push(
-			lotListingOf({ input, status: lotStatusOfInput({ input, lotFolder, entries }), reading }),
-		)
+		const status = lotStatusOfInput({ input, keep: checked.keep, lotFolder, entries })
+		lots.push(lotListingOf({ input, status, reading }))
 	}
 	return {
 		common,

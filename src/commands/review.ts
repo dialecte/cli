@@ -31,6 +31,8 @@ import {
 	worktreeStateRefusal,
 } from '../lib/review-rounds/worktree-state.ts'
 import { lotFolderOf } from '../lib/store/lot-folder.ts'
+import { keptByDecision } from '../lib/store/lot-keep.ts'
+import { readCheckedLotState, registryOfLotFolder } from '../lib/store/lot-records.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { StepHandle } from '../lib/events/record-step.types.ts'
@@ -127,10 +129,23 @@ function reviewDelta(params: { cwd: string; argv: string[]; now: Date }): Comman
 		recorder?.end({ exit: typeof throwaway === 'string' ? 1 : 0, stateHash: null })
 		if (typeof throwaway === 'string')
 			return resultOf({ exitCode: 1, lines: [`${verbPrefix('delta')}: ${throwaway}`] })
-		delta.throwaway = throwaway
+		// a kept lot's throwaway stays with it: no removal command, its keep named instead (KEEP 3.8)
+		const kept = lotFolder === undefined ? undefined : keptOfLotFolder({ lotFolder })
+		if (kept === undefined) delta.throwaway = throwaway
+		else {
+			delta.throwaway = { path: throwaway.path, branch: throwaway.branch }
+			delta.kept = kept
+		}
 	}
 	return {
 		exitCode: 0,
 		output: flags.has('json') ? jsonOf(delta, 2) : renderDelta(delta),
 	}
+}
+
+/** The keep text of the lot a delta resolved, read through the one lot reader; undefined when it is not kept. */
+function keptOfLotFolder(params: { lotFolder: string }): string | undefined {
+	const { lotFolder } = params
+	const checked = readCheckedLotState({ lotFolder, registry: registryOfLotFolder(lotFolder) })
+	return keptByDecision({ keep: checked?.keep })
 }

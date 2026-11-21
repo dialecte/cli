@@ -15,7 +15,11 @@ export const BRIEF_KEYS: readonly string[] = [
 	'effort',
 	'summary',
 	'issue',
+	'keep',
 ]
+
+/** The brief field a lot kept on purpose from its start names (KEEP 3.4). */
+export const KEEP_FIELD = 'keep'
 
 /** The one schema a brief may name. */
 export const BRIEF_SCHEMA = 1

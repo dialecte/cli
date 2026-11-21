@@ -1,3 +1,4 @@
+import type { KeepJson } from '../store/keep-decisions.types.ts'
 import type { AgentCount, LotReport, SkillCount } from './lot-report.types.ts'
 import type { LotTokenTotal, StationTokenTotal } from './token-totals.types.ts'
 
@@ -6,6 +7,27 @@ export type ReportedLot = LotReport & {
 	next: string | null
 	/** The lot is simulated (its identity says so); left out by a caller that does not know. */
 	simulated?: boolean
+	/**
+	 * The lot kept on purpose (KEEP 3.6): who kept it, when and why, or the keep file that cannot be trusted; null when
+	 * not; left out by a caller that does not know.
+	 */
+	kept?: KeepJson
+	/** The one text of its keep (`keptByDecision`), its report's `kept` line; absent when not kept. */
+	keptText?: string
+}
+
+/** Whether a kept lot's own item is still there: `unknown` for a lot whose identity does not read. */
+export type KeptItemPresence = 'present' | 'gone' | 'unknown'
+
+/** One line of `lot report --kept` (KEEP 3.6), built from the lot's one checked read alone. */
+export type KeptLot = {
+	lot: string
+	/** Its state, or `damaged`. */
+	state: string
+	kept: KeepJson
+	worktree: KeptItemPresence
+	branch: KeptItemPresence
+	next: string | null
 }
 
 /** One lot of a feature: read from its folder, or (`fromCardsLog`) from its final `card` line when the folder is gone. */
@@ -14,6 +36,8 @@ export type FeatureLot = {
 	state: string
 	simulated: boolean
 	fromCardsLog: boolean
+	/** The lot is kept on purpose (KEEP 3.6): marked `kept` on its line; false for a lot read from `cards.log`. */
+	kept: boolean
 	tokens: LotTokenTotal
 	/** Elapsed seconds; `null` when not known. */
 	elapsed: number | null

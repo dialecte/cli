@@ -40,11 +40,11 @@ import { formatDuration } from '../progress/format-duration.ts'
 import { readScratchMarker } from '../scratch/read-scratch-marker.ts'
 import { WORKSPACE_SCRATCH_FOLDER } from '../scratch/scratch.constants.ts'
 import { shellQuote } from '../shell-quote.ts'
-import { lotsKeepingWorktrees } from '../store/lot-keep.ts'
+import { keptByDecision, lotsKeepingWorktrees } from '../store/lot-keep.ts'
 import { readCheckedLotState } from '../store/lot-records.ts'
 import { lotState } from '../store/lot-state.ts'
 import { gitFolderAbove, listLotFolderNames, locateStore } from '../store/store-folder.ts'
-import { LOT_KEEP_REASON, LOTS_KEEPING_NOTHING } from '../store/store.constants.ts'
+import { DAMAGED_STATE, LOT_KEEP_REASON, LOTS_KEEPING_NOTHING } from '../store/store.constants.ts'
 import { COMMIT_PLAN_FOLDER, WORKTREES_FOLDER } from '../workspace.constants.ts'
 import { listWorktrees } from './add-worktree.ts'
 import { checkNodeModules } from './check-node-modules.ts'
@@ -974,7 +974,10 @@ function workKeeping(params: {
 
 /**
  * Every store lot's items by worktree (real path) and by branch, each with the reason prune keeps it: an open lot's
- * `lot <name> <state>`, a committed or canceled lot's its own item naming `lot close` (one remover per item kind). An open lot wins a worktree or a branch a closed lot names too. Files only: no git, no landing.
+ * `lot <name> <state>`; a damaged lot's (open until a person moves it aside, read from the identity its damaged read
+ * carries) its kept text when kept, else `lot <name> damaged`; a committed or canceled lot kept on purpose held like an
+ * open one with its kept text (KEEP 3.5.4); any other committed or canceled lot's its own item naming `lot prune` (one
+ * remover per item kind). A held lot wins a worktree or a branch a closed lot names too. Files only: no git, no landing.
  */
 function readLotItems(params: { repository: string }): LotItems {
 	const byWorktree = new Map<string, LotItem>()
@@ -985,11 +988,17 @@ function readLotItems(params: { repository: string }): LotItems {
 	const entries = readStoreEntries(registry)
 	for (const name of listLotFolderNames({ store })) {
 		const checked = readCheckedLotState({ lotFolder: join(store, name), registry, entries })
-		if (checked === undefined || 'damage' in checked) continue
-		const { identity } = checked.input
-		const { state } = lotState(checked.input)
+		if (checked === undefined) continue
+		const identity = 'damage' in checked ? checked.identity : checked.input.identity
+		// an identity that does not read names no item
+		if (identity === undefined) continue
+		const state = 'damage' in checked ? DAMAGED_STATE : lotState(checked.input).state
 		const open = !LOTS_KEEPING_NOTHING.some((closed) => closed === state)
-		const item: LotItem = { open, reason: lotItemReason({ lot: name, state, open }) }
+		const kept = keptByDecision({ keep: checked.keep })
+		const item: LotItem = {
+			open: open || kept !== undefined,
+			reason: lotItemReason({ lot: name, state, open, kept }),
+		}
 		if (typeof identity.worktree === 'string') {
 			const real = realPathThroughAncestors(identity.worktree)
 			if (open || !byWorktree.get(real)?.open) byWorktree.set(real, item)
@@ -999,14 +1008,26 @@ function readLotItems(params: { repository: string }): LotItems {
 	return { byWorktree, byBranch }
 }
 
-/** The reason a lot item is kept: an open lot's state, or a closed lot's own item naming its close. */
-function lotItemReason(params: { lot: string; state: string; open: boolean }): string {
-	return params.open
-		? LOT_KEEP_REASON.replace('{name}', params.lot).replace('{state}', params.state)
-		: fillMessage({
-				template: CLOSED_LOT_ITEM_REASON,
-				values: { lot: params.lot, state: params.state },
-			})
+/**
+ * The reason a lot item is kept: a damaged lot's kept text, else its state; an open lot's state; a closed lot's kept
+ * text, else its own item naming its prune.
+ */
+function lotItemReason(params: {
+	lot: string
+	state: string
+	open: boolean
+	kept: string | undefined
+}): string {
+	const openReason = LOT_KEEP_REASON.replace('{name}', params.lot).replace('{state}', params.state)
+	if (params.state === DAMAGED_STATE) return params.kept ?? openReason
+	if (params.open) return openReason
+	return (
+		params.kept ??
+		fillMessage({
+			template: CLOSED_LOT_ITEM_REASON,
+			values: { lot: params.lot, state: params.state },
+		})
+	)
 }
 
 /**
