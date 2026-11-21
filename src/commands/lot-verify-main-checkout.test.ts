@@ -136,7 +136,7 @@ describe(
 			).toEqual({ exitCode: 0, fix: true, mainOnly: false })
 		})
 
-		it('lot verify of a simulated lot -> refused naming it, nothing written', () => {
+		it('lot verify of a simulated lot -> refused naming it, exit 1 as snapshot and delta, nothing written', () => {
 			const lot = landingLotOf()
 			const simulated = simulatedLotOf({ lot, snapshot: true })
 
@@ -149,12 +149,12 @@ describe(
 					}),
 				].map(function refusalOf(result) {
 					return {
-						refused: result.exitCode !== 0,
+						exitCode: result.exitCode,
 						named: result.output.includes(simulated.name),
 						written: existsSync(join(simulated.lotFolder, STORE_FILES.verify)),
 					}
 				})[0],
-			).toEqual({ refused: true, named: true, written: false })
+			).toEqual({ exitCode: 1, named: true, written: false })
 		})
 
 		it('lot snapshot of a simulated lot -> refused naming it, nothing written', () => {

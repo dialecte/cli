@@ -16,13 +16,14 @@ import { writeLotsFile } from './handover-store-scenario.ts'
 import { commitIn } from './landing-repository.ts'
 import { startRealLot, writeLotHandover } from './lot-handover-workspace.ts'
 import { cliTemplate } from './lot-pr.ts'
-import { countingStep, createCounter } from './scratch-checks.ts'
-import { git, temporaryFolder, writeFiles } from './scratch-repository.ts'
+import { countingStep, createCounter, writeHandoverFolder } from './scratch-checks.ts'
+import { createScratchRepository, git, temporaryFolder, writeFiles } from './scratch-repository.ts'
 
 import type { CommandResult } from '../src/lib/command-result.types.ts'
+import type { MergeLotPlan } from '../src/lib/handover/handover.types.ts'
 import type { LandingLot } from './landing-lot.types.ts'
 import type { LotHandoverWorkspace } from './lot-handover-workspace.types.ts'
-import type { OutsideFile, ScopeGuardLot } from './scope-guard-lot.types.ts'
+import type { MergedBranch, OutsideFile, ScopeGuardLot } from './scope-guard-lot.types.ts'
 
 /**
  * The lot `name` (`0001-repo-scoped` by default) on `.worktrees/<name>`, branch `branch` (`feat/scoped`), its brief's
@@ -266,4 +267,38 @@ export function packageFolderHandover(params: {
 	}
 	writeLotHandover(handover)
 	return handover
+}
+
+/**
+ * A store lot's hand-over of one merge lot (its tree recorded, no conflict), the lot's scope the store scenarios' one
+ * (`storeLotFolder`), and the repository's real path. `sibling`: the hand-over on `main` merges `feat/side`, cut from
+ * main with `side-only.txt` (outside the scope). `base`: the hand-over on `feat/lot` merges `main`, moved on after the
+ * cut with `main-only.txt` (outside the scope): a tip on the base line.
+ */
+export function mergeLotHandover(params: { merged: MergedBranch }): { root: string; out: string } {
+	const root = realpathSync(createScratchRepository({ 'src/a.ts': 'export const a = 1\n' }))
+	const sibling = params.merged === 'sibling'
+	const branch = sibling ? 'feat/side' : 'main'
+	git({ root, args: ['checkout', '-q', '-b', sibling ? 'feat/side' : 'feat/lot'] })
+	if (sibling) commitIn({ root, files: { 'side-only.txt': 'side\n' }, message: 'feat: side' })
+	git({ root, args: ['checkout', '-q', 'main'] })
+	if (!sibling) {
+		commitIn({ root, files: { 'main-only.txt': 'main\n' }, message: 'feat: main moves on' })
+		git({ root, args: ['checkout', '-q', 'feat/lot'] })
+	}
+	const tip = git({ root, args: ['rev-parse', branch] }).trim()
+	const mergeLot: MergeLotPlan = {
+		kind: 'merge',
+		branch,
+		tip,
+		resolved: {},
+		message: `merge: bring ${branch} in`,
+		tree: git({ root, args: ['merge-tree', '--write-tree', 'HEAD', branch] }).trim(),
+	}
+	const { out } = writeHandoverFolder({
+		root,
+		lots: [mergeLot],
+		branch: sibling ? 'main' : 'feat/lot',
+	})
+	return { root, out }
 }

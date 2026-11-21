@@ -2,17 +2,22 @@
  * The scope guard (SAFE 3.2): the paths a lot's work holds that its effective scope does not cover, read fail-closed
  * (`lotScopeOf`), the store's `.dialecte/` records left out; the refusal names every such path and the add to run.
  */
-import { readFileSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { basename } from 'node:path'
 
 import { STATE_EXCLUDED_PATTERN } from '../gate-records/gate-records.constants.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { shellQuote } from '../shell-quote.ts'
 import { literalPartOf } from './brief-scope.ts'
-import { lotScopeOf, readCheckedLotState, registryOfLotFolder } from './lot-records.ts'
+import {
+	briefEntriesOf,
+	lotScopeOf,
+	readCheckedLotState,
+	registryOfLotFolder,
+} from './lot-records.ts'
 import { isCoveredBy } from './scope-changes.ts'
 import { SCOPE_GUARD_TEXTS, SCOPE_REFUSAL_LINES } from './scope-guard.constants.ts'
-import { RECORD_DAMAGE_REASONS, STORE_FILES } from './store.constants.ts'
+import { LOT_SESSION_SIGNER } from './signer-rules.constants.ts'
+import { RECORD_DAMAGE_REASONS } from './store.constants.ts'
 
 import type { ScopeGuard, ScopeRefusal } from './scope-guard.types.ts'
 
@@ -22,11 +27,14 @@ export function pathsOutsideScope(params: {
 	scope: readonly string[]
 }): string[] {
 	const { scope } = params
-	const outside = params.paths.filter(
-		(path) =>
-			!STATE_EXCLUDED_PATTERN.test(path) && !scope.some((entry) => isCoveredBy({ path, entry })),
+	return heldPathsOf(params.paths).filter(
+		(path) => !scope.some((entry) => isCoveredBy({ path, entry })),
 	)
-	return [...new Set(outside)].sort()
+}
+
+/** The paths a scope holds of `paths`: the store's `.dialecte/` records left out, each once, sorted. Pure. */
+export function heldPathsOf(paths: readonly string[]): string[] {
+	return [...new Set(paths.filter((path) => !STATE_EXCLUDED_PATTERN.test(path)))].sort()
 }
 
 /** The lot's guard over `paths`: its refusal, or undefined when every path is covered. */
@@ -79,7 +87,11 @@ function refusalOf(params: { lot: string; outside: string[] }): ScopeGuard {
 		...(literal.length > 0 && {
 			next: fillMessage({
 				template: SCOPE_GUARD_TEXTS.next,
-				values: { lot, adds: literal.map((path) => `--add ${shellQuote(path)}`).join(' ') },
+				values: {
+					lot,
+					adds: literal.map((path) => `--add ${shellQuote(path)}`).join(' '),
+					signer: LOT_SESSION_SIGNER,
+				},
 			}),
 		}),
 		...(globbed.length > 0 && {
@@ -99,22 +111,5 @@ function damageOf(params: { lotFolder: string }): string | undefined {
 	const checked = readCheckedLotState({ lotFolder, registry: registryOfLotFolder(lotFolder) })
 	if (checked === undefined) return RECORD_DAMAGE_REASONS.identityUnreadable
 	if ('damage' in checked) return checked.damage
-	return isScopeList(briefScopeOf({ lotFolder })) ? undefined : SCOPE_GUARD_TEXTS.briefScope
-}
-
-/** The `scope` of the lot's `brief.json` as parsed; undefined when the brief is missing or does not parse. */
-function briefScopeOf(params: { lotFolder: string }): unknown {
-	try {
-		const brief: unknown = JSON.parse(
-			readFileSync(join(params.lotFolder, STORE_FILES.brief), 'utf8'),
-		)
-		return (brief as Record<string, unknown> | null)?.scope
-	} catch {
-		return undefined
-	}
-}
-
-/** Whether `value` is a list of texts. */
-function isScopeList(value: unknown): boolean {
-	return Array.isArray(value) && value.every((entry) => typeof entry === 'string')
+	return briefEntriesOf({ lotFolder }) === undefined ? SCOPE_GUARD_TEXTS.briefScope : undefined
 }

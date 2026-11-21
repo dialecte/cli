@@ -317,11 +317,11 @@ export function lotScopeOf(params: { lotFolder: string }): LotScope {
  * closed - when the brief is missing, does not parse or its scope is no such list, or a scope change does not read.
  */
 function readBriefScope(params: { lotFolder: string }): string[] | undefined {
-	const scope = briefScopeValueOf(params)
-	if (!Array.isArray(scope) || !scope.every((entry) => typeof entry === 'string')) return undefined
+	const scope = briefEntriesOf(params)
+	if (scope === undefined) return undefined
 	const { changes, unreadable } = readScopeChanges(params)
 	if (unreadable > 0) return undefined
-	return effectiveScopeOf({ brief: scope as string[], changes })
+	return effectiveScopeOf({ brief: scope, changes })
 }
 
 /**
@@ -331,6 +331,17 @@ function readBriefScope(params: { lotFolder: string }): string[] | undefined {
 export function readBriefStepCount(params: { lotFolder: string }): number {
 	const steps = briefValueOf({ lotFolder: params.lotFolder, field: 'steps' })
 	return Array.isArray(steps) && steps.length > 0 ? steps.length : 1
+}
+
+/**
+ * The scope entries of the lot's `brief.json`, as written: undefined when the brief is missing, does not parse, or its
+ * scope is no list of texts (a lot no scope change can fix: a guard refuses it as damaged).
+ */
+export function briefEntriesOf(params: { lotFolder: string }): string[] | undefined {
+	const scope = briefScopeValueOf(params)
+	return Array.isArray(scope) && scope.every((entry) => typeof entry === 'string')
+		? (scope as string[])
+		: undefined
 }
 
 /** The `scope` value of the lot's `brief.json` as parsed; undefined when the brief is missing or does not parse. */

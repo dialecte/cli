@@ -290,3 +290,74 @@ describe('dialecte lot brief', { timeout: STORE_CASE_TIMEOUT }, () => {
 		expect(existsSync(join(lot.lotFolder, 'brief.json.next'))).toBe(false)
 	})
 })
+
+describe('dialecte lot brief - how --by reads', { timeout: STORE_CASE_TIMEOUT }, () => {
+	/** A new brief file: the stored brief with a new summary; its path. */
+	function newBriefOf(lot: ChangeRequestLot): string {
+		const text = `${JSON.stringify({ ...storedBriefOf(lot).value, summary: 'X answers one, now.' }, null, 2)}\n`
+		const from = join(temporaryFolder('dialecte-new-brief-'), 'brief.json')
+		writeFileSync(from, text)
+		return from
+	}
+
+	it('--by orchestrator after -- -> a usage refusal (exit 2), the brief not rewritten', () => {
+		const lot = changeRequestLot()
+		const before = storedBriefOf(lot).text
+		const from = newBriefOf(lot)
+
+		expect(
+			[
+				runLot({
+					cwd: lot.workspace.repository,
+					argv: [
+						'brief',
+						LOT_NAME,
+						'--from',
+						from,
+						'--reason',
+						REASON,
+						'--',
+						'--by',
+						'orchestrator',
+					],
+				}),
+			].map(function readOf(result) {
+				return { exitCode: result.exitCode, brief: storedBriefOf(lot).text }
+			})[0],
+		).toEqual({ exitCode: 2, brief: before })
+	})
+
+	it('--by given twice -> the last value signs, as every verb reads its options', () => {
+		const lot = changeRequestLot()
+		const from = newBriefOf(lot)
+
+		expect(
+			[
+				runLot({
+					cwd: lot.workspace.repository,
+					argv: [
+						'brief',
+						LOT_NAME,
+						'--from',
+						from,
+						'--by',
+						'person-a',
+						'--by',
+						'person-b',
+						'--reason',
+						REASON,
+					],
+				}),
+			].map(function signerOf(result) {
+				return {
+					exitCode: result.exitCode,
+					by: (
+						readTransitions({ lotFolder: lot.lotFolder }).at(-1)?.cause as
+							| { by?: string }
+							| undefined
+					)?.by,
+				}
+			})[0],
+		).toEqual({ exitCode: 0, by: 'person-b' })
+	})
+})

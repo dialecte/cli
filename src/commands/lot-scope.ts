@@ -61,7 +61,6 @@ import {
 	scopeChangesBufferOf,
 	scopeChangesFileOf,
 } from '../lib/store/scope-changes.ts'
-import { SCOPE_GUARD_TEXTS } from '../lib/store/scope-guard.constants.ts'
 import { readStackRecord } from '../lib/store/stack.ts'
 import { QUESTIONS_CLOSED_STATES, STORE_FILES } from '../lib/store/store.constants.ts'
 import { resolveTddBase } from '../lib/tdd/tdd-base.ts'
@@ -295,7 +294,7 @@ function coverageRefusal(params: {
 		})
 	if ('failure' in changed)
 		return refused({
-			template: SCOPE_GUARD_TEXTS.dropBase,
+			template: LOT_SCOPE_TEXTS.dropBase,
 			values: { name: target.name, failure: changed.failure },
 		})
 	for (const path of params.dropped) {

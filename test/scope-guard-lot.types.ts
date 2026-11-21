@@ -17,3 +17,6 @@ export type ScopeGuardLot = LandingLot & {
  * from `lots.json`, or nowhere.
  */
 export type OutsideFile = 'pending' | 'committed' | 'none'
+
+/** The branch a hand-over's merge lot merges: a sibling of the lot's branch, or the base branch itself. */
+export type MergedBranch = 'sibling' | 'base'

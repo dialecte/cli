@@ -5,7 +5,7 @@
 import { listLotChangePaths } from '../git.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { lotState } from '../store/lot-state.ts'
-import { scopeGuardOf } from '../store/scope-guard.ts'
+import { heldPathsOf, scopeGuardOf } from '../store/scope-guard.ts'
 import { QUESTIONS_CLOSED_STATES } from '../store/store.constants.ts'
 import { HOOK_SCOPE_TEXTS, SCOPE_STEP } from './hook-scope.constants.ts'
 import { hasHead, isMergeInProgress } from './hook-tdd.ts'
@@ -57,7 +57,7 @@ export function runHookScopeStep(params: {
 	if (refusal !== undefined) return refusedOf(refusal)
 	const passed = fillMessage({
 		template: HOOK_SCOPE_TEXTS.passed,
-		values: { count: String(paths.length) },
+		values: { count: String(heldPathsOf(paths).length) },
 	})
 	return resultOf({
 		status: 'passed',

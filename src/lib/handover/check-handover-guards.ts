@@ -45,7 +45,7 @@ import { lotFolderOf, storeEntryOf } from '../store/lot-folder.ts'
 import { readCheckedLotState, registryOfLotFolder } from '../store/lot-records.ts'
 import { lotState } from '../store/lot-state.ts'
 import { SCOPE_GUARD_NAME } from '../store/scope-guard.constants.ts'
-import { scopeGuardOf } from '../store/scope-guard.ts'
+import { heldPathsOf, scopeGuardOf } from '../store/scope-guard.ts'
 import { QUESTIONS_CLOSED_STATES } from '../store/store.constants.ts'
 import { resolveTddBase } from '../tdd/tdd-base.ts'
 import { findCommittedLots } from './find-committed-lots.ts'
@@ -92,6 +92,7 @@ import type { CardGateLine, GateRecord } from '../gate-records/gate-records.type
 import type { PackageJson } from '../package-json.types.ts'
 import type { Clock } from '../progress/clock.types.ts'
 import type { ReferencePattern } from '../rules/committed-text.types.ts'
+import type { ScopeRefusal } from '../store/scope-guard.types.ts'
 import type {
 	GuardedRun,
 	GuardRefusal,
@@ -540,13 +541,25 @@ function checkTarget(params: {
  * The processes working in the worktree read now (never from the card): none passes; only the person's tools pass
  * marked `!`; any left behind, or a list not known, refuses with exit 2; a rehearsal goes on past it, marked `!`.
  */
+function checkProcesses(params: { root: string; rehearsal: boolean }): GuardVerdict {
+	const processes = strayProcesses({ worktree: params.root, root: params.root })
+	const line = strayProcessesLineOf(processes)
+	if (line.status === 'passed') return { ok: true, detail: line.detail }
+	// the person's tools only: shown, never refused
+	if (processes.unknown === undefined && processes.leftBehind.length === 0)
+		return { ok: true, warning: true, detail: line.detail }
+	return params.rehearsal
+		? { ok: true, warning: true, detail: line.detail }
+		: { ok: false, exitCode: 2, detail: line.detail }
+}
+
 /**
  * The scope guard of a store lot's hand-over (SAFE 3.7), so a rehearsal sees what the hook will: the lot's committed
  * work (its lot base against HEAD), every pending lot's files and deleted files (package-relative in `lots.json`,
  * mapped to the repository's frame), and a pending merge lot's own paths when it merges another branch than the base,
- * held to the lot's effective scope. Refused in a rehearsal too. Undefined (no line) for a folder that is no store
- * lot, and for a simulated, damaged or terminal one (the `lot` guard speaks for those; nothing lands from a terminal
- * one, as the hook skips it).
+ * held to the lot's effective scope. Refused in a rehearsal too; a lot whose records read as nothing refused with the
+ * damaged line. Undefined (no line) for a folder that is no store lot, and for a simulated, damaged or terminal one
+ * (the `lot` guard speaks for those; nothing lands from a terminal one, as the hook skips it).
  */
 function checkScope(params: {
 	folder: string
@@ -559,8 +572,9 @@ function checkScope(params: {
 		lotFolderOf({ folder: params.folder }) ?? storeEntryOf({ folder: params.folder })
 	if (lotFolder === undefined) return undefined
 	const checked = readCheckedLotState({ lotFolder, registry: registryOfLotFolder(lotFolder) })
-	if (checked === undefined || 'damage' in checked || checked.input.identity.simulated)
-		return undefined
+	// a lot whose records read as nothing is refused with the damaged line, as the hook refuses it
+	if (checked === undefined) return verdictOf(scopeGuardOf({ lotFolder, paths: [] }))
+	if ('damage' in checked || checked.input.identity.simulated) return undefined
 	if (QUESTIONS_CLOSED_STATES.includes(lotState(checked.input).state)) return undefined
 	const base = resolveTddBase({ root, packageJson })
 	if ('failure' in base) return { ok: false, detail: base.failure }
@@ -580,9 +594,15 @@ function checkScope(params: {
 			ok: true,
 			detail: fillMessage({
 				template: HOOK_SCOPE_TEXTS.passed,
-				values: { count: String(new Set(paths).size) },
+				values: { count: String(heldPathsOf(paths).length) },
 			}),
 		}
+	return verdictOf(refusal)
+}
+
+/** The guard's refusal of a scope refusal: its reason, then the add to run and the glob lines under it. */
+function verdictOf(refusal: ScopeRefusal | undefined): GuardVerdict | undefined {
+	if (refusal === undefined) return undefined
 	return {
 		ok: false,
 		detail: refusal.reason,
@@ -604,18 +624,6 @@ function mergedPathsOf(params: { root: string; packageJson: PackageJson; tip: st
 		return []
 	const from = readGit({ root, args: ['merge-base', 'HEAD', tip] }).trim()
 	return listLotChangePaths({ root, from, to: tip })
-}
-
-function checkProcesses(params: { root: string; rehearsal: boolean }): GuardVerdict {
-	const processes = strayProcesses({ worktree: params.root, root: params.root })
-	const line = strayProcessesLineOf(processes)
-	if (line.status === 'passed') return { ok: true, detail: line.detail }
-	// the person's tools only: shown, never refused
-	if (processes.unknown === undefined && processes.leftBehind.length === 0)
-		return { ok: true, warning: true, detail: line.detail }
-	return params.rehearsal
-		? { ok: true, warning: true, detail: line.detail }
-		: { ok: false, exitCode: 2, detail: line.detail }
 }
 
 /**

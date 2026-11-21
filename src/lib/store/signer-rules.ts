@@ -8,27 +8,28 @@ import { basename, dirname, join } from 'node:path'
 
 import { commandSurfaceOf } from '../command-map/command-surface.ts'
 import { listedEntryOf } from '../command-map/render-help.ts'
+import { END_OF_OPTIONS } from '../command-map/verb-options.constants.ts'
 import { verbOptionsOf } from '../command-map/verb-options.ts'
 import { realPathOf, realPathThroughAncestors } from '../file-system.ts'
+import { OPTION_PREFIX } from '../handover/store-lot-guard.constants.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { THROWAWAY_WORKTREE_PATTERN } from '../plan/plan.constants.ts'
 import { CLI_PACKAGE_NAME } from '../rules/dialecte-change.constants.ts'
 import { lotOfWorktree } from './resolve-lot.ts'
 import {
 	APPROVAL_SIGNER_REFUSAL,
-	END_OF_SIGNER_OPTIONS,
 	LOT_SESSION_SIGNER,
-	ORCHESTRATOR_APPROVER,
+	ORCHESTRATOR_SIGNER,
 	OWN_WORKTREE_REFUSAL,
-	SIGNER_OPTION,
 	WORKPLACE_SIGNER_REFUSAL,
 } from './signer-rules.constants.ts'
 import { listLotIdentities, locateStore, workTreeHolding } from './store-folder.ts'
+import { BY_OPTION } from './store.constants.ts'
 
 /** The orchestrator in any casing and spacing is recorded as the one word every view names. */
 export function recordedByOf(params: { by: string }): string {
 	const { by } = params
-	return isOrchestratorSigner(by) ? ORCHESTRATOR_APPROVER : by
+	return isOrchestratorSigner(by) ? ORCHESTRATOR_SIGNER : by
 }
 
 /**
@@ -48,7 +49,7 @@ export function ownWorktreeRefusal(params: {
 
 /** Whether `by` signs as the orchestrator: trimmed and case-folded, it is `orchestrator`. */
 export function isOrchestratorSigner(by: string): boolean {
-	return by.trim().toLowerCase() === ORCHESTRATOR_APPROVER
+	return by.trim().toLowerCase() === ORCHESTRATOR_SIGNER
 }
 
 /**
@@ -115,15 +116,19 @@ function signerCandidatesOf(params: { command: string; argv: readonly string[] }
 	if (options === undefined) return []
 	const candidates: string[] = []
 	const { words } = options
-	const signer = `--${SIGNER_OPTION}`
+	const signer = BY_OPTION
 	for (let index = 0; index < words.length; index++) {
 		const word = words[index]
-		if (word === END_OF_SIGNER_OPTIONS) break
+		if (word === END_OF_OPTIONS) break
 		if (word.startsWith(`${signer}=`)) candidates.push(word.slice(signer.length + 1))
 		else if (word === signer) {
 			// the word after is a candidate, and is walked too: a `--by` there is a candidate of its own
 			if (index + 1 < words.length) candidates.push(words[index + 1])
-		} else if (word.startsWith('--') && options.valueOptions.includes(word.slice(2))) index++
+		} else if (
+			word.startsWith(OPTION_PREFIX) &&
+			options.valueOptions.includes(word.slice(OPTION_PREFIX.length))
+		)
+			index++
 	}
 	return candidates
 }
@@ -143,6 +148,7 @@ function signingOptionsOf(params: {
 		? argv[0]
 		: undefined
 	const options = verbOptionsOf({ name: command, usage: entry.usage, accepted: [verb] })
-	if (![...options.valueOptions, ...options.flags].includes(SIGNER_OPTION)) return undefined
+	if (![...options.valueOptions, ...options.flags].includes(BY_OPTION.slice(OPTION_PREFIX.length)))
+		return undefined
 	return { words: verb === undefined ? argv : argv.slice(1), valueOptions: options.valueOptions }
 }

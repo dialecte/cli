@@ -1,5 +1,8 @@
-/** The approver the cli's own lots take (its independent critic), recorded as this one word in any casing. */
-export const ORCHESTRATOR_APPROVER = 'orchestrator'
+/**
+ * The orchestrator as a signer: the approver the cli's own lots take (its independent critic), recorded as this one word
+ * in any casing and spacing.
+ */
+export const ORCHESTRATOR_SIGNER = 'orchestrator'
 
 /**
  * The refusal of a verb that releases or approves what a person decided, run from the lot's own worktree or one of its
@@ -10,12 +13,6 @@ export const OWN_WORKTREE_REFUSAL =
 
 /** The signer a lot's own session signs as, from its workplace. */
 export const LOT_SESSION_SIGNER = 'lot-session'
-
-/** The option every signing verb reads its signer from, without its dashes. */
-export const SIGNER_OPTION = 'by'
-
-/** What ends a command line's options: no word after it is an option. */
-export const END_OF_SIGNER_OPTIONS = '--'
 
 /**
  * The refusal of `--by orchestrator` from a lot's workplace (SAFE 3.5): `{lot}` the lot's name, `{signer}` the

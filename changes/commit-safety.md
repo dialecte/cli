@@ -7,4 +7,4 @@
 - **Breaking:** `lot scope --drop` refuses a drop that would uncover a file the lot committed since its lot base, not only one changed in its worktree, and refuses when the lot base cannot be read.
 - `lot verify`, `lot snapshot` and `lot delta` of a store lot read the lot's own worktree from anywhere, the main checkout included: the orchestrator verifies from there. A lot with no worktree (a simulated lot) is refused, naming it, nothing written.
 - `lot approve` reads `--by orchestrator` in any casing and with spaces around it: refused on another package than the cli, recorded as `orchestrator` on the cli's own lots.
-- `handover run --not-a-lot` reads its `--by` and `--reason` like every other signing verb: the last value given wins.
+- `handover run --not-a-lot` and `lot brief` read their options like every other signing verb: the last value given wins, and `lot brief` takes no option after `--` (a `--by` there is a usage refusal, exit 2).

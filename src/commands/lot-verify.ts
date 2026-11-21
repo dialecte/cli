@@ -48,7 +48,7 @@ export function runLotVerify(params: { cwd: string; argv: string[]; now?: Date }
 			exitCode: 1,
 			line: `lot verify: ${params.cwd} is in no git work tree: run lot verify inside the lot's worktree`,
 		})
-	if ('refusal' in tree) return answerOf({ exitCode: 2, line: `lot verify: ${tree.refusal}` })
+	if ('refusal' in tree) return answerOf({ exitCode: 1, line: `lot verify: ${tree.refusal}` })
 	const { root } = tree
 	const textRefusal = optionTextRefusal({ root, folder, by, note })
 	if (textRefusal) return answerOf({ exitCode: 2, line: textRefusal })

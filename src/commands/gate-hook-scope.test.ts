@@ -227,19 +227,19 @@ describe('gate --hook - the scope step on a lot branch', { timeout: 240_000 }, (
 		})
 	})
 
-	it('a .dialecte/ record staged beside an inside file -> ok scope', async () => {
+	it("a .dialecte/ record staged beside a change to the lot's own file -> ok scope, counting the held path only", async () => {
 		const lot = scopeGuardLotOf()
 		stageIn({
 			root: lot.worktree,
 			files: {
 				'.dialecte/mutation-records.json': '{}\n',
-				'src/in/a.ts': 'export const a = 1\n',
+				'src/in.ts': 'export const inside = 2\n',
 			},
 		})
 
 		await expect(hookScopeIn(lot.worktree)).resolves.toMatchObject({
 			exitCode: 0,
-			first: expect.stringMatching(/^ok {4}scope {2}\d+ path\(s\) inside the scope$/),
+			first: 'ok    scope  1 path(s) inside the scope',
 		})
 	})
 

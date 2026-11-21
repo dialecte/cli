@@ -5,7 +5,7 @@
  * consumed as another option's value is no candidate. `lot approve` takes `--by orchestrator` for the cli's own lots
  * only, recorded as the one word.
  */
-import { existsSync, readFileSync, realpathSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { recordingHost } from '../../../test/land-lot.ts'
@@ -17,6 +17,7 @@ import { addVerifyThrowaway, rehearsalCloneOf } from '../../../test/scope-guard-
 import { temporaryFolder } from '../../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
 import { runLotApprove } from '../../commands/lot-approve.ts'
+import { runLot } from '../../commands/lot.ts'
 import {
 	approvalSignerRefusal,
 	isOrchestratorSigner,
@@ -259,6 +260,26 @@ describe('workplaceSignerRefusal', { timeout: STORE_CASE_TIMEOUT }, () => {
 
 			expect(workplaceSignerRefusal({ command, argv: argv(lot.name), cwd })).toBeUndefined()
 		})
+})
+
+describe('workplaceSignerRefusal - a --by after --', { timeout: STORE_CASE_TIMEOUT }, () => {
+	it("lot brief <id> --from f --reason r -- --by orchestrator from the lot's worktree -> no signature: past the scan, a usage refusal (exit 2), the brief unchanged", () => {
+		const lot = landingLotOf()
+		const briefFile = join(lot.lotFolder, STORE_FILES.brief)
+		const before = readFileSync(briefFile, 'utf8')
+		const from = join(temporaryFolder('dialecte-signer-brief-'), 'brief.json')
+		writeFileSync(
+			from,
+			`${JSON.stringify({ ...(JSON.parse(before) as Record<string, unknown>), summary: 'X answers one, now.' }, null, 2)}\n`,
+		)
+		const argv = ['brief', lot.name, '--from', from, '--reason', 'r', '--', '--by', 'orchestrator']
+
+		expect({
+			dispatch: workplaceSignerRefusal({ command: 'lot', argv, cwd: lot.worktree }),
+			exitCode: runLot({ cwd: lot.worktree, argv }).exitCode,
+			brief: readFileSync(briefFile, 'utf8'),
+		}).toEqual({ dispatch: undefined, exitCode: 2, brief: before })
+	})
 })
 
 describe("lot approve - the orchestrator signs the cli's own lots", () => {

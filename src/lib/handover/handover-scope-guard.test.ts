@@ -5,17 +5,40 @@
  */
 import { runIn } from '../../../test/handover-store-scenario.ts'
 import { headOf } from '../../../test/landing-repository.ts'
-import { outsideScopeHandover, packageFolderHandover } from '../../../test/scope-guard-lot.ts'
+import {
+	mergeLotHandover,
+	outsideScopeHandover,
+	packageFolderHandover,
+} from '../../../test/scope-guard-lot.ts'
+import { runFolder } from '../../../test/scratch-checks.ts'
 import { GO_AHEAD_ARGV } from '../../../test/store-lot-guard-workspace.constants.ts'
 import { plainHandover } from '../../../test/store-lot-guard-workspace.ts'
 import { STORE_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
 import { runLot } from '../../commands/lot.ts'
+import { RECORD_DAMAGE_REASONS } from '../store/store.constants.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { LotHandoverWorkspace } from '../../../test/lot-handover-workspace.types.ts'
 
+/** The lot folder whose records the scope guard reads as nothing (`readCheckedLotState` undefined); none: read as is. */
+const { unread } = vi.hoisted(() => ({ unread: { lotFolder: undefined as string | undefined } }))
+
+vi.mock('../store/lot-records.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('../store/lot-records.ts')>()
+	return {
+		...actual,
+		readCheckedLotState: vi.fn((params: Parameters<typeof actual.readCheckedLotState>[0]) =>
+			// only the scope guard's reads: the lot guard still reads the lot as it is
+			params.lotFolder === unread.lotFolder && (new Error().stack ?? '').includes('checkScope')
+				? undefined
+				: actual.readCheckedLotState(params),
+		),
+	}
+})
+
 afterEach(function restoreEnvironment() {
+	unread.lotFolder = undefined
 	vi.unstubAllEnvs()
 })
 
@@ -83,6 +106,51 @@ describe('handover run - the scope guard', { timeout: STORE_CASE_TIMEOUT }, () =
 })
 
 describe(
+	'handover run - the scope guard on merge lots and unread records',
+	{ timeout: STORE_CASE_TIMEOUT },
+	() => {
+		it('a store-lot hand-over whose merge lot merges a sibling branch holding a file outside the scope -> refused naming it', async () => {
+			await expect(
+				(async function siblingMerge() {
+					const { root, out } = mergeLotHandover({ merged: 'sibling' })
+					const head = headOf(root)
+					const run = await runFolder({ out })
+					return {
+						refused: run.exitCode !== 0,
+						scope: run.text.split('\n').filter((line) => line.startsWith('✗ scope ')),
+						committed: headOf(root) !== head,
+					}
+				})(),
+			).resolves.toEqual({
+				refused: true,
+				scope: [
+					expect.stringMatching(/^✗ scope +1 path\(s\) outside lot \S+'s scope: side-only\.txt\b/),
+				],
+				committed: false,
+			})
+		})
+
+		it("the lot's records read as nothing by the scope guard -> refused with the damaged line, as the hook refuses", async () => {
+			await expect(
+				(async function unreadLot() {
+					const lot = outsideScopeHandover({ outside: 'none' })
+					unread.lotFolder = lot.lotFolder
+					const head = headOf(lot.worktree)
+					const run = await runIn({ cwd: lot.worktree, argv: [lot.lotFolder] })
+					return {
+						refused: run.exitCode !== 0,
+						damaged: run.text.includes(
+							`${lot.lotName} is damaged (${RECORD_DAMAGE_REASONS.identityUnreadable}): repair its records by hand; nothing to add`,
+						),
+						committed: headOf(lot.worktree) !== head,
+					}
+				})(),
+			).resolves.toEqual({ refused: true, damaged: true, committed: false })
+		})
+	},
+)
+
+describe(
 	'handover run - what the scope guard lets through (kept as today)',
 	{ timeout: STORE_CASE_TIMEOUT },
 	() => {
@@ -125,6 +193,16 @@ describe(
 				committed: true,
 				rehearsed: false,
 			})
+		})
+
+		it('a store-lot hand-over whose merge lot merges the base branch (its tip on the base line) -> the scope guard passes', async () => {
+			await expect(
+				(async function baseMerge() {
+					const { out } = mergeLotHandover({ merged: 'base' })
+					const run = await runFolder({ out })
+					return run.text.split('\n').filter((line) => /^[✓!✗] scope /.test(line))
+				})(),
+			).resolves.toEqual([expect.stringMatching(/^✓ scope +\d+ path\(s\) inside the scope/)])
 		})
 
 		it('a --not-a-lot hand-over on a branch no lot names -> no scope hold', async () => {
