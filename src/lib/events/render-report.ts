@@ -8,7 +8,7 @@ import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { escapeControlCharacters } from '../print/print.ts'
 import { formatDuration } from '../progress/format-duration.ts'
 import { KEEP_DAY_LENGTH } from '../store/keep-decisions.constants.ts'
-import { keptByDecision } from '../store/lot-keep.ts'
+import { keepTextOf } from '../store/lot-keep.ts'
 import { MS_PER_SECOND } from './attribute-steps.constants.ts'
 import { OUTSIDE_OWNER, SHARED_OWNER } from './attribute-steps.constants.ts'
 import { KEPT_REPORT_TEXTS, KEPT_TEXT_PREFIX } from './events.constants.ts'
@@ -125,7 +125,7 @@ function keepPartOf(params: { kept: KeepJson }): string {
 			template: KEPT_REPORT_TEXTS.since,
 			values: { day: kept.at.slice(0, KEEP_DAY_LENGTH), by: kept.by, reason: kept.reason },
 		})
-	return keptByDecision({ keep: kept }) ?? ''
+	return keepTextOf({ keep: kept })
 }
 
 /** The lines of a feature report: one per lot, then the totals; the simulated lots listed only with `simulated`. */

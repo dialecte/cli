@@ -66,7 +66,12 @@ export function lotsKeepingWorktrees(params: { repository: string }): ReadonlyMa
  */
 export function keptByDecision(params: { keep: KeepDecision | undefined }): string | undefined {
 	const { keep } = params
-	if (keep === undefined) return undefined
+	return keep === undefined ? undefined : keepTextOf({ keep })
+}
+
+/** The text of a keep that holds (`keptByDecision` for a lot known to be kept). */
+export function keepTextOf(params: { keep: KeepDecision }): string {
+	const { keep } = params
 	if ('unreadable' in keep)
 		return fillMessage({
 			template: KEEP_TEXTS.unreadableLines,

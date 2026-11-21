@@ -4,13 +4,12 @@
  */
 import { basename, dirname, join } from 'node:path'
 
-import { ORCHESTRATOR_APPROVER } from '../../commands/lot-approve.constants.ts'
 import { realPathOf, realPathThroughAncestors } from '../file-system.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { THROWAWAY_WORKTREE_PATTERN } from '../plan/plan.constants.ts'
 import { readIdentity } from './identity.ts'
 import { lotOfWorktree } from './resolve-lot.ts'
-import { OWN_WORKTREE_REFUSAL } from './signer-rules.constants.ts'
+import { ORCHESTRATOR_APPROVER, OWN_WORKTREE_REFUSAL } from './signer-rules.constants.ts'
 import { workTreeHolding } from './store-folder.ts'
 
 /** The orchestrator in any casing is recorded as the one word every view names. */

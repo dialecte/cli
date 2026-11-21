@@ -3,9 +3,6 @@
 /** The options `lot approve` takes followed by a value, without the dashes. */
 export const APPROVE_OPTIONS = ['by', 'reason'] as const
 
-/** The approver the cli's own lots take (its independent critic); every other package waits for a person. */
-export const ORCHESTRATOR_APPROVER = 'orchestrator'
-
 /** The package whose lots `--by orchestrator` approves: the cli knows itself by its name. */
 export const CLI_PACKAGE_NAME = '@dialecte/cli'
 

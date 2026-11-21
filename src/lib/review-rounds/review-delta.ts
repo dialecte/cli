@@ -261,10 +261,14 @@ export function renderDelta(delta: ReviewDelta): PrintedText {
 	if (delta.throwaway)
 		lines.push(
 			`throwaway worktree: ${delta.throwaway.path} (branch ${delta.throwaway.branch}, ${previous} applied)`,
-			// a kept lot's throwaway stays with it: no line points at removing it (KEEP 3.8)
-			delta.kept === undefined
-				? `remove it: ${delta.throwaway.removal ?? ''}`
-				: fillMessage({ template: KEEP_TEXTS.throwawayStays, values: { kept: delta.kept } }),
+			throwawayNextOf(delta),
 		)
 	return textOf(lines)
+}
+
+/** The line under a delta's throwaway: its removal command, or, for a kept lot, that it stays (KEEP 3.8). */
+function throwawayNextOf(delta: ReviewDelta): string {
+	if (delta.kept !== undefined)
+		return fillMessage({ template: KEEP_TEXTS.throwawayStays, values: { kept: delta.kept } })
+	return `remove it: ${delta.throwaway?.removal}`
 }

@@ -31,6 +31,7 @@ import { openBlockingFindings, refreshReviewRecord } from '../lib/review-rounds/
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
 import { PUBLIC_TEXT_REFUSAL } from '../lib/store/public-text.constants.ts'
 import { folderPlanEntryIds, publicTextLabel } from '../lib/store/public-text.ts'
+import { ORCHESTRATOR_APPROVER } from '../lib/store/signer-rules.constants.ts'
 import { recordedByOf } from '../lib/store/signer-rules.ts'
 import { STORE_FILES } from '../lib/store/store.constants.ts'
 import { resolveTddBase } from '../lib/tdd/tdd-base.ts'
@@ -40,7 +41,6 @@ import {
 	APPROVE_OPTIONS,
 	CLI_PACKAGE_NAME,
 	LOT_APPROVE_LINES,
-	ORCHESTRATOR_APPROVER,
 } from './lot-approve.constants.ts'
 import { resolveLotPlace, sendRenderedText } from './lot-pr.ts'
 
