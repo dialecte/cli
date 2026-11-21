@@ -17,6 +17,7 @@ import { writeStoreLot } from '../../test/brief-workspace.ts'
 import { OWN_DECLARATION } from '../../test/landing-lot.constants.ts'
 import {
 	addOwnDeclaration,
+	cancelLot,
 	closeArgumentsOf,
 	closeOutcomesOf,
 	landingLotOf,
@@ -125,6 +126,49 @@ function landedLotDeletingPackage(): Closable {
 	return { lot, name }
 }
 
+/**
+ * A lot whose worktree tracks the packages `packages` (committed on its branch) each holding the non-empty lot file
+ * `declaration`, with the root's declaration and lot link; landed (registered, its landed fact at the new tip) or,
+ * with `canceled`, canceled.
+ */
+function lotWithPackageLotFiles(params: {
+	packages: readonly string[]
+	declaration: string
+	canceled?: boolean
+}): Closable {
+	const lot = landingLotOf()
+	addOwnDeclaration(lot)
+	const tip = commitIn({
+		root: lot.worktree,
+		files: Object.fromEntries(
+			params.packages.map((packagePath) => [`${packagePath}/package.json`, '{ "name": "p" }\n']),
+		),
+		message: 'feat(packages): the packages',
+	})
+	for (const packagePath of params.packages) {
+		mkdirSync(join(lot.worktree, packagePath, '.dialecte'), { recursive: true })
+		writeFileSync(join(lot.worktree, packagePath, '.dialecte', 'lot.json'), params.declaration)
+	}
+	if (params.canceled) cancelLot(lot)
+	else {
+		registerLotEntry({ lot })
+		writeLandedFact({ lot, tip })
+	}
+	return { lot, name: lot.name }
+}
+
+/** `lot close <name> --json` with `afterDecisions` run once every target is decided, before anything moves. */
+function closeAfterDecisions(params: { closable: Closable; afterDecisions: () => void }) {
+	return runLotClose({
+		...closeArgumentsOf({
+			lot: params.closable.lot,
+			names: [params.closable.name],
+			host: landingHostOf({}).host,
+		}),
+		afterDecisions: params.afterDecisions,
+	})
+}
+
 /** `lot close <name> --json` from the main checkout, a host that knows no pull request. */
 function close(closable: Closable) {
 	return runLotClose(
@@ -217,6 +261,99 @@ describe('lot close: a package’s lot file', { timeout: STORE_CASE_TIMEOUT }, (
 
 	it('a landed lot that deleted the package, its lot file left → found through the lot base, archived as lots/packages/ui/lot.json, the worktree goes', () => {
 		const closable = landedLotDeletingPackage()
+		const { lot } = closable
+
+		const result = close(closable)
+
+		expect({
+			closed: closeOutcomesOf(result).map((outcome) => outcome.closed),
+			package: archiveIn({ lot, path: join(PACKAGE_ARCHIVES, 'lot.json') }),
+			worktreeLeft: existsSync(lot.worktree),
+		}).toEqual({
+			closed: [true],
+			package: PACKAGE_DECLARATION,
+			worktreeLeft: false,
+		})
+	})
+
+	it('the package’s archive folder cannot be made (a file holds its path) → the worktree kept with the write’s error, the package lot file as it was', () => {
+		const closable = landedLotWithPackageLotFile()
+		const { lot } = closable
+		mkdirSync(join(lot.lotFolder, 'lots', 'packages'), { recursive: true })
+		writeFileSync(join(lot.lotFolder, PACKAGE_ARCHIVES), 'a file where the folder goes\n')
+
+		const result = close(closable)
+
+		const [outcome] = closeOutcomesOf(result)
+		expect({
+			closed: outcome.closed,
+			namesArchive: outcome.kept?.includes(join(lot.lotFolder, PACKAGE_ARCHIVES)),
+			worktreeLeft: existsSync(lot.worktree),
+			lotFile: readFileSync(join(lot.worktree, 'packages', 'ui', '.dialecte', 'lot.json'), 'utf8'),
+		}).toEqual({
+			closed: false,
+			namesArchive: true,
+			worktreeLeft: true,
+			lotFile: PACKAGE_DECLARATION,
+		})
+	})
+
+	it('the package lot file rewritten after the close decided, before the move → the worktree kept naming it, no package archive written, the new bytes there', () => {
+		const closable = landedLotWithPackageLotFile()
+		const { lot } = closable
+		const lotFile = join(lot.worktree, 'packages', 'ui', '.dialecte', 'lot.json')
+
+		const result = closeAfterDecisions({
+			closable,
+			afterDecisions: function rewrite() {
+				writeFileSync(lotFile, FIRST_DECLARATION)
+			},
+		})
+
+		const [outcome] = closeOutcomesOf(result)
+		expect({
+			closed: outcome.closed,
+			namesLotFile: outcome.kept?.includes(lotFile),
+			worktreeLeft: existsSync(lot.worktree),
+			package: archiveIn({ lot, path: join(PACKAGE_ARCHIVES, 'lot.json') }),
+			lotFile: readFileSync(lotFile, 'utf8'),
+		}).toEqual({
+			closed: false,
+			namesLotFile: true,
+			worktreeLeft: true,
+			package: undefined,
+			lotFile: FIRST_DECLARATION,
+		})
+	})
+
+	it('two packages whose lot files hold equal bytes → each archived under its own package path, the worktree goes', () => {
+		const closable = lotWithPackageLotFiles({
+			packages: ['packages/ui', 'packages/api'],
+			declaration: PACKAGE_DECLARATION,
+		})
+		const { lot } = closable
+
+		const result = close(closable)
+
+		expect({
+			closed: closeOutcomesOf(result).map((outcome) => outcome.closed),
+			ui: archiveIn({ lot, path: join('lots', 'packages', 'ui', 'lot.json') }),
+			api: archiveIn({ lot, path: join('lots', 'packages', 'api', 'lot.json') }),
+			worktreeLeft: existsSync(lot.worktree),
+		}).toEqual({
+			closed: [true],
+			ui: PACKAGE_DECLARATION,
+			api: PACKAGE_DECLARATION,
+			worktreeLeft: false,
+		})
+	})
+
+	it('a canceled lot whose package lot file is non-empty → archived as lots/packages/ui/lot.json, the worktree goes', () => {
+		const closable = lotWithPackageLotFiles({
+			packages: ['packages/ui'],
+			declaration: PACKAGE_DECLARATION,
+			canceled: true,
+		})
 		const { lot } = closable
 
 		const result = close(closable)

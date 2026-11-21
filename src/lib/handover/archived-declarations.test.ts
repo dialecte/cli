@@ -17,6 +17,7 @@ import {
 	currentArchiveOf,
 	isRemovableDeclaration,
 	moveDeclarations,
+	writeDeclarationArchives,
 } from './archived-declarations.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -353,5 +354,59 @@ describe('moveDeclarations', () => {
 			kinds: moved.map((declaration) => declaration.decision),
 			file: readIfExists(join(root, 'packages/ui/.dialecte/lot.json')),
 		}).toEqual({ kinds: [{ kind: 'untouched' }], file: OTHER })
+	})
+})
+
+describe('writeDeclarationArchives', () => {
+	it('an archive already there with other bytes -> throws, the archive unchanged', () => {
+		const folder = temporaryFolder('dialecte-archive-write-')
+		writeFiles({ root: folder, files: { 'lots/packages/ui/lot.json': OTHER } })
+		const archive = join(folder, 'lots/packages/ui/lot.json')
+
+		expect({
+			thrown: (() => {
+				try {
+					writeDeclarationArchives({ read: [], archives: [{ path: archive, bytes: DECLARATION }] })
+					return undefined
+				} catch (error) {
+					return (error as Error).message
+				}
+			})(),
+			archive: readFileSync(archive, 'utf8'),
+		}).toEqual({ thrown: expect.stringContaining(archive), archive: OTHER })
+	})
+
+	it('bytes that do not read back as written (a lone surrogate) -> throws naming the archive', () => {
+		const folder = temporaryFolder('dialecte-archive-write-')
+		const archive = join(folder, 'lots/packages/ui/lot.json')
+
+		expect(() =>
+			writeDeclarationArchives({
+				read: [],
+				archives: [{ path: archive, bytes: '{ "a": "\uD800" }\n' }],
+			}),
+		).toThrow(`the archive ${archive} reads back other bytes`)
+	})
+
+	it('a lot file read with other bytes than it holds now -> throws naming it, nothing written', () => {
+		const root = temporaryFolder('dialecte-archive-write-')
+		writeFiles({ root, files: { 'packages/ui/.dialecte/lot.json': OTHER } })
+		const file = join(root, 'packages/ui/.dialecte/lot.json')
+		const archive = join(root, 'archives/lots/packages/ui/lot.json')
+
+		expect({
+			thrown: (() => {
+				try {
+					writeDeclarationArchives({
+						read: [{ file, bytes: DECLARATION }],
+						archives: [{ path: archive, bytes: DECLARATION }],
+					})
+					return undefined
+				} catch (error) {
+					return (error as Error).message
+				}
+			})(),
+			written: existsSync(archive),
+		}).toEqual({ thrown: expect.stringContaining(file), written: false })
 	})
 })

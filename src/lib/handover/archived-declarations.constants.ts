@@ -34,3 +34,7 @@ export const ARCHIVE_READ_BACK_DIFFERS = 'the archive {archive} reads back other
 /** The card's tdd line for a package's own non-empty lot file: counted, never judged by the root's gate. */
 export const PACKAGE_LOT_FILE_LINE =
 	"{package}: {accept} accept, {revised} revised, {gone} gone (judged by that package's gate)"
+
+/** Why a close keeps a worktree whose lot file changed after the close decided on it. */
+export const LOT_FILE_CHANGED =
+	'lot file changed since the close read it: {file}; nothing archived or moved, close it again'

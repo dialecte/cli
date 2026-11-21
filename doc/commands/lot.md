@@ -521,27 +521,29 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
           .dialecte/lot.json and each package's (the folder of a package.json git tracks, or one the
           lot deleted), archived in that folder first (lot prune and lot close --feature archive the
           same way), the root's as lot.json and a package's as lots/<package path>/lot.json, or
-          lot.landed.json beside a lot.json holding other bytes, never over one, kept naming both
-          archives when both hold other bytes; a lot file is removable only when empty or byte-equal
-          to an archive of its own package path; kept first when an open lot names it (reason lot
-          <name> <state>), then with why when it is the main checkout, on another branch than the
-          hand-over's, locked, another hand-over of the same worktree is neither committed nor
-          abandoned, a link from outside it points into it, dirty, a landed lot holds commits made
-          since its landing (<n> commit(s) made since its landing: <commits>), its removal would
-          lose a commit (<n> commit(s) its removal would lose: <commits>: a commit only its HEAD or
-          HEAD reflog reaches, that no surviving branch, branch reflog, tag, landed tip or
-          remote-tracking ref holds, nor the same change at the same place (a commit of theirs with
-          the same diff, its hunk line numbers included) - a commit made on a detached HEAD), it
-          holds ignored files its removal would delete that nothing else holds (rebuilt folders,
-          dialecte.rebuiltIgnored folders, the .dialecte/lot link, an empty or archived
-          .dialecte/lot.json and copies byte-equal to the main checkout's go), a process or a
-          mutation run works there, lot close itself runs from inside it, or the processes are not
-          known, or the final record cannot be kept or the lot's commit is not known; the branch
-          never touched; a hand-over already closed, or a lot whose worktree a recorded removal
-          moved, answers already closed, exit 0, nothing moved (a lot whose worktree is gone with no
-          such removal: nothing to close), its lot's landed fact still recorded when the host proves
-          the merge (its landed line beside already closed); exit 1 when one is kept, 2 when a name
-          or index is neither a hand-over nor a lot (the others are still closed)
+          lot.landed.json beside a lot.json holding other bytes, never over one and read back, kept
+          naming both archives when both hold other bytes; every lot file it counted read again
+          right before the move, one rewritten since keeping the worktree, nothing archived; a lot
+          file is removable only when empty or byte-equal to an archive of its own package path;
+          kept first when an open lot names it (reason lot <name> <state>), then with why when it is
+          the main checkout, on another branch than the hand-over's, locked, another hand-over of
+          the same worktree is neither committed nor abandoned, a link from outside it points into
+          it, dirty, a landed lot holds commits made since its landing (<n> commit(s) made since its
+          landing: <commits>), its removal would lose a commit (<n> commit(s) its removal would
+          lose: <commits>: a commit only its HEAD or HEAD reflog reaches, that no surviving branch,
+          branch reflog, tag, landed tip or remote-tracking ref holds, nor the same change at the
+          same place (a commit of theirs with the same diff, its hunk line numbers included) - a
+          commit made on a detached HEAD), it holds ignored files its removal would delete that
+          nothing else holds (rebuilt folders, dialecte.rebuiltIgnored folders, the .dialecte/lot
+          link, an empty or archived .dialecte/lot.json and copies byte-equal to the main checkout's
+          go), a process or a mutation run works there, lot close itself runs from inside it, or the
+          processes are not known, or the final record cannot be kept or the lot's commit is not
+          known; the branch never touched; a hand-over already closed, or a lot whose worktree a
+          recorded removal moved, answers already closed, exit 0, nothing moved (a lot whose
+          worktree is gone with no such removal: nothing to close), its lot's landed fact still
+          recorded when the host proves the merge (its landed line beside already closed); exit 1
+          when one is kept, 2 when a name or index is neither a hand-over nor a lot (the others are
+          still closed)
   close - --feature <name> closes a feature at a pipeline's last step: its lots in every store of
           the list (simulated ones left out); none answers no lot of the feature, exit 1; a lot of
           it neither committed nor canceled refuses the whole close, listing each with its state,

@@ -21,11 +21,7 @@ import { existsSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 
 import { readLinkScanSet } from '../cleanup/read-link-scan-set.ts'
-import {
-	isLinkedToLot,
-	registeredArchivesOf,
-	removableIgnored,
-} from '../cleanup/removable-ignored.ts'
+import { registeredArchivesOf, removableIgnored } from '../cleanup/removable-ignored.ts'
 import { CARDS_LOG_FILE } from '../events/cards-log.constants.ts'
 import { readCardsLog } from '../events/cards-log.ts'
 import { isAtOrInsideReal, realPathOf, realPathThroughAncestors } from '../file-system.ts'
@@ -42,6 +38,7 @@ import {
 import { readIdentity } from '../store/identity.ts'
 import { lotsKeepingWorktrees } from '../store/lot-keep.ts'
 import { listLotIdentities, locateStore } from '../store/store-folder.ts'
+import { LOT_LINK_SEGMENTS } from '../store/store.constants.ts'
 import { WORKTREES_FOLDER } from '../workspace.constants.ts'
 import { checkNodeModules } from '../worktree/check-node-modules.ts'
 import { relinkEscapingLinks } from '../worktree/copy-node-modules.ts'
@@ -66,7 +63,11 @@ import type {
 	NodeModulesCheck,
 	ProcessFolder,
 } from '../worktree/worktree.types.ts'
-import type { CountedArchive, DeclarationArchive } from './archived-declarations.types.ts'
+import type {
+	CountedArchive,
+	DeclarationArchive,
+	ReadDeclaration,
+} from './archived-declarations.types.ts'
 import type { CloseContext, CloseDecisionParams, Decision, Kept } from './close-handovers.types.ts'
 import type { CloseSettle } from './close-targets.types.ts'
 import type { CloseResult, CloseTarget, StoreEntry } from './handover.types.ts'
@@ -87,8 +88,11 @@ export function closeHandovers(params: {
 	listProcesses?: () => ProcessFolder[] | string
 	/** Where rehearsal clones are made: their links are read with the workspace's. Default: none. */
 	scratchRoots?: readonly string[]
+	/** Called once every target is decided, before anything is written or moved (the tests change files there). */
+	afterDecisions?: () => void
 }): CloseResult[] {
 	const { context, decisions } = closeDecisionsOf(params)
+	params.afterDecisions?.()
 	const { main, store, worktreesFolder, registered, targets, keys, lotOwners, cardsLog } = context
 	// a worktree closes only when every argument reaching it may close: the first that keeps it, in any order;
 	// a hand-over already closed never owns the worktree (the others reaching it are decided on their own)
@@ -144,7 +148,7 @@ export function closeHandovers(params: {
 			if ('kept' in record) return [key, { outcome: { handover, kept: record.kept }, moved }]
 			try {
 				// the lot's own declarations kept in its folder before the worktree goes (the removal rule counted them)
-				writeDeclarationArchives({ archives: decision.archives })
+				writeDeclarationArchives({ read: decision.read, archives: decision.archives })
 				const { trashed, nodeModules } = closeWorktree({
 					worktree: decision.worktree.path,
 					check: decision.check,
@@ -567,6 +571,7 @@ export function whyKeep(params: {
 			branch,
 			landedTips,
 		}),
+		read: own.read,
 		archives: own.archives,
 	}
 }
@@ -574,7 +579,8 @@ export function whyKeep(params: {
 /**
  * The lot's own declarations (the worktree's lot files, the root's and each package's) by the one archive rule
  * (`keepDeclarations`), when its lot landed or is canceled and the worktree's root `.dialecte/lot` link resolves to its
- * folder: the bytes counted as archived (so they keep nothing), and the archives to write before the move; why it
+ * folder: the bytes counted as archived (so they keep nothing), the lot files they were read from, and the archives
+ * to write before the move; why it
  * stays when both archives of a package hold other bytes. Nothing for another lot's declarations, or none: the
  * ignored-file rule decides.
  */
@@ -584,12 +590,14 @@ function ownDeclarationsOf(params: {
 	/** The lot's base commit, when its identity names one. */
 	base: string | undefined
 	owned: boolean
-}): { counted: CountedArchive[]; archives: DeclarationArchive[] } | { kept: string } {
+}):
+	| { counted: CountedArchive[]; read: ReadDeclaration[]; archives: DeclarationArchive[] }
+	| { kept: string } {
 	const { worktree, lotFolder } = params
 	if (lotFolder === undefined || !isLinkedToLot({ worktree, folder: lotFolder }))
-		return { counted: [], archives: [] }
+		return { counted: [], read: [], archives: [] }
 	const { base } = params
-	const { counted, archives, kept } = keepDeclarations({
+	const { counted, read, archives, kept } = keepDeclarations({
 		worktree,
 		folder: lotFolder,
 		owned: params.owned,
@@ -606,7 +614,17 @@ function ownDeclarationsOf(params: {
 				)
 				.join('; '),
 		}
-	return { counted, archives }
+	return { counted, read, archives }
+}
+
+/**
+ * Whether the worktree's root `.dialecte/lot` link resolves to the lot folder `folder`: what proves the worktree's
+ * lot files are that lot's own. None, a broken one, or one to another lot says no.
+ */
+function isLinkedToLot(params: { worktree: string; folder: string }): boolean {
+	const link = join(params.worktree, ...LOT_LINK_SEGMENTS)
+	const target = realPathOf(link)
+	return target !== link && target === realPathOf(params.folder)
 }
 
 /**

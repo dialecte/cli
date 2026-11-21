@@ -43,6 +43,8 @@ export function runLotClose(params: {
 	 * Default: this machine's (`machineScratchRoots`).
 	 */
 	scratchRoots?: readonly string[]
+	/** Called once every target is decided, before anything is written or moved (the tests change files there). */
+	afterDecisions?: () => void
 	/** Where lots land through pull requests; default: the repository's host, asked for each lot the close reaches. */
 	host?: HostAdapter
 	/** Reads a pid's start time (a rehearsal marker's owner, `--feature` only); default `processStartTime`. */
@@ -82,6 +84,7 @@ export function runLotClose(params: {
 		spawner: params.spawner ?? spawnDetached,
 		listProcesses: params.listProcesses,
 		scratchRoots: params.scratchRoots ?? Object.values(machineScratchRoots()),
+		afterDecisions: params.afterDecisions,
 	})
 	// each outcome with the lines of the lots it reached that landed
 	const results = closed.map(function withLanded(result, index): CloseResult {

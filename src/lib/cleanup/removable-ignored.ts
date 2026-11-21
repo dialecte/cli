@@ -18,11 +18,9 @@ import {
 } from '../handover/archived-declarations.ts'
 import { readStoreEntries } from '../handover/handover-store-read.ts'
 import { findHandoverStore } from '../handover/handover-store.ts'
-import { readLanded } from '../landing/landed-record.ts'
 import { readPackageJson } from '../package-json.ts'
 import { packageRootOf } from '../package-root.ts'
 import { LOT_LINK_SEGMENTS } from '../store/store.constants.ts'
-import { lotFilesOf } from '../worktree/lot-files.ts'
 import {
 	LOT_FILE,
 	REBUILT_IGNORED_FOLDERS,
@@ -114,9 +112,8 @@ function readArchivedDeclarations(worktree: string): CountedArchive[] {
 /**
  * Every declaration archived in each committed hand-over folder among `entries` (a registry read once) registered
  * for this worktree, compared by real path, each under its package path (the root's and each package's, both names).
- * A lot that landed (`landed.json` in its folder) archives nothing before `lot close`, which archives the worktree's
- * own lot files before the move (`keepDeclarations`): their bytes count as archived. Only `lot close` (and `lot prune`
- * through it) writes those archives; a store lot's worktree goes no other way.
+ * A live lot file is never counted here: only `lot close` (and `lot prune` through it) archives a lot's own lot files,
+ * and it hands their bytes in itself.
  */
 export function registeredArchivesOf(params: {
 	worktree: string
@@ -128,42 +125,10 @@ export function registeredArchivesOf(params: {
 			return entry.state === 'committed' && realPathOf(entry.worktree) === worktreeReal
 		})
 		.flatMap(function archivedOf(entry): CountedArchive[] {
-			const archived = archivedDeclarationsOf({ folder: entry.folder })
-			if (archived.length > 0)
-				return archived.map((archive) => ({
-					packagePath: archive.packagePath,
-					bytes: Buffer.from(archive.bytes),
-				}))
-			if (!isOwnLandedDeclaration({ worktree: params.worktree, folder: entry.folder })) return []
-			// a landed lot: its own lot files, archived by the close before the move
-			return lotFilesOf({ root: params.worktree }).flatMap(function ownOf(lotFile) {
-				const own = readOrUndefined(lotFile.file)
-				return own ? [{ packagePath: lotFile.packagePath, bytes: own }] : []
+			return archivedDeclarationsOf({ folder: entry.folder }).map(function countedOf(archive) {
+				return { packagePath: archive.packagePath, bytes: Buffer.from(archive.bytes) }
 			})
 		})
-}
-
-/**
- * Whether the worktree's `.dialecte/lot.json` is the declaration of the landed lot whose folder is `folder`: the lot
- * landed (`landed.json` there, whatever flow merged it) and the worktree's `.dialecte/lot` link resolves to that
- * folder. A link to another lot (new work started in the worktree after the landing), or none, says no.
- *
- * @intent tell a landed lot's own declaration from new work's
- * @internal
- */
-export function isOwnLandedDeclaration(params: { worktree: string; folder: string }): boolean {
-	return readLanded({ lotFolder: params.folder }) !== undefined && isLinkedToLot(params)
-}
-
-/**
- * Whether the worktree's root `.dialecte/lot` link resolves to the lot folder `folder`: what proves the worktree's
- * lot files are that lot's own. None, a broken one, or one to another lot says no.
- * @intent tell a lot's own worktree from one new work reuses
- */
-export function isLinkedToLot(params: { worktree: string; folder: string }): boolean {
-	const link = join(params.worktree, ...LOT_LINK_SEGMENTS)
-	const target = realPathOf(link)
-	return target !== link && target === realPathOf(params.folder)
 }
 
 /** The paths under `path` (relative to the worktree) that keep the worktree: files and links, a folder never entered. */

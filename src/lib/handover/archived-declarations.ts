@@ -12,6 +12,7 @@ import {
 	ARCHIVE_PENDING_FILE,
 	ARCHIVE_READ_BACK_DIFFERS,
 	LANDED_LOT_FILE,
+	LOT_FILE_CHANGED,
 	PACKAGE_ARCHIVES_FOLDER,
 } from './archived-declarations.constants.ts'
 import { ARCHIVED_LOT_FILE, EMPTY_LOT_DECLARATION } from './handover.constants.ts'
@@ -26,6 +27,7 @@ import type {
 	DeclarationArchive,
 	ClosingDeclarations,
 	PendingArchive,
+	ReadDeclaration,
 	RemovableDeclarationParams,
 } from './archived-declarations.types.ts'
 
@@ -199,36 +201,55 @@ export function keepDeclarations(params: {
 			return { packagePath, file, bytes, archived, landed, decision }
 		},
 	)
+	const counted = decided.filter(function isCounted({ decision }) {
+		return decision.kind !== 'untouched' && decision.kind !== 'keep'
+	})
 	return {
-		counted: decided.flatMap(({ packagePath, bytes, decision }) =>
-			decision.kind === 'untouched' || decision.kind === 'keep'
-				? []
-				: [{ packagePath, bytes: Buffer.from(bytes) }],
-		),
-		archives: decided.flatMap(({ bytes, archived, landed, decision }) =>
-			decision.kind === 'write'
+		counted: counted.map(function countedOf({ packagePath, bytes }) {
+			return { packagePath, bytes: Buffer.from(bytes) }
+		}),
+		read: counted.map(function readOf({ file, bytes }) {
+			return { file, bytes }
+		}),
+		archives: decided.flatMap(function archiveOfDecided({ bytes, archived, landed, decision }) {
+			return decision.kind === 'write'
 				? [{ path: decision.name === ARCHIVED_LOT_FILE ? archived : landed, bytes }]
-				: [],
-		),
-		kept: decided.flatMap(({ file, archived, landed, decision }) =>
-			decision.kind === 'keep'
+				: []
+		}),
+		kept: decided.flatMap(function keptOfDecided({ file, archived, landed, decision }) {
+			return decision.kind === 'keep'
 				? [{ file: relative(worktree, file).split(sep).join('/'), archived, landed }]
-				: [],
-		),
+				: []
+		}),
 	}
 }
 
 /**
- * The archives a close decided, each written never over one and read back (`writeArchive`); the first that fails
- * throws why, so the worktree stays.
+ * Right before the move: every lot file the close counted read again (one missing or with other bytes throws, nothing
+ * written), then each archive written never over one and read back (`writeArchive`); the first that fails throws why,
+ * so the worktree stays.
  * @intent keep a closing worktree's lot files in its lot folder
  */
 export function writeDeclarationArchives(params: {
+	read: readonly ReadDeclaration[]
 	archives: readonly DeclarationArchive[]
 }): void {
+	const changed = params.read.find(function hasChanged(declaration) {
+		return readTextOrUndefined(declaration.file) !== declaration.bytes
+	})
+	if (changed) throw new Error(LOT_FILE_CHANGED.replace('{file}', () => changed.file))
 	for (const archive of params.archives) {
 		const failure = writeArchive({ archive: archive.path, bytes: archive.bytes })
 		if (failure) throw new Error(failure)
+	}
+}
+
+/** A file's text; undefined when it cannot be read. */
+function readTextOrUndefined(path: string): string | undefined {
+	try {
+		return readFileSync(path, 'utf8')
+	} catch {
+		return undefined
 	}
 }
 

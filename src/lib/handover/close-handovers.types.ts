@@ -1,6 +1,6 @@
 import type { ProcessFolder } from '../worktree/worktree.types.ts'
 import type { ListedWorktree, NodeModulesCheck } from '../worktree/worktree.types.ts'
-import type { DeclarationArchive } from './archived-declarations.types.ts'
+import type { DeclarationArchive, ReadDeclaration } from './archived-declarations.types.ts'
 import type { CloseSettle } from './close-targets.types.ts'
 import type { CloseTarget, StoreEntry } from './handover.types.ts'
 
@@ -10,6 +10,8 @@ export type Kept = {
 	/** The branch the worktree is on: the target's, compared before it is let go. */
 	branch: string
 	dropped: string | undefined
+	/** The lot files the close counted, read again right before the move. */
+	read: ReadDeclaration[]
 	/** The lot's own declarations to archive into its lot folder before the worktree moves. */
 	archives: DeclarationArchive[]
 }

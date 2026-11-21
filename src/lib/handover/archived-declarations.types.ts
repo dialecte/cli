@@ -75,12 +75,17 @@ export type KeptDeclaration = {
 	landed: string
 }
 
+/** A lot file as a close decided on it: its absolute path and the bytes read then. */
+export type ReadDeclaration = { file: string; bytes: string }
+
 /**
  * What a close keeps of a worktree's lot files, decided before anything moves: the bytes the removal rule counts as
- * archived, the archives to write before the move, and the lot files nothing archives (each keeps the worktree).
+ * archived, the lot files those bytes were read from (read again before the move), the archives to write before the
+ * move, and the lot files nothing archives (each keeps the worktree).
  */
 export type ClosingDeclarations = {
 	counted: CountedArchive[]
+	read: ReadDeclaration[]
 	archives: DeclarationArchive[]
 	kept: KeptDeclaration[]
 }
