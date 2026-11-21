@@ -40,7 +40,8 @@ type Row = {
 	worktree: Tree
 	main?: Tree
 	lines: string[]
-	archived?: string[]
+	/** The archived declarations, each a text under the package path of the lot file it is for. */
+	archived?: Array<{ packagePath: string; bytes: string }>
 	hooks?: string | null
 	expected: string[]
 }
@@ -104,7 +105,10 @@ function dialecteRows(cases: DialecteCase[]): Row[] {
 						shape === 'folder'
 							? [`!! ${place}.dialecte/`]
 							: entries.map((entry) => `!! ${place}.dialecte/${entry}`),
-					archived: dialecteCase.archived,
+					archived: dialecteCase.archived?.map((bytes) => ({
+						packagePath: place.replace(/\/$/, ''),
+						bytes,
+					})),
 					expected: dialecteCase.expected.map((entry) => `${place}.dialecte/${entry}`),
 				}
 			})
@@ -933,7 +937,10 @@ describe('removableIgnored: the pure cases', { timeout: POOL_UNIT_CASE_MS }, () 
 					worktree,
 					main,
 					ignoredLines: row.lines,
-					archivedDeclarations: row.archived ?? [],
+					archivedDeclarations: (row.archived ?? []).map((archive) => ({
+						packagePath: archive.packagePath,
+						bytes: Buffer.from(archive.bytes),
+					})),
 					hooksFolder: row.hooks ?? null,
 				}),
 			).toEqual({ kept: row.expected })

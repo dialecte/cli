@@ -15,7 +15,9 @@ import {
 	archiveDecision,
 	archivedDeclarationPath,
 	currentArchiveOf,
+	isRemovableDeclaration,
 	moveDeclarations,
+	writeDeclarationArchives,
 } from './archived-declarations.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -168,6 +170,72 @@ describe('currentArchiveOf', () => {
 	})
 })
 
+describe('isRemovableDeclaration', () => {
+	const ROWS: Array<{
+		name: string
+		packagePath: string
+		bytes: string
+		archives: Array<{ packagePath: string; bytes: string }>
+		removable: boolean
+	}> = [
+		{
+			name: "package p's lot file byte-equal to p's archive",
+			packagePath: 'packages/p',
+			bytes: DECLARATION,
+			archives: [{ packagePath: 'packages/p', bytes: DECLARATION }],
+			removable: true,
+		},
+		{
+			name: "package p's lot file byte-equal to package q's archive only",
+			packagePath: 'packages/p',
+			bytes: DECLARATION,
+			archives: [
+				{ packagePath: 'packages/q', bytes: DECLARATION },
+				{ packagePath: 'packages/p', bytes: OTHER },
+			],
+			removable: false,
+		},
+		{
+			name: "the root's lot file byte-equal to a package's archive only",
+			packagePath: '',
+			bytes: DECLARATION,
+			archives: [{ packagePath: 'packages/p', bytes: DECLARATION }],
+			removable: false,
+		},
+		{
+			name: "package p's lot file byte-equal to p's lot.json, p's lot.landed.json holding other bytes",
+			packagePath: 'packages/p',
+			bytes: DECLARATION,
+			archives: [
+				{ packagePath: 'packages/p', bytes: DECLARATION },
+				{ packagePath: 'packages/p', bytes: OTHER },
+			],
+			removable: true,
+		},
+		{
+			name: "package p's empty lot file, no archive",
+			packagePath: 'packages/p',
+			bytes: ' { }\n',
+			archives: [],
+			removable: true,
+		},
+	]
+
+	for (const row of ROWS)
+		it(`${row.name} -> ${row.removable ? 'removable' : 'kept'}`, () => {
+			expect(
+				isRemovableDeclaration({
+					packagePath: row.packagePath,
+					bytes: Buffer.from(row.bytes),
+					archives: row.archives.map((archive) => ({
+						packagePath: archive.packagePath,
+						bytes: Buffer.from(archive.bytes),
+					})),
+				}),
+			).toBe(row.removable)
+		})
+})
+
 describe('moveDeclarations', () => {
 	/** A repository with the tracked package `packages/ui` holding `lotFile`, and a folder holding `archives`. */
 	function prepared(params: { lotFile: string; archives: Record<string, string> }): {
@@ -286,5 +354,59 @@ describe('moveDeclarations', () => {
 			kinds: moved.map((declaration) => declaration.decision),
 			file: readIfExists(join(root, 'packages/ui/.dialecte/lot.json')),
 		}).toEqual({ kinds: [{ kind: 'untouched' }], file: OTHER })
+	})
+})
+
+describe('writeDeclarationArchives', () => {
+	it('an archive already there with other bytes -> throws, the archive unchanged', () => {
+		const folder = temporaryFolder('dialecte-archive-write-')
+		writeFiles({ root: folder, files: { 'lots/packages/ui/lot.json': OTHER } })
+		const archive = join(folder, 'lots/packages/ui/lot.json')
+
+		expect({
+			thrown: (() => {
+				try {
+					writeDeclarationArchives({ read: [], archives: [{ path: archive, bytes: DECLARATION }] })
+					return undefined
+				} catch (error) {
+					return (error as Error).message
+				}
+			})(),
+			archive: readFileSync(archive, 'utf8'),
+		}).toEqual({ thrown: expect.stringContaining(archive), archive: OTHER })
+	})
+
+	it('bytes that do not read back as written (a lone surrogate) -> throws naming the archive', () => {
+		const folder = temporaryFolder('dialecte-archive-write-')
+		const archive = join(folder, 'lots/packages/ui/lot.json')
+
+		expect(() =>
+			writeDeclarationArchives({
+				read: [],
+				archives: [{ path: archive, bytes: '{ "a": "\uD800" }\n' }],
+			}),
+		).toThrow(`the archive ${archive} reads back other bytes`)
+	})
+
+	it('a lot file read with other bytes than it holds now -> throws naming it, nothing written', () => {
+		const root = temporaryFolder('dialecte-archive-write-')
+		writeFiles({ root, files: { 'packages/ui/.dialecte/lot.json': OTHER } })
+		const file = join(root, 'packages/ui/.dialecte/lot.json')
+		const archive = join(root, 'archives/lots/packages/ui/lot.json')
+
+		expect({
+			thrown: (() => {
+				try {
+					writeDeclarationArchives({
+						read: [{ file, bytes: DECLARATION }],
+						archives: [{ path: archive, bytes: DECLARATION }],
+					})
+					return undefined
+				} catch (error) {
+					return (error as Error).message
+				}
+			})(),
+			written: existsSync(archive),
+		}).toEqual({ thrown: expect.stringContaining(file), written: false })
 	})
 })

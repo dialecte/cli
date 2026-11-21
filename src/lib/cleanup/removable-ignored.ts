@@ -12,11 +12,12 @@ import { resolveTargets } from '../config.ts'
 import { isAtOrInside, realPathOf } from '../file-system.ts'
 import { readHooksFolder } from '../git-hooks.ts'
 import { readGit } from '../git.ts'
+import {
+	archivedDeclarationsOf,
+	isRemovableDeclaration,
+} from '../handover/archived-declarations.ts'
 import { readStoreEntries } from '../handover/handover-store-read.ts'
 import { findHandoverStore } from '../handover/handover-store.ts'
-import { ARCHIVED_LOT_FILE } from '../handover/handover.constants.ts'
-import { isEmptyDeclaration } from '../handover/is-empty-declaration.ts'
-import { readLanded } from '../landing/landed-record.ts'
 import { readPackageJson } from '../package-json.ts'
 import { packageRootOf } from '../package-root.ts'
 import { LOT_LINK_SEGMENTS } from '../store/store.constants.ts'
@@ -35,6 +36,7 @@ import {
 	STATUS_WITH_ORIGINAL_PATH,
 } from './removable-ignored.constants.ts'
 
+import type { CountedArchive } from '../handover/archived-declarations.types.ts'
 import type { StoreEntry } from '../handover/handover.types.ts'
 import type {
 	DeclaredRebuilt,
@@ -55,10 +57,7 @@ export function removableIgnored(params: RemovableIgnoredParameters): RemovableI
 		params.hooksFolder === undefined
 			? (readHooksFolder(worktree).configured ?? null)
 			: params.hooksFolder
-	// bytes compared as they are: a text handed in is its UTF-8 bytes
-	const archivedDeclarations = (
-		params.archivedDeclarations ?? readArchivedDeclarations(worktree)
-	).map((declaration) => (typeof declaration === 'string' ? Buffer.from(declaration) : declaration))
+	const archivedDeclarations = params.archivedDeclarations ?? readArchivedDeclarations(worktree)
 	const walk: IgnoredWalk = {
 		worktree,
 		realWorktree: realPathOf(worktree),
@@ -105,49 +104,31 @@ function rebuiltFoldersOf(params: { worktree: string; hooksFolder: string | null
 }
 
 /** The archived declarations of the worktree, read from its repository's registry; none outside a repository. */
-function readArchivedDeclarations(worktree: string): Buffer[] {
+function readArchivedDeclarations(worktree: string): CountedArchive[] {
 	const store = findHandoverStore(worktree)
-	return store ? archivedDeclarationsOf({ worktree, entries: readStoreEntries(store) }) : []
+	return store ? registeredArchivesOf({ worktree, entries: readStoreEntries(store) }) : []
 }
 
 /**
- * The bytes of the `lot.json` archived in each committed hand-over folder among `entries` (a registry read once)
- * registered for this worktree, compared by real path. A lot that landed (`landed.json` in its folder) archives
- * nothing before `lot close`, which archives the worktree's own declaration before the move
- * (`archiveLandedDeclaration`): its bytes count as archived.
+ * Every declaration archived in each committed hand-over folder among `entries` (a registry read once) registered
+ * for this worktree, compared by real path, each under its package path (the root's and each package's, both names).
+ * A live lot file is never counted here: only `lot close` (and `lot prune` through it) archives a lot's own lot files,
+ * and it hands their bytes in itself.
  */
-export function archivedDeclarationsOf(params: {
+export function registeredArchivesOf(params: {
 	worktree: string
 	entries: readonly StoreEntry[]
-}): Buffer[] {
+}): CountedArchive[] {
 	const worktreeReal = realPathOf(params.worktree)
 	return params.entries
 		.filter(function isCommittedHere(entry) {
 			return entry.state === 'committed' && realPathOf(entry.worktree) === worktreeReal
 		})
-		.flatMap(function archivedOf(entry): Buffer[] {
-			const archived = readOrUndefined(join(entry.folder, ARCHIVED_LOT_FILE))
-			if (archived) return [archived]
-			if (!isOwnLandedDeclaration({ worktree: params.worktree, folder: entry.folder })) return []
-			// a landed lot: its own declaration, archived by the close before the move
-			const own = readOrUndefined(join(params.worktree, LOT_FILE))
-			return own ? [own] : []
+		.flatMap(function archivedOf(entry): CountedArchive[] {
+			return archivedDeclarationsOf({ folder: entry.folder }).map(function countedOf(archive) {
+				return { packagePath: archive.packagePath, bytes: Buffer.from(archive.bytes) }
+			})
 		})
-}
-
-/**
- * Whether the worktree's `.dialecte/lot.json` is the declaration of the landed lot whose folder is `folder`: the lot
- * landed (`landed.json` there, whatever flow merged it) and the worktree's `.dialecte/lot` link resolves to that
- * folder. A link to another lot (new work started in the worktree after the landing), or none, says no.
- *
- * @intent tell a landed lot's own declaration from new work's
- * @internal
- */
-export function isOwnLandedDeclaration(params: { worktree: string; folder: string }): boolean {
-	if (readLanded({ lotFolder: params.folder }) === undefined) return false
-	const link = join(params.worktree, ...LOT_LINK_SEGMENTS)
-	const target = realPathOf(link)
-	return target !== link && target === realPathOf(params.folder)
 }
 
 /** The paths under `path` (relative to the worktree) that keep the worktree: files and links, a folder never entered. */
@@ -169,6 +150,7 @@ function keptUnder(params: { walk: IgnoredWalk; path: string }): string[] {
 			walk,
 			path,
 			status,
+			packagePath: segments.slice(0, dialecteIndex).join('/'),
 			inside: segments.slice(dialecteIndex + 1).join('/'),
 		})
 	if (isDeclaredRebuilt({ walk, path, spelled })) return []
@@ -181,14 +163,15 @@ function keptUnder(params: { walk: IgnoredWalk; path: string }): string[] {
 }
 
 /**
- * An entry of a `.dialecte` folder (`inside` its path below that folder): the `lot` link is a view, an empty
- * declaration or one archived by a committed hand-over of this worktree is removable; anything else keeps, the
- * main checkout's copy included. `.dialecte` itself as a link keeps, never entered.
+ * An entry of a `.dialecte` folder (`inside` its path below that folder, the folder in the package `packagePath`):
+ * the `lot` link is a view, an empty declaration or one archived for its own package path is removable; anything
+ * else keeps, the main checkout's copy included. `.dialecte` itself as a link keeps, never entered.
  */
 function keptInDialecteFolder(params: {
 	walk: IgnoredWalk
 	path: string
 	status: Stats
+	packagePath: string
 	inside: string
 }): string[] {
 	const { walk, path, status, inside } = params
@@ -197,20 +180,25 @@ function keptInDialecteFolder(params: {
 	if (
 		inside === basename(LOT_FILE) &&
 		status.isFile() &&
-		isRemovableDeclaration({ walk, file: join(walk.worktree, path) })
+		isRemovableLotFile({ walk, packagePath: params.packagePath, file: join(walk.worktree, path) })
 	)
 		return []
 	return [path]
 }
 
-/** A `lot.json` that declares nothing, or byte-equal to an archived declaration. */
-function isRemovableDeclaration(params: { walk: IgnoredWalk; file: string }): boolean {
+/** A `lot.json` that reads and is removable by the one rule (`isRemovableDeclaration`) against its package's archives. */
+function isRemovableLotFile(params: {
+	walk: IgnoredWalk
+	packagePath: string
+	file: string
+}): boolean {
 	const bytes = readOrUndefined(params.file)
 	if (!bytes) return false
-	return (
-		isEmptyDeclaration(bytes.toString('utf8')) ||
-		params.walk.archivedDeclarations.some((archived) => archived.equals(bytes))
-	)
+	return isRemovableDeclaration({
+		packagePath: params.packagePath,
+		bytes,
+		archives: params.walk.archivedDeclarations,
+	})
 }
 
 /** Every entry of the folder classified; a folder that cannot be read keeps, named. */

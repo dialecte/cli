@@ -61,3 +61,44 @@ export type PendingArchive = {
 	/** The sha256 of the lot file's bytes when the move failed. */
 	sha256: string
 }
+
+/** A lot file's declaration to archive before a worktree goes: where, and its bytes. */
+export type DeclarationArchive = { path: string; bytes: string }
+
+/** A package whose lot file nothing archives: both of its archives hold other bytes. */
+export type KeptDeclaration = {
+	/** The lot file, relative to the worktree. */
+	file: string
+	/** Its `lot.json` archive. */
+	archived: string
+	/** Its `lot.landed.json` archive. */
+	landed: string
+}
+
+/** A lot file as a close decided on it: its absolute path and the bytes read then. */
+export type ReadDeclaration = { file: string; bytes: string }
+
+/**
+ * What a close keeps of a worktree's lot files, decided before anything moves: the bytes the removal rule counts as
+ * archived, the lot files those bytes were read from (read again before the move), the archives to write before the
+ * move, and the lot files nothing archives (each keeps the worktree).
+ */
+export type ClosingDeclarations = {
+	counted: CountedArchive[]
+	read: ReadDeclaration[]
+	archives: DeclarationArchive[]
+	kept: KeptDeclaration[]
+}
+
+/** One archived declaration's bytes under its package path, as the removal rule counts it. */
+export type CountedArchive = {
+	packagePath: string
+	bytes: Buffer
+}
+
+/** A lot file judged by the removal rule: its package path, its bytes, and every archive counted for the worktree. */
+export type RemovableDeclarationParams = {
+	packagePath: string
+	bytes: Buffer
+	archives: readonly CountedArchive[]
+}

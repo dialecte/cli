@@ -17,11 +17,11 @@
  * touched. Each hand-over closed records `closed` (the time) on its registry entry; a hand-over whose entry holds
  * it is already closed, nothing decided nor moved (a worktree removed by hand, never closed, is still kept).
  */
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 
 import { readLinkScanSet } from '../cleanup/read-link-scan-set.ts'
-import { archivedDeclarationsOf, removableIgnored } from '../cleanup/removable-ignored.ts'
+import { registeredArchivesOf, removableIgnored } from '../cleanup/removable-ignored.ts'
 import { CARDS_LOG_FILE } from '../events/cards-log.constants.ts'
 import { readCardsLog } from '../events/cards-log.ts'
 import { isAtOrInsideReal, realPathOf, realPathThroughAncestors } from '../file-system.ts'
@@ -46,19 +46,14 @@ import { parkNodeModules, readPackageLockText } from '../worktree/node-modules-p
 import { listProcessFolders, processWorkingIn } from '../worktree/process-folders.ts'
 import { linkReaching, mutationRunKeeping, readOwnedRuns } from '../worktree/prune-worktrees.ts'
 import { trashWorktree } from '../worktree/trash.ts'
-import {
-	IGNORED_FILES_SHOWN,
-	LOT_FILE,
-	WORKTREE_STATUS_ARGUMENTS,
-} from '../worktree/worktree.constants.ts'
-import { LANDED_LOT_FILE } from './archived-declarations.constants.ts'
-import { archiveDecision } from './archived-declarations.ts'
+import { IGNORED_FILES_SHOWN, WORKTREE_STATUS_ARGUMENTS } from '../worktree/worktree.constants.ts'
+import { keepDeclarations, writeDeclarationArchives } from './archived-declarations.ts'
 import { keepFinalRecord, keepLotFinalRecord, recordRemoved } from './close-final-record.ts'
 import { CLOSE_KEPT_WORK, NO_LOT_WORKTREE } from './close-handovers.constants.ts'
 import { CLOSE_TARGET_TEXTS } from './close-targets.constants.ts'
 import { readStoreEntries } from './handover-store-read.ts'
 import { findHandoverStore, handoverStoreOf, recordHandoverClosed } from './handover-store.ts'
-import { ARCHIVED_LOT_FILE, CLOSE_FROM_INSIDE } from './handover.constants.ts'
+import { CLOSE_FROM_INSIDE } from './handover.constants.ts'
 
 import type { RemovalBy } from '../events/cards-log.types.ts'
 import type { RunEntry } from '../mutation/mutation.types.ts'
@@ -69,12 +64,11 @@ import type {
 	ProcessFolder,
 } from '../worktree/worktree.types.ts'
 import type {
-	CloseContext,
-	CloseDecisionParams,
+	CountedArchive,
 	DeclarationArchive,
-	Decision,
-	Kept,
-} from './close-handovers.types.ts'
+	ReadDeclaration,
+} from './archived-declarations.types.ts'
+import type { CloseContext, CloseDecisionParams, Decision, Kept } from './close-handovers.types.ts'
 import type { CloseSettle } from './close-targets.types.ts'
 import type { CloseResult, CloseTarget, StoreEntry } from './handover.types.ts'
 
@@ -94,8 +88,11 @@ export function closeHandovers(params: {
 	listProcesses?: () => ProcessFolder[] | string
 	/** Where rehearsal clones are made: their links are read with the workspace's. Default: none. */
 	scratchRoots?: readonly string[]
+	/** Called once every target is decided, before anything is written or moved (the tests change files there). */
+	afterDecisions?: () => void
 }): CloseResult[] {
 	const { context, decisions } = closeDecisionsOf(params)
+	params.afterDecisions?.()
 	const { main, store, worktreesFolder, registered, targets, keys, lotOwners, cardsLog } = context
 	// a worktree closes only when every argument reaching it may close: the first that keeps it, in any order;
 	// a hand-over already closed never owns the worktree (the others reaching it are decided on their own)
@@ -150,9 +147,8 @@ export function closeHandovers(params: {
 						: { kept: 'not decided' }
 			if ('kept' in record) return [key, { outcome: { handover, kept: record.kept }, moved }]
 			try {
-				// the lot's own declaration kept in its folder before the worktree goes (the removal rule counted it)
-				if (decision.archive !== undefined)
-					writeFileSync(decision.archive.path, decision.archive.bytes, { flag: 'wx' })
+				// the lot's own declarations kept in its folder before the worktree goes (the removal rule counted them)
+				writeDeclarationArchives({ read: decision.read, archives: decision.archives })
 				const { trashed, nodeModules } = closeWorktree({
 					worktree: decision.worktree.path,
 					check: decision.check,
@@ -517,13 +513,14 @@ export function whyKeep(params: {
 	// the landing a target closes by: its lot's folder (a hand-over's lot keeps its fact there), else the entry's
 	const landedFolder = target.lotFolder ?? entry?.folder ?? worktreePath
 	const landedFact = readLanded({ lotFolder: landedFolder })
+	const landedBase = readIdentity({ lotFolder: landedFolder })?.base.commit
 	const landedTips = landedFact !== undefined && 'tip' in landedFact ? [landedFact.tip] : []
 	// a landed lot: is its current work landed (Q1); then, landed or not, would the removal lose a commit (Q2)
 	const since = landedTips.flatMap((landedTip) =>
 		workSinceLanding({
 			root: worktree.path,
 			branch,
-			cut: readIdentity({ lotFolder: landedFolder })?.base.commit ?? landedTip,
+			cut: landedBase ?? landedTip,
 			landedTip,
 		}),
 	)
@@ -543,9 +540,11 @@ export function whyKeep(params: {
 				values: { work: lostWorkText(lost), worktree: worktree.path },
 			}),
 		}
-	const own = ownDeclarationOf({
+	const own = ownDeclarationsOf({
 		worktree: worktree.path,
 		lotFolder: target.lotFolder,
+		// the lot's base, read from the same folder whenever the target names one: a package it deleted is found there
+		base: landedBase,
 		owned: landedTips.length > 0 || (target.kind === 'lot' && target.lotState === 'canceled'),
 	})
 	if ('kept' in own) return own
@@ -553,7 +552,7 @@ export function whyKeep(params: {
 		worktree: worktree.path,
 		main: params.main,
 		archivedDeclarations: [
-			...archivedDeclarationsOf({ worktree: worktree.path, entries: params.registered }),
+			...registeredArchivesOf({ worktree: worktree.path, entries: params.registered }),
 			...own.counted,
 		],
 	})
@@ -572,51 +571,60 @@ export function whyKeep(params: {
 			branch,
 			landedTips,
 		}),
-		archive: own.archive,
+		read: own.read,
+		archives: own.archives,
 	}
 }
 
 /**
- * The lot's own declaration (the worktree's `.dialecte/lot.json`) by the one archive rule (`archiveDecision`), when its
- * lot landed or is canceled and the worktree's `.dialecte/lot` link resolves to its folder: the bytes counted as
- * archived (so they keep nothing), and the archive to write before the move; why it stays when both archives of the
- * folder hold other bytes. Nothing for another lot's declaration, or none: the ignored-file rule decides.
+ * The lot's own declarations (the worktree's lot files, the root's and each package's) by the one archive rule
+ * (`keepDeclarations`), when its lot landed or is canceled and the worktree's root `.dialecte/lot` link resolves to its
+ * folder: the bytes counted as archived (so they keep nothing), the lot files they were read from, and the archives
+ * to write before the move; why it
+ * stays when both archives of a package hold other bytes. Nothing for another lot's declarations, or none: the
+ * ignored-file rule decides.
  */
-function ownDeclarationOf(params: {
+function ownDeclarationsOf(params: {
 	worktree: string
 	lotFolder: string | undefined
+	/** The lot's base commit, when its identity names one. */
+	base: string | undefined
 	owned: boolean
-}): { counted: Buffer[]; archive: DeclarationArchive | undefined } | { kept: string } {
+}):
+	| { counted: CountedArchive[]; read: ReadDeclaration[]; archives: DeclarationArchive[] }
+	| { kept: string } {
 	const { worktree, lotFolder } = params
-	const file = join(worktree, LOT_FILE)
-	const link = join(worktree, ...LOT_LINK_SEGMENTS)
-	if (lotFolder === undefined || !existsSync(file) || !existsSync(link))
-		return { counted: [], archive: undefined }
-	const linked = realPathOf(link)
-	if (linked === link || linked !== realPathOf(lotFolder))
-		return { counted: [], archive: undefined }
-	const bytes = readFileSync(file, 'utf8')
-	const archivedPath = join(lotFolder, ARCHIVED_LOT_FILE)
-	const landedPath = join(lotFolder, LANDED_LOT_FILE)
-	const decision = archiveDecision({
-		bytes,
-		archived: existsSync(archivedPath) ? readFileSync(archivedPath, 'utf8') : undefined,
-		landed: existsSync(landedPath) ? readFileSync(landedPath, 'utf8') : undefined,
+	if (lotFolder === undefined || !isLinkedToLot({ worktree, folder: lotFolder }))
+		return { counted: [], read: [], archives: [] }
+	const { base } = params
+	const { counted, read, archives, kept } = keepDeclarations({
+		worktree,
+		folder: lotFolder,
 		owned: params.owned,
+		bases: base === undefined ? [] : [base],
 	})
-	if (decision.kind === 'keep')
+	if (kept.length > 0)
 		return {
-			kept: fillMessage({
-				template: CLOSE_TARGET_TEXTS.declarationKept,
-				values: { archived: archivedPath, landed: landedPath, folder: lotFolder },
-			}),
+			kept: kept
+				.map((declaration) =>
+					fillMessage({
+						template: CLOSE_TARGET_TEXTS.declarationKept,
+						values: { ...declaration, folder: lotFolder },
+					}),
+				)
+				.join('; '),
 		}
-	if (decision.kind === 'untouched') return { counted: [], archive: undefined }
-	return {
-		counted: [Buffer.from(bytes)],
-		archive:
-			decision.kind === 'write' ? { path: join(lotFolder, decision.name), bytes } : undefined,
-	}
+	return { counted, read, archives }
+}
+
+/**
+ * Whether the worktree's root `.dialecte/lot` link resolves to the lot folder `folder`: what proves the worktree's
+ * lot files are that lot's own. None, a broken one, or one to another lot says no.
+ */
+function isLinkedToLot(params: { worktree: string; folder: string }): boolean {
+	const link = join(params.worktree, ...LOT_LINK_SEGMENTS)
+	const target = realPathOf(link)
+	return target !== link && target === realPathOf(params.folder)
 }
 
 /**
