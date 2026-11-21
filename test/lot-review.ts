@@ -3,12 +3,9 @@ import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { LANDING_FILE } from '../src/lib/handover/land-lot.constants.ts'
+import { CLI_PACKAGE } from '../src/lib/skills/cli-invocations.constants.ts'
 import { changeRequestLot } from './lot-pr.ts'
-import {
-	CLI_PACKAGE,
-	REVIEW_CHANGE_REQUEST_NUMBER,
-	REVIEW_CHANGE_REQUEST_URL,
-} from './lot-review.constants.ts'
+import { REVIEW_CHANGE_REQUEST_NUMBER, REVIEW_CHANGE_REQUEST_URL } from './lot-review.constants.ts'
 import { git } from './scratch-repository.ts'
 import { transitionOf } from './store-records.ts'
 

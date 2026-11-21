@@ -14,7 +14,7 @@ import { realPathOf, realPathThroughAncestors } from '../file-system.ts'
 import { OPTION_PREFIX } from '../handover/store-lot-guard.constants.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { THROWAWAY_WORKTREE_PATTERN } from '../plan/plan.constants.ts'
-import { CLI_PACKAGE_NAME } from '../rules/dialecte-change.constants.ts'
+import { CLI_PACKAGE } from '../skills/cli-invocations.constants.ts'
 import { lotOfWorktree } from './resolve-lot.ts'
 import {
 	APPROVAL_SIGNER_REFUSAL,
@@ -102,7 +102,7 @@ export function approvalSignerRefusal(params: {
 	by: string
 	packageName: string
 }): string | undefined {
-	if (!isOrchestratorSigner(params.by) || params.packageName === CLI_PACKAGE_NAME) return undefined
+	if (!isOrchestratorSigner(params.by) || params.packageName === CLI_PACKAGE) return undefined
 	return fillMessage({ template: APPROVAL_SIGNER_REFUSAL, values: { package: params.packageName } })
 }
 

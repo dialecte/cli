@@ -7,6 +7,7 @@
 import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 
+import { declaredSpecOf } from '../package-json.ts'
 import { readProfile } from '../profile/profile.ts'
 import { TEXT_COLLATOR } from '../skills/api-index.constants.ts'
 import { AGENT_SKILL_FOLDERS, MANIFEST_FILE } from '../skills/sync-skills.constants.ts'
@@ -29,6 +30,7 @@ import {
 import { profileLines } from './profile-lines.ts'
 import { stationAgentLines } from './station-agent-lines.ts'
 
+import type { PackageJson } from '../package-json.types.ts'
 import type { DoctorContext, DoctorLine } from './doctor.types.ts'
 
 export function diagnose(context: DoctorContext): DoctorLine[] {
@@ -213,17 +215,10 @@ function localCheckouts(context: DoctorContext): DoctorLine[] {
 }
 
 function declaredVersions(cwd: string): Record<string, string> {
-	const manifest = JSON.parse(readFileSync(join(cwd, 'package.json'), 'utf8'))
+	const manifest: PackageJson = JSON.parse(readFileSync(join(cwd, 'package.json'), 'utf8'))
 	const names = dependencyNames(cwd)
 	return Object.fromEntries(
-		names.map((name) => [
-			name,
-			String(
-				manifest.dependencies?.[name] ??
-					manifest.devDependencies?.[name] ??
-					manifest.peerDependencies?.[name],
-			),
-		]),
+		names.map((name) => [name, String(declaredSpecOf({ manifest, name })?.spec)]),
 	)
 }
 

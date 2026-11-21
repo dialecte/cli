@@ -690,11 +690,7 @@ function resolveRepository(params: { value: unknown; briefFolder: string }): {
 } {
 	const { value, briefFolder } = params
 	if (typeof value !== 'string' || value === '') return { refused: [], main: undefined }
-	const candidate = isPathForm(value)
-		? resolve(briefFolder, value)
-		: namedRepositoryOf({ name: value, briefFolder })
-	const main =
-		candidate === undefined ? undefined : mainCheckoutAt({ folder: candidate, topLevelOnly: true })
+	const { candidate, main } = repositoryCheckoutOf({ value, briefFolder })
 	if (main) return { refused: [], main }
 	return {
 		refused: [
@@ -706,6 +702,20 @@ function resolveRepository(params: { value: unknown; briefFolder: string }): {
 		],
 		main: undefined,
 	}
+}
+
+/** The folder a brief's repository text names, against the brief's folder, and the real path of its main checkout. */
+function repositoryCheckoutOf(params: { value: string; briefFolder: string }): {
+	candidate: string | undefined
+	main: string | undefined
+} {
+	const { value, briefFolder } = params
+	const candidate = isPathForm(value)
+		? resolve(briefFolder, value)
+		: namedRepositoryOf({ name: value, briefFolder })
+	const main =
+		candidate === undefined ? undefined : mainCheckoutAt({ folder: candidate, topLevelOnly: true })
+	return { candidate, main }
 }
 
 /** Absolute, or `.`, `..` or starting with `./` or `../`: a path, not a name. */
@@ -978,4 +988,17 @@ function swapCase(text: string): string {
 			letter === letter.toUpperCase() ? letter.toLowerCase() : letter.toUpperCase(),
 		)
 		.join('')
+}
+
+/**
+ * The main checkout (real path) the repository of the brief file names, resolved as `lot start` resolves it;
+ * undefined when the file is no brief or its repository does not resolve.
+ */
+export function briefRepositoryOf(params: { briefFile: string }): string | undefined {
+	const briefFile = resolve(params.briefFile)
+	const read = readBriefFile(briefFile)
+	if (read.refusal || !isRecord(read.value)) return undefined
+	const repository = read.value.repository
+	if (typeof repository !== 'string' || repository === '') return undefined
+	return repositoryCheckoutOf({ value: repository, briefFolder: dirname(briefFile) }).main
 }
