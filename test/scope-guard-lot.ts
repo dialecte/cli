@@ -212,10 +212,20 @@ export function commitSideBranch(params: {
 /**
  * A store lot (a real `lot start`) whose hand-over is written into its folder, its own change pending beside a file
  * `src/outside.ts` outside the lot's scope: pending in `lots.json` (`pending`), or committed on the lot's branch with the
- * hook skipped and absent from `lots.json` (`committed`); none with `none`.
+ * hook skipped and absent from `lots.json` (`committed`); none with `none`. With `record`, a store record
+ * `.dialecte/mutation-records.json` is committed first on the lot's branch with the hook skipped: a path of the lot's
+ * work no scope entry can name, left out of the count.
  */
-export function outsideScopeHandover(params: { outside: OutsideFile }): LotHandoverWorkspace {
+export function outsideScopeHandover(params: {
+	outside: OutsideFile
+	record?: boolean
+}): LotHandoverWorkspace {
 	const lot = startRealLot()
+	if (params.record === true) {
+		writeFiles({ root: lot.worktree, files: { '.dialecte/mutation-records.json': '{}\n' } })
+		git({ root: lot.worktree, args: ['add', '-f', '--', '.dialecte/mutation-records.json'] })
+		git({ root: lot.worktree, args: ['commit', '-q', '--no-verify', '-m', 'chore: records'] })
+	}
 	const file = { 'src/outside.ts': 'export const outside = 1\n' }
 	if (params.outside !== 'none') writeFiles({ root: lot.worktree, files: file })
 	if (params.outside === 'committed') {

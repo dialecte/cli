@@ -195,6 +195,16 @@ describe(
 			})
 		})
 
+		it('a store-lot hand-over whose lot committed a .dialecte/ record beside its pending change -> ✓ scope counting the held path only', async () => {
+			await expect(
+				(async function recordHeld() {
+					const lot = outsideScopeHandover({ outside: 'none', record: true })
+					const run = await runIn({ cwd: lot.worktree, argv: [lot.lotFolder] })
+					return run.lines.filter((line) => /^[✓!✗] scope /.test(line))
+				})(),
+			).resolves.toEqual(['✓ scope       1 path(s) inside the scope  0.0 s'])
+		})
+
 		it('a store-lot hand-over whose merge lot merges the base branch (its tip on the base line) -> the scope guard passes', async () => {
 			await expect(
 				(async function baseMerge() {
