@@ -57,6 +57,8 @@ export function ownerLookupsOf(reads: OwnerReads): OwnerLookups {
  * @internal
  */
 export function cloneMarkerOf(clone: string): CloneMarker {
+	// a link is never read through: it is kept first, its marker names nothing here
+	if (isLink(clone)) return { handover: undefined }
 	try {
 		return { handover: markedHandoverOf(rehearsalMarkerPath(clone)) }
 	} catch (error) {

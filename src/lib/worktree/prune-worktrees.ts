@@ -930,12 +930,7 @@ function cloneOwnerReadsOf(params: {
 	clones: readonly string[]
 	read: ReadonlyMap<string, LotItems>
 }): Pick<PruneCloneReads, 'owners' | 'markers'> {
-	const markers = new Map(
-		params.clones.map((clone) => [
-			clone,
-			isLink(clone) ? { handover: undefined } : cloneMarkerOf(clone),
-		]),
-	)
+	const markers = new Map(params.clones.map((clone) => [clone, cloneMarkerOf(clone)]))
 	const workspaces = new Set(
 		[...markers.values()].flatMap((marker) => {
 			const workspace = 'handover' in marker ? handoverWorkspaceOf(marker.handover) : undefined
@@ -946,7 +941,14 @@ function cloneOwnerReadsOf(params: {
 	const byRealPath = new Map<string, string>()
 	for (const main of [
 		...listMainCheckouts(params.workspace),
-		...[...workspaces].flatMap((workspace) => mainCheckoutsQuietlyOf(workspace)),
+		...[...workspaces].flatMap(function mainsOf(workspace) {
+			try {
+				return listMainCheckouts(workspace)
+			} catch {
+				// a workspace gone or not readable: its lots are read on the spot when a marker names one
+				return []
+			}
+		}),
 	])
 		if (!byRealPath.has(realPathOf(main))) byRealPath.set(realPathOf(main), main)
 	const items = [...byRealPath.values()].map(
@@ -967,16 +969,6 @@ function handoverWorkspaceOf(handover: string | undefined): string | undefined {
 	const segments = resolve(handover).split(sep)
 	const at = segments.lastIndexOf(COMMIT_PLAN_FOLDER)
 	return at <= 0 ? undefined : segments.slice(0, at).join(sep) || sep
-}
-
-/** The main checkouts of a workspace; none when it cannot be read. */
-function mainCheckoutsQuietlyOf(workspace: string): string[] {
-	try {
-		return listMainCheckouts(workspace)
-	} catch {
-		// a workspace gone or not readable: its lots are read on the spot when a marker names one
-		return []
-	}
 }
 
 /**

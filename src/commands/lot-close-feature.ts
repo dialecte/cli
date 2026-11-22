@@ -176,14 +176,15 @@ function closeClones(params: {
 	const { workspace, mains } = params
 	const listProcesses = params.listProcesses ?? listProcessFolders
 	const featureLots = new Set(params.lots.map((lot) => realPathOf(lot.lotFolder)))
-	const registries = [...new Set(params.lots.map((lot) => registryOfLotFolder(lot.lotFolder)))]
 	/** Every read of a clone decision, taken now: the processes first, then the owners, then the links. */
 	function readsNow(): CloneReads {
 		const processes = readProcesses(listProcesses)
+		// each main's store and registry read once: its lots and its entries
+		const items = mains.map((main) => readLotItems({ repository: main }))
 		return {
 			owners: ownerLookupsOf({
-				lots: mains.flatMap((main) => readLotItems({ repository: main }).lots),
-				entries: registries.flatMap((registry) => readStoreEntries(registry)),
+				lots: items.flatMap((one) => one.lots),
+				entries: items.flatMap((one) => one.entries),
 			}),
 			featureLots,
 			links: linksOf({ workspace, mains, scratchRoots: params.scratchRoots }),
