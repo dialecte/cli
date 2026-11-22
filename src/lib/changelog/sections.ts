@@ -1,5 +1,5 @@
 /** Reading `### <section>` blocks: a fragment's text, or the Unreleased part of the changelog. */
-import { lineKinds } from './changelog-parts.ts'
+import { lineKinds, unclosedCommentLine } from './changelog-parts.ts'
 import {
 	CHANGELOG_SECTIONS,
 	FRAGMENT_PROBLEMS,
@@ -26,6 +26,9 @@ export function readSections(params: { text: string; mode: SectionsMode }): Sect
 	const opened: { section: ChangelogSection; lines: string[] }[] = []
 	const leading: string[] = []
 	const lines = params.text.split('\n')
+	// a comment that never closes would hide what follows it: refused, never read as text
+	if (unclosedCommentLine({ lines }) !== undefined)
+		return { problem: FRAGMENT_PROBLEMS.unclosedComment }
 	const outside = lineKinds({ lines })
 	for (const [index, line] of lines.entries()) {
 		const heading = outside[index] ? SECTION_HEADING_PATTERN.exec(line)?.[1] : undefined

@@ -27,6 +27,7 @@ import {
 } from '../lib/handover/handover-store.ts'
 import { landLot } from '../lib/handover/land-lot.ts'
 import { readLanded } from '../lib/landing/landed-record.ts'
+import { STACK_RECORD_DAMAGED } from '../lib/landing/lot-landing.constants.ts'
 import { TEMPLATE_PATH } from '../lib/pr/change-request.constants.ts'
 import { templateFaultOf } from '../lib/pr/compose-change-request.ts'
 import { runLotLand } from './lot-land.ts'
@@ -605,7 +606,7 @@ describe(
 			}).toEqual({
 				exitCode: 1,
 				lines: [
-					`lot land: ${CHILD} is damaged: its stack.json does not read as a stack record, nothing pushed`,
+					`lot land: ${STACK_RECORD_DAMAGED.replace('{reason}', 'stack.json does not read as a stack record')}`,
 				],
 				writes: [],
 				pushed: '',

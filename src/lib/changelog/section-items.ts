@@ -3,7 +3,7 @@ import { lineKinds } from './changelog-parts.ts'
 import {
 	BREAKING_ITEM_PATTERN,
 	BULLET_ITEM_PATTERN,
-	HTML_COMMENT_OPEN,
+	HTML_COMMENT_OPEN_PATTERN,
 	ITEM_INTERRUPT_PATTERN,
 } from './changelog.constants.ts'
 
@@ -30,7 +30,7 @@ export function sectionItemsOf(params: { text: string }): SectionBlock[] {
 		// a column-0 comment opens a block of its own; lineKinds keeps every line up to its close inside it
 		const opens = !line.outside
 			? undefined
-			: text.startsWith(HTML_COMMENT_OPEN)
+			: HTML_COMMENT_OPEN_PATTERN.test(text)
 				? 'text'
 				: openedKind({ text, current, afterBlank })
 		if (opens !== undefined) blocks.push({ kind: opens, lines: [line] })

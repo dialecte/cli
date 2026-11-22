@@ -14,11 +14,12 @@ changelog - Changelog fragments (changes/<lot>.md): check them, or fold them int
     visible change has none), its entries under the changelog headings ### Added, Changed,
     Deprecated, Removed, Fixed, Security; a package keeping a changes/ folder edits CHANGELOG.md
     only in a release (rules: changelog-edit)
-  check - every fragment readable (a known heading, no loose text, no empty or repeated section),
-          the Unreleased part of CHANGELOG.md, then its released sections: none altered against the
-          base branch and where the change left it (rules: released-changelog); --base <revision>
-          judges against that commit alone, the one the change goes onto (the CI check step hands
-          the merge queue's base, or a pull request merge ref's first parent)
+  check - every fragment readable (a known heading, no loose text, no empty or repeated section, no
+          HTML comment that never closes), the Unreleased part of CHANGELOG.md, then its released
+          sections: none altered against the base branch and where the change left it (rules:
+          released-changelog); --base <revision> judges against that commit alone, the one the
+          change goes onto (the CI check step hands the merge queue's base, or a pull request merge
+          ref's first parent)
   release - writes ## [<x.y.z>] - <date> (default today, local) under an emptied ## [Unreleased]
             (written above the first version when missing): the Unreleased summary and entries
             first, then each fragment in file name order, section by section, each section's
@@ -50,13 +51,13 @@ A package that keeps a `changes/` folder never has two lots editing `CHANGELOG.m
 ```
 
 `dialecte changelog check` reads every fragment (a known heading - Added, Changed, Deprecated, Removed, Fixed,
-Security - no text before the first heading, no empty or repeated section). The release runs
+Security - no text before the first heading, no empty or repeated section, no HTML comment that never closes). The release runs
 `dialecte changelog release <x.y.z> [--date YYYY-MM-DD]`: the new version's section is written under an emptied
 `## [Unreleased]` (written above the first version when the changelog has none; `## UNRELEASED` is read too), the
 Unreleased summary and entries first (a section written twice there is merged), then each fragment in file name
 order, section by section. In each section the breaking items come first (a `- ` bullet opening with a bold
 `**Breaking` in any case, or the plain `Breaking:` / `Breaking (types):`), then every other block in the order written;
-a list of another kind, a paragraph, a sub-heading, a fence or a column-0 HTML comment is one block, never
+a list of another kind, a paragraph, a sub-heading, a fence or an HTML comment (its `<!--` at most three spaces in) is one block, never
 reordered, and nothing inside a fence or a comment is read as a heading or an item; a breaking item rises above a
 sub-heading or a paragraph written before it, as above any other block. Blocks are joined as a markdown formatter
 leaves them: a blank line after an item holding a second paragraph and around any block that is no bullet item, one

@@ -13,7 +13,7 @@
  */
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { join } from 'node:path'
 
 import { recordForecastRun } from '../coordination/forecast-record.ts'
 import { forecastConflictsText, forecastHoldText } from '../coordination/forecast-view.ts'
@@ -41,7 +41,6 @@ import { keepNextOf, keptByDecision } from '../store/lot-keep.ts'
 import { replaceWhole } from '../store/publish.ts'
 import { SCOPE_REFUSAL_LINES } from '../store/scope-guard.constants.ts'
 import { scopeGuardOf, scopeRefusalLinesOf } from '../store/scope-guard.ts'
-import { readStack } from '../store/stack.ts'
 import { STORE_FILES, STORE_REFUSAL } from '../store/store.constants.ts'
 import { resolveTddBase } from '../tdd/tdd-base.ts'
 import { packagePathsOf } from '../worktree/lot-files.ts'
@@ -59,7 +58,6 @@ import {
 } from './land-lot.constants.ts'
 import { NOTHING_BEYOND_BASE_LINE } from './land-push.constants.ts'
 import { readLanding, readRawLanding } from './land-record.ts'
-import { STACK_LANDING_LINES } from './land-stack.constants.ts'
 import { prepareStackLanding, settleStackedChangeRequest } from './land-stack.ts'
 
 import type { HostAdapter, HostRefusal, ChangeRequest } from '../host/host.types.ts'
@@ -374,7 +372,7 @@ function fetchRefusal(params: { worktree: string; base: string }): string | unde
 
 /**
  * Why the lot cannot land yet, before anything is asked of the host or pushed: its worktree is not on its branch,
- * origin cannot be fetched or holds no base branch, its stack record is damaged, or its records do not render a public pull request text
+ * origin cannot be fetched or holds no base branch, or its records do not render a public pull request text
  * (`prepareChangeRequest`, the template of its head or of the base).
  */
 function unreadyRefusal(params: {
@@ -392,13 +390,6 @@ function unreadyRefusal(params: {
 			.replace('{head}', () => current ?? 'detached')
 	const fetched = fetchRefusal({ worktree, base: params.base })
 	if (fetched !== undefined) return fetched
-	// a damaged stack record is named as the stack step names it, before the render reads it
-	const stack = readStack({ lotFolder: params.lotFolder })
-	if (stack !== undefined && 'damage' in stack)
-		return fillMessage({
-			template: STACK_LANDING_LINES.damaged,
-			values: { lot: basename(params.lotFolder), damage: stack.damage },
-		})
 	// the lot's head, else the base's: a lot cut before the template changed takes it at its rebase, checked then
 	const baseRef = `${ORIGIN_BRANCH_REF_PREFIX}${params.base}`
 	const checked = prepareChangeRequest({

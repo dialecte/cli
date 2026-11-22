@@ -4,7 +4,9 @@ import {
 	CRLF_PATTERN,
 	HTML_COMMENT_CLOSE,
 	HTML_COMMENT_CLOSE_FROM,
-	HTML_COMMENT_OPEN,
+	COMMENT_STATE,
+	HTML_COMMENT_OPEN_LENGTH,
+	HTML_COMMENT_OPEN_PATTERN,
 	LINK_REFERENCE_PATTERN,
 	UNRELEASED_HEADING_PATTERN,
 	VERSION_HEADING_PATTERN,
@@ -66,14 +68,17 @@ function readLineKinds(params: { lines: readonly string[]; unclosed: ReadonlySet
 	let openComment: number | undefined
 	const kinds = params.lines.map(function outsideFenceOrComment(line, index) {
 		const outside = open === undefined
-		if (open === HTML_COMMENT_OPEN) {
+		if (open === COMMENT_STATE) {
 			if (line.includes(HTML_COMMENT_CLOSE)) open = undefined
 			return outside
 		}
-		if (outside && line.startsWith(HTML_COMMENT_OPEN) && !params.unclosed.has(index)) {
+		const opener =
+			outside && !params.unclosed.has(index) ? HTML_COMMENT_OPEN_PATTERN.exec(line) : null
+		if (opener !== null) {
 			// the close may follow on the opening line itself: <!-->, <!---> and <!-- x --> close there
-			if (!line.includes(HTML_COMMENT_CLOSE, HTML_COMMENT_CLOSE_FROM)) {
-				open = HTML_COMMENT_OPEN
+			const from = opener[0].length - HTML_COMMENT_OPEN_LENGTH + HTML_COMMENT_CLOSE_FROM
+			if (!line.includes(HTML_COMMENT_CLOSE, from)) {
+				open = COMMENT_STATE
 				openComment = index
 			}
 			return outside
@@ -84,7 +89,18 @@ function readLineKinds(params: { lines: readonly string[]; unclosed: ReadonlySet
 		else if (closesFence({ line, marker, open })) open = undefined
 		return outside
 	})
-	return { kinds, openComment: open === HTML_COMMENT_OPEN ? openComment : undefined }
+	return { kinds, openComment: open === COMMENT_STATE ? openComment : undefined }
+}
+
+/**
+ * The line of the first HTML comment block in `lines` that never closes (outside a fence); undefined when every one
+ * closes.
+ *
+ * @intent tell a changelog text whose comment would hide what follows it
+ * @internal
+ */
+export function unclosedCommentLine(params: { lines: readonly string[] }): number | undefined {
+	return readLineKinds({ lines: params.lines, unclosed: new Set() }).openComment
 }
 
 /**

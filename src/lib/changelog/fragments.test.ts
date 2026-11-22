@@ -50,6 +50,11 @@ describe('readFragments', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		},
 		{ label: 'no section at all', text: '\n', problem: 'holds no section' },
 		{
+			label: 'an HTML comment that never closes',
+			text: '### Changed\n\n- a.\n\n<!-- todo\n\n- **Breaking:** hidden?\n',
+			problem: 'an HTML comment opens and never closes',
+		},
+		{
 			label: 'the same section twice',
 			text: '### Added\n\n- a.\n\n### Added\n\n- b.\n',
 			problem: 'section Added appears twice',

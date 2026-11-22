@@ -178,11 +178,14 @@ describe('foldChangelog', () => {
 		},
 		{
 			label:
-				'an HTML comment in the Unreleased part that never closes → it hides nothing, the older release stays where it was',
-			unreleased: '### Changed\n\n- a.\n<!--\n- not hidden.\n\n',
+				'a breaking-looking line inside a comment indented by one space → never lifted, the comment kept whole',
+			unreleased: '',
 			added: '',
-			fragments: [],
-			section: '- a.\n\n<!--\n\n- not hidden.',
+			fragments: [
+				changed('changes/a.md', '- a.\n\n <!--\n- **Breaking:** hidden.\n -->'),
+				changed('changes/b.md', '- b.'),
+			],
+			section: '- a.\n\n <!--\n- **Breaking:** hidden.\n -->\n\n- b.',
 		},
 		{
 			label:
@@ -259,6 +262,12 @@ describe('foldChangelog', () => {
 			version: '0.8.0',
 			refusal:
 				'the Unreleased part of CHANGELOG.md: heading "### Improved" is no section: Added, Changed, Deprecated, Removed, Fixed, Security',
+		},
+		{
+			label: 'the Unreleased part holding an HTML comment that never closes',
+			text: `${HEAD}\n## [Unreleased]\n\n### Changed\n\n- a.\n<!--\n- hidden.\n\n${OLD_RELEASE}`,
+			version: '0.8.0',
+			refusal: 'the Unreleased part of CHANGELOG.md: an HTML comment opens and never closes',
 		},
 	])('$label → refused, nothing folded', ({ text, version, refusal }) => {
 		expect(foldChangelog({ text, version, date: '2026-11-16', fragments: [] })).toEqual({ refusal })

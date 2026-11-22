@@ -25,6 +25,11 @@ describe('readChangelogParts', () => {
 			parts: [{ kind: 'version', version: '1.0.0', heading: 0, end: 6 }],
 		},
 		{
+			label: 'a version heading inside an HTML comment indented by one space → text of its part',
+			text: '## [1.0.0]\n\n <!--\n## [0.1.0]\n -->\n',
+			parts: [{ kind: 'version', version: '1.0.0', heading: 0, end: 6 }],
+		},
+		{
 			label: 'a comment that never closes → it hides nothing: the version heading after it is read',
 			text: '## [1.0.0]\n<!--\n## [0.1.0]\n',
 			parts: [

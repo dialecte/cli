@@ -131,6 +131,17 @@ describe('sectionItemsOf', () => {
 			],
 		},
 		{
+			label:
+				'an HTML comment indented by up to three spaces → one text block, nothing lifted out of it',
+			text: '- a.\n\n <!--\n- **Breaking:** hidden.\n -->',
+			blocks: [item({ text: '- a.' }), text({ text: ' <!--\n- **Breaking:** hidden.\n -->' })],
+		},
+		{
+			label: "a comment opener indented by four spaces → an item's continuation, no comment",
+			text: '- a.\n\n    <!--\n- b.',
+			blocks: [item({ text: '- a.\n\n    <!--', multiBlock: true }), item({ text: '- b.' })],
+		},
+		{
 			label: 'a four-backtick fence holding a three-backtick fence and a bullet → one text block',
 			text: '- one:\n\n````md\n```\n- **Breaking:** inside.\n```\n````\n\n- two.',
 			blocks: [
