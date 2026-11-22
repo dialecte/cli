@@ -1,4 +1,4 @@
-import { existsSync, realpathSync } from 'node:fs'
+import { appendFileSync, existsSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createBriefWorkspace } from '../../test/brief-workspace.ts'
@@ -8,11 +8,18 @@ import { createBriefWorkspace } from '../../test/brief-workspace.ts'
  * checked before the other keep rules, though the hand-over registered for that worktree is committed; nothing moves.
  * A lot `canceled` keeps nothing: a keep rule only ever keeps.
  */
+import { replaceRecord } from '../../test/damaged-lot-workspace.ts'
+import { damageLot } from '../../test/keep-decision-workspace.ts'
 import { recordingHost } from '../../test/land-lot.ts'
 import { writeHookRecordAtHead } from '../../test/lot-close-final-record.ts'
 import { KEEP_NOW } from '../../test/lot-keep-workspace.constants.ts'
-import { addLotWorktree } from '../../test/lot-keep-workspace.ts'
+import {
+	addBareWorktree,
+	addLotWithoutWorktree,
+	addLotWorktree,
+} from '../../test/lot-keep-workspace.ts'
 import { snapshotOf } from '../../test/lot-start-workspace.ts'
+import { linkLot } from '../../test/lot-stores.ts'
 import { git, temporaryFolder } from '../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { createRecordingSpawner } from '../../test/worktree-pool.ts'
@@ -34,9 +41,22 @@ afterEach(function restoreEnvironment() {
 
 const WORKING_LOT = '0001-repo-working'
 const CANCELED_LOT = '0002-repo-stopped'
+const DAMAGED_LOT = '0003-repo-damaged'
+const COMMITTED_LOT = '0004-repo-landed'
+
+/**
+ * `.dialecte/` ignored by the repository, as a lot's worktree has it: its root link alone makes no worktree dirty and
+ * leaves no ignored file the close would delete.
+ */
+function ignoreLotLinks(workspace: BriefWorkspace): void {
+	appendFileSync(join(workspace.repository, '.git', 'info', 'exclude'), '.dialecte/\n')
+}
 
 /** A hand-over of the lot's worktree, registered through the store's own writer and committed; its registry name. */
-function registerCommitted(params: { workspace: BriefWorkspace; lot: LotWorktree }): string {
+function registerCommitted(params: {
+	workspace: BriefWorkspace
+	lot: Pick<LotWorktree, 'worktree' | 'branch'>
+}): string {
 	const folder = realpathSync(temporaryFolder('dialecte-handover-'))
 	const name = registerHandover({
 		root: params.lot.worktree,
@@ -74,7 +94,7 @@ function closing(params: { workspace: BriefWorkspace; names: string[] }) {
 }
 
 /** Everything a kept close must leave alone, as bytes: the lot folder, the registry, the worktree list. */
-function untouchedBy(params: { workspace: BriefWorkspace; lot: LotWorktree }) {
+function untouchedBy(params: { workspace: BriefWorkspace; lot: Pick<LotWorktree, 'lotFolder'> }) {
 	return {
 		lot: snapshotOf(params.lot.lotFolder),
 		registry: snapshotOf(params.workspace.registry),
@@ -159,3 +179,59 @@ describe('lot close: the lot keep rule', { timeout: STORE_CASE_TIMEOUT }, () => 
 		})
 	})
 })
+
+describe(
+	'lot close: the root link names the lot that holds the worktree',
+	{ timeout: STORE_CASE_TIMEOUT },
+	() => {
+		it('a committed hand-over whose worktree’s root link names a lot whose identity.json does not parse → kept, lot <name> damaged, nothing moved, exit 1', () => {
+			const workspace = createBriefWorkspace()
+			ignoreLotLinks(workspace)
+			const unreadable = addLotWithoutWorktree({ workspace, name: DAMAGED_LOT, state: 'working' })
+			replaceRecord({ folder: unreadable, name: 'identity.json', text: '{ "schema": 1, ' })
+			const linked = addBareWorktree({ workspace, name: WORKING_LOT })
+			linkLot({ worktree: linked.worktree, lotFolder: unreadable })
+			const handover = registerCommitted({ workspace, lot: linked })
+			const before = untouchedBy({ workspace, lot: { lotFolder: unreadable } })
+
+			const closed = closing({ workspace, names: [handover] })
+
+			expect({
+				...closed,
+				bytes: untouchedBy({ workspace, lot: { lotFolder: unreadable } }),
+				worktreeStays: existsSync(linked.worktree),
+			}).toEqual({
+				exitCode: 1,
+				outcomes: [{ handover, kept: `lot ${DAMAGED_LOT} damaged` }],
+				calls: [],
+				bytes: before,
+				worktreeStays: true,
+			})
+		})
+
+		it('a lot worktree whose own lot is committed, its root link naming a damaged lot → kept by the damaged lot (held first), nothing moved, exit 1', () => {
+			const workspace = createBriefWorkspace()
+			ignoreLotLinks(workspace)
+			const committed = addLotWorktree({ workspace, name: COMMITTED_LOT, state: 'committed' })
+			const damaged = addLotWithoutWorktree({ workspace, name: DAMAGED_LOT, state: 'working' })
+			damageLot({ lotFolder: damaged })
+			linkLot({ worktree: committed.worktree, lotFolder: damaged })
+			const handover = registerCommitted({ workspace, lot: committed })
+
+			const closed = closing({ workspace, names: [handover] })
+
+			expect({ ...closed, worktreeStays: existsSync(committed.worktree) }).toEqual({
+				exitCode: 1,
+				outcomes: [
+					{
+						handover,
+						kept: `lot ${DAMAGED_LOT} damaged`,
+						landed: expect.stringContaining('landed on main at'),
+					},
+				],
+				calls: [],
+				worktreeStays: true,
+			})
+		})
+	},
+)

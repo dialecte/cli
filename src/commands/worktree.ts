@@ -35,11 +35,13 @@ import {
 } from '../lib/worktree/add-worktree.ts'
 import { listProcessFolders } from '../lib/worktree/process-folders.ts'
 import {
+	decideCloneAgain,
 	executeReclaim,
 	planPrune,
 	planReclaim,
 	reclaimItemLine,
 	reclaimTotalLine,
+	readPruneCloneReads,
 	trashPoolLeftOver,
 	scratchTrashOf,
 	trashPrunedFolder,
@@ -60,6 +62,7 @@ import type {
 	BackgroundSpawner,
 	NodeModulesSource,
 	NpmRunner,
+	PruneCloneReads,
 	PruneItem,
 	ProcessFolder,
 	PrunePlan,
@@ -148,6 +151,8 @@ export async function runWorktreePrune(params: {
 	listProcesses?: () => ProcessFolder[] | string
 	/** Starts the background removals of the trash, `--reclaim`'s and a pool left-over's (the tests record them); default: `spawnDetached`. */
 	spawner?: BackgroundSpawner
+	/** Reads a pid's start time for a rehearsal clone's run (the tests stand in for it); default `processStartTime`. */
+	readStartTime?: (pid: number) => string | undefined
 }): Promise<CommandResult> {
 	const { argv } = params
 	if (hasFlag(argv, 'reclaim')) return runWorktreeReclaim(params)
@@ -171,6 +176,7 @@ export async function runWorktreePrune(params: {
 		scratchFolderRoot: params.scratchFolderRoot,
 		now: params.now,
 		listProcesses: params.listProcesses,
+		readStartTime: params.readStartTime,
 	})
 	const removals = [
 		...plan.repositories.flatMap((repository) => repository.items),
@@ -200,11 +206,25 @@ export async function runWorktreePrune(params: {
 	if (!(await params.confirm(`Remove these ${removals.length} item(s)? [y/N] `)))
 		return resultOf({ exitCode: 0, lines: [...report, 'Nothing removed.'] })
 	const worktreesFolder = join(workspace, WORKTREES_FOLDER)
+	const listProcesses = params.listProcesses ?? listProcessFolders
 	let processes: readonly ProcessFolder[] | string | undefined
 	/** The processes, listed once for the whole run and only when a pool left-over is about to go. */
 	function listProcessesOnce(): readonly ProcessFolder[] | string {
-		processes ??= (params.listProcesses ?? listProcessFolders)()
+		processes ??= listProcesses()
 		return processes
+	}
+	let cloneReads: PruneCloneReads | undefined
+	/** What a rehearsal clone is decided on again, read after the confirmation, once for the run, at its first clone. */
+	function cloneReadsOnce(): PruneCloneReads {
+		cloneReads ??= readPruneCloneReads({
+			workspace,
+			scratchRoots: [
+				...new Set([params.scratchRoot, params.formerScratchRoot ?? params.scratchRoot]),
+			],
+			clones: removals.filter((item) => item.kind === 'rehearsal clone').map((item) => item.name),
+			listProcesses,
+		})
+		return cloneReads
 	}
 	const outcomes = removals.map(function remove(item) {
 		// a park that never finished goes to the trash, its keep rules read again just before
@@ -224,6 +244,12 @@ export async function runWorktreePrune(params: {
 				now: params.now ?? new Date(),
 				spawner: params.spawner ?? spawnDetached,
 			})
+		// a rehearsal clone is decided again right before its move, on what is read after the confirmation
+		const keptAgain =
+			item.kind === 'rehearsal clone'
+				? decideCloneAgain({ item, reads: cloneReadsOnce, readStartTime: params.readStartTime })
+				: undefined
+		if (keptAgain !== undefined) return keptAgain
 		// a rehearsal clone or a scratch folder goes to the trash its line names: the workspace's for its own scratch
 		// root, else the scratch root's own (a move never crosses file systems)
 		if (item.kind === 'rehearsal clone' || item.kind === 'scratch folder') {

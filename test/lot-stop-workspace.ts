@@ -4,9 +4,10 @@ import { join } from 'node:path'
 
 import { lotResult } from '../src/commands/lot-result.ts'
 import { lotStop } from '../src/commands/lot-stop.ts'
+import { realPathThroughAncestors } from '../src/lib/file-system.ts'
 import { handoverLockPath } from '../src/lib/handover/handover-lock.ts'
 import { HANDOVER_FILES, HANDOVER_RUN_MARKER_FILE } from '../src/lib/handover/handover.constants.ts'
-import { lotsKeepingWorktrees } from '../src/lib/store/lot-keep.ts'
+import { lotItemOf, readLotItems } from '../src/lib/store/lot-items.ts'
 import { outcomeOf } from './call-outcome.ts'
 import { STORE_WRITER_CLI } from './handover-store-scenario.constants.ts'
 import { commitLotByHand, removeEntry } from './handover-store-scenario.ts'
@@ -27,6 +28,7 @@ import { answerOf, questionTransitionOf } from './store-records.ts'
 
 import type { StopSeams } from '../src/commands/lot-stop.types.ts'
 import type { CommandResult } from '../src/lib/command-result.types.ts'
+import type { LotItems } from '../src/lib/store/lot-items.types.ts'
 import type { CallOutcome } from './call-outcome.types.ts'
 import type { LotHandoverWorkspace } from './lot-handover-workspace.types.ts'
 import type { QuestionLot } from './lot-questions.types.ts'
@@ -171,9 +173,23 @@ export function worktreeAndBranchOf(lot: LotHandoverWorkspace): {
 	}
 }
 
-/** The worktrees the repository's lots keep against `lot close` and `worktree prune`, by real path. */
+/**
+ * The worktrees the lots of `items` hold (open, damaged or kept on purpose: what `lot close` and `--reclaim` keep), by
+ * real path, each with the reason of the item `lotItemOf` gives for it.
+ */
+export function heldWorktreesOf(items: LotItems): Record<string, string> {
+	return Object.fromEntries(
+		items.lots.flatMap(function heldItem(record): [string, string][] {
+			if (record.worktree === undefined) return []
+			const item = lotItemOf({ items, worktree: record.worktree })
+			return item?.held ? [[realPathThroughAncestors(record.worktree), item.reason]] : []
+		}),
+	)
+}
+
+/** The worktrees the repository's lots hold against `lot close` and `worktree prune`, by real path. */
 export function worktreesKept(lot: LotHandoverWorkspace): string[] {
-	return [...lotsKeepingWorktrees({ repository: lot.start.repository }).keys()]
+	return Object.keys(heldWorktreesOf(readLotItems({ repository: lot.start.repository })))
 }
 
 /** Every transition of the lot folder as `<seq>:<state>:<cause kind>`. */

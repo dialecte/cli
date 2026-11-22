@@ -23,7 +23,7 @@ import { describe, expect, it } from 'vitest'
 const PACKAGE_DECLARATION = '{ "tdd": "exempt: the ui package" }\n'
 
 describe('worktree prune: a landed lot’s package lot file', { timeout: STORE_CASE_TIMEOUT }, () => {
-	it('a landed, merged lot whose identity no longer reads and whose package lot file nothing archived → its worktree kept, naming the package lot file', async () => {
+	it('a landed, merged lot whose identity no longer reads and whose package lot file nothing archived → its worktree held as its damaged lot’s', async () => {
 		const lot = landingLotOf()
 		addOwnDeclaration(lot)
 		const tip = commitIn({
@@ -44,6 +44,6 @@ describe('worktree prune: a landed lot’s package lot file', { timeout: STORE_C
 
 		const fates = await worktreeFatesOf(lot.workspace)
 
-		expect(fates[lot.name]).toEqual(expect.stringContaining('packages/ui/.dialecte/lot.json'))
+		expect(fates[lot.name]).toEqual(`${lot.branch}: lot ${lot.name} damaged`)
 	})
 })

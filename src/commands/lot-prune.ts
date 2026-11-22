@@ -11,7 +11,6 @@ import {
 	leftInTrashOf,
 	readLotPruneFacts,
 	statusTextOf,
-	storeLotsOf,
 	trashedWorktreesOf,
 } from '../lib/cleanup/lot-prune-facts.ts'
 import { planLotPrune } from '../lib/cleanup/plan-lot-prune.ts'
@@ -25,6 +24,7 @@ import { jsonOf } from '../lib/print/print.ts'
 import { shellQuote } from '../lib/shell-quote.ts'
 import { allStoreLots, lotsOfFeature } from '../lib/store/feature-lots.ts'
 import { readIdentity } from '../lib/store/identity.ts'
+import { readLotItems } from '../lib/store/lot-items.ts'
 import { requiredLotOf } from '../lib/store/resolve-lot.ts'
 import { listLotFolderNames, locateStore } from '../lib/store/store-folder.ts'
 import { listWorktrees } from '../lib/worktree/add-worktree.ts'
@@ -93,7 +93,7 @@ export function runLotPrune(params: LotPruneParams): CommandResult {
 				listProcesses: params.listProcesses,
 				scratchRoots,
 				afterThrowawayMove: params.afterThrowawayMove,
-				readStoreLots: storeLotsOf,
+				readLotItems,
 			})
 		: new Map()
 	const output: LotPruneOutput = {

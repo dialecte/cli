@@ -8,37 +8,36 @@
 import { basename, dirname } from 'node:path'
 
 import { actLotPrune } from '../lib/cleanup/act-lot-prune.ts'
-import { readLotPruneFacts, storeLotsOf } from '../lib/cleanup/lot-prune-facts.ts'
+import { readLotPruneFacts } from '../lib/cleanup/lot-prune-facts.ts'
 import { planLotPrune } from '../lib/cleanup/plan-lot-prune.ts'
 import { readLinkScanSet } from '../lib/cleanup/read-link-scan-set.ts'
-import { moveClone, ownersReadAgain, readFeatureClones } from '../lib/cleanup/rehearsal-clones.ts'
+import { moveClone, readFeatureClones } from '../lib/cleanup/rehearsal-clones.ts'
 import { resultOf } from '../lib/command-result.ts'
 import { getArg, hasFlag, positionalArguments } from '../lib/config.ts'
 import { realPathOf } from '../lib/file-system.ts'
-import { readProcesses } from '../lib/handover/close-handovers.ts'
 import { readStoreEntries } from '../lib/handover/handover-store-read.ts'
 import { machineScratchRoots } from '../lib/handover/rehearse-handover.ts'
 import { createHost } from '../lib/host/select-host.ts'
 import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { jsonOf } from '../lib/print/print.ts'
 import { lotsOfFeature } from '../lib/store/feature-lots.ts'
+import { readLotItems } from '../lib/store/lot-items.ts'
 import { keptOfChecked } from '../lib/store/lot-keep.ts'
 import { readCheckedLotState, registryOfLotFolder } from '../lib/store/lot-records.ts'
 import { lotState } from '../lib/store/lot-state.ts'
 import { findWorkspace } from '../lib/workspace.ts'
 import { syncBaseBranch } from '../lib/worktree/base-sync.ts'
-import { listProcessFolders } from '../lib/worktree/process-folders.ts'
+import { listProcessFolders, readProcesses } from '../lib/worktree/process-folders.ts'
 import { spawnDetached } from '../lib/worktree/trash.ts'
 import {
 	CLOSABLE_STATES,
 	LOT_CLOSE_FEATURE_TEXTS,
 	LOT_CLOSE_FEATURE_USAGE,
-	OWNING_ENTRY_STATES,
 } from './lot-close-feature.constants.ts'
 import { itemWordOf, lotsOutputOf, repositoryOf } from './lot-prune.ts'
 
 import type { LotPrunePlan } from '../lib/cleanup/plan-lot-prune.types.ts'
-import type { CloneOwner, FeatureClone, MovedClone } from '../lib/cleanup/rehearsal-clones.types.ts'
+import type { CloneReads, FeatureClone, MovedClone } from '../lib/cleanup/rehearsal-clones.types.ts'
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { BackgroundSpawner, FolderLink } from '../lib/worktree/worktree.types.ts'
 import type {
@@ -120,10 +119,11 @@ function closeFeatureLots(
 		spawner,
 		listProcesses: params.listProcesses,
 		scratchRoots,
-		readStoreLots: storeLotsOf,
+		readLotItems,
 	})
 	const { clones, moved } = closeClones({
 		lots,
+		mains: plan.repositories.map((repository) => repository.main),
 		listProcesses: params.listProcesses,
 		// the workspace the command runs in; a repository's parent outside every workspace
 		workspace: findWorkspace(cwd) ?? dirname(plan.repositories[0]?.main ?? cwd),
@@ -156,9 +156,15 @@ function closeFeatureLots(
 	})
 }
 
-/** The feature's rehearsal clones decided, then each one let go moved, its decision read again at the move. */
+/**
+ * The feature's rehearsal clones decided, then each one let go moved, its decision read again at the move. Each
+ * decision reads the processes first, then the owners (the lots of the plan's repositories, the registries of the
+ * feature's lots) and the links: a lot damaged by the time the clones are read keeps its clones at the plan.
+ */
 function closeClones(params: {
 	lots: readonly FeatureLot[]
+	/** The main checkouts of the plan's repositories, read while the lots still read. */
+	mains: readonly string[]
 	workspace: string
 	scratchRoots: readonly string[]
 	readStartTime: LotCloseFeatureParams['readStartTime']
@@ -166,24 +172,28 @@ function closeClones(params: {
 	now: Date
 	spawner: BackgroundSpawner
 }): { clones: FeatureClone[]; moved: Map<string, MovedClone> } {
-	const { workspace } = params
-	const owners = ownersOf(params.lots)
+	const { workspace, mains } = params
 	const listProcesses = params.listProcesses ?? listProcessFolders
-	const reads = {
-		owners,
-		links: linksOf({ workspace, owners, scratchRoots: params.scratchRoots }),
-		processes: readProcesses(listProcesses),
-		workspace,
-		readStartTime: params.readStartTime,
+	const featureLots = new Set(params.lots.map((lot) => realPathOf(lot.lotFolder)))
+	const registries = [...new Set(params.lots.map((lot) => registryOfLotFolder(lot.lotFolder)))]
+	/** Every read of a clone decision, taken now: the processes first, then the owners, then the links. */
+	function readsNow(): CloneReads {
+		const processes = readProcesses(listProcesses)
+		return {
+			ownerReads: {
+				lots: mains.flatMap((main) => readLotItems({ repository: main }).lots),
+				entries: registries.flatMap((registry) => readStoreEntries(registry)),
+			},
+			featureLots,
+			links: linksOf({ workspace, mains, scratchRoots: params.scratchRoots }),
+			processes,
+			workspace,
+			readStartTime: params.readStartTime,
+		}
 	}
-	const clones = readFeatureClones({ ...reads, scratchRoots: params.scratchRoots })
-	// what may change between the plan and the moves read again once: each lot's keep, the links
-	const atTheMove = {
-		...reads,
-		owners: ownersReadAgain(owners),
-		links: linksOf({ workspace, owners, scratchRoots: params.scratchRoots }),
-		processes: readProcesses(listProcesses),
-	}
+	const clones = readFeatureClones({ ...readsNow(), scratchRoots: params.scratchRoots })
+	// what may change between the plan and the moves read again once: the processes, the owners, the links
+	const atTheMove = readsNow()
 	const moved = new Map(
 		clones
 			.filter((clone) => 'go' in clone.decision)
@@ -202,17 +212,17 @@ function closeClones(params: {
 }
 
 /**
- * The links that may reach a clone: those of the workspace the command runs in and of every workspace a lot of the
- * feature lives in (a link beside the lot's repository keeps its clone wherever the close is run from).
+ * The links that may reach a clone: those of the workspace the command runs in and of every workspace a repository of
+ * the feature lives in (a link beside the lot's repository keeps its clone wherever the close is run from).
  */
 function linksOf(params: {
 	workspace: string
-	owners: ReadonlyMap<string, CloneOwner>
+	mains: readonly string[]
 	scratchRoots: readonly string[]
 }): FolderLink[] | string {
 	const workspaces = new Set([
 		realPathOf(params.workspace),
-		...[...params.owners.values()].map((owner) => realPathOf(dirname(owner.main))),
+		...params.mains.map((main) => realPathOf(dirname(main))),
 	])
 	try {
 		return [...workspaces].flatMap((workspace) =>
@@ -256,37 +266,6 @@ function readFeatureLot(lotFolder: string): FeatureLot {
 		simulated: checked.input.identity.simulated,
 		...(kept !== undefined && { kept }),
 	}
-}
-
-/**
- * The lot each hand-over folder of the feature belongs to, by real path: its own folder, and the folder of every
- * registry entry naming its worktree and branch.
- */
-function ownersOf(lots: readonly FeatureLot[]): Map<string, CloneOwner> {
-	const owners = new Map<string, CloneOwner>()
-	for (const lot of lots) {
-		const main = repositoryOf(lot.lotFolder)
-		if (main === undefined) continue
-		const owner: CloneOwner = {
-			lot: lot.name,
-			lotFolder: lot.lotFolder,
-			main,
-			...(lot.kept !== undefined && { kept: lot.kept }),
-		}
-		owners.set(realPathOf(lot.lotFolder), owner)
-		const worktree = lot.identity?.worktree
-		if (typeof worktree !== 'string') continue
-		const real = realPathOf(worktree)
-		for (const entry of readStoreEntries(registryOfLotFolder(lot.lotFolder)))
-			// a done hand-over of the lot (committed or abandoned): a pending one may rehearse again
-			if (
-				entry.branch === lot.identity?.branch &&
-				realPathOf(entry.worktree) === real &&
-				OWNING_ENTRY_STATES.includes(entry.state)
-			)
-				owners.set(realPathOf(entry.folder), owner)
-	}
-	return owners
 }
 
 /** The plan with no branch item: `lot close --feature` leaves branches to `lot prune` and does not list them. */

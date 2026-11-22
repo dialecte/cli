@@ -271,11 +271,22 @@ export const POOL_LEFT_OVER_KEEP_REASONS = {
 	finished: 'its pool.json is written now: a pool entry',
 } as const
 
-/** Why `worktree prune` keeps a rehearsal clone; `{...}` filled. */
-export const REHEARSAL_CLONE_KEEP_REASONS = {
+/** Why `worktree prune` keeps a rehearsal clone, and its `--yes` lines for a clone decided again; `{...}` filled. */
+export const REHEARSAL_CLONE_TEXTS = {
 	noMarker: 'no rehearsal marker: not made by this cli, or still starting',
 	running: 'its rehearsal still runs: pid {pid}',
+	process: 'a process works in it: pid {pid}',
+	link: 'the link {link} points to it',
+	unreadable: 'it could not be read ({reason})',
+	keptAtMove: '✗ {clone} kept: {why}',
+	goneAtMove: '✗ {clone}: gone since the plan',
 } as const
+
+/** Why the processes are not known when the lister throws: every folder is then kept; `{reason}` filled. */
+export const PROCESSES_NOT_KNOWN = 'the processes are not known ({reason}): nothing is moved'
+
+/** Why a rehearsal clone stays when its owner cannot be told: two lots own it; `{lots}` filled, `, `-joined. */
+export const OWNER_NOT_SINGLE = 'owner not single: {lots}'
 
 /** The git files whose last write is a worktree's activity, in its own git folder: the index, HEAD, its reflog. */
 export const RECLAIM_ACTIVITY_FILES = ['index', 'HEAD', 'logs/HEAD'] as const
@@ -308,13 +319,6 @@ export const SCRATCH_KEEP_REASONS = {
 	live: 'its process still runs: pid {pid}',
 	young: 'made {age} ago: kept for a day',
 } as const
-
-/**
- * Why `worktree prune` keeps a committed or canceled store lot's item (its worktree, review throwaway or branch): its
- * own, `{lot}` its name and `{state}`; an open lot's item takes the lot keep reason (`LOT_KEEP_REASON`).
- */
-export const CLOSED_LOT_ITEM_REASON =
-	'lot {lot} {state}: its own item, removed by dialecte lot prune {lot}'
 
 /** The time a trashed folder's name ends with (`<name>-yyyymmddThhmmss`, maybe `-<n>` after it). */
 export const TRASH_TIME_PATTERN = /-(\d{8}T\d{6})(?:-\d+)?$/

@@ -7,7 +7,8 @@ import { existsSync, readdirSync, readlinkSync } from 'node:fs'
 import { sep } from 'node:path'
 
 import { realPathOf } from '../file-system.ts'
-import { PROCESS_LIST_TIMEOUT_MS } from './worktree.constants.ts'
+import { fillMessage } from '../knowledge/standard/fill-message.ts'
+import { PROCESS_LIST_TIMEOUT_MS, PROCESSES_NOT_KNOWN } from './worktree.constants.ts'
 
 import type { ProcessFolder } from './worktree.types.ts'
 
@@ -17,6 +18,25 @@ import type { ProcessFolder } from './worktree.types.ts'
  */
 export function listProcessFolders(): ProcessFolder[] | string {
 	return process.platform === 'linux' && existsSync('/proc') ? readProc() : readLsof()
+}
+
+/**
+ * The processes, or "not known" when the lister throws or cannot tell: then everything is kept.
+ *
+ * @intent read the processes once, a lister failure reading as "not known"
+ * @internal
+ */
+export function readProcesses(
+	listProcesses: () => readonly ProcessFolder[] | string,
+): readonly ProcessFolder[] | string {
+	try {
+		return listProcesses()
+	} catch (error) {
+		return fillMessage({
+			template: PROCESSES_NOT_KNOWN,
+			values: { reason: (error as Error).message },
+		})
+	}
 }
 
 /** The first process whose working folder is `folder` or inside it; undefined when none. */

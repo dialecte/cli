@@ -504,30 +504,34 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
           every store (--all), else every lot of the store of the folder it runs from; base branches
           fetched first; per lot its line (state, landing) and one line per item - its worktree (the
           same proof as lot close: kept with why), its review throwaways (recorded by a step's
-          throwaway-add, or cut by hand at a commit of the lot with no commit of their own: they go
-          when every changed path is held by a commit, else kept naming the path held nowhere), its
-          branch and its throwaways' branches; a lot kept on purpose (lot start --keep, lot keep)
-          keeps every item, reason kept by decision: <why> (by <who>, <date>), before any proof,
-          damaged or not; an open lot's items are kept, reason lot <name> <state>; a branch is kept
-          while it is the base, the branch the main checkout is on, an open lot's branch, the stack
-          parent of an open lot, a pending hand-over's or a stash's, while deleting it would lose a
-          commit (a canceled lot's names its commits and the command to delete it anyway), and goes
-          after its worktree when one checks it out; a lot whose worktree is gone and whose landing
-          is not proven is listed stale with the command to stop it; without --yes the plan only;
-          --yes acts in order (worktrees, throwaways, branches), each proof read again at the move,
-          the lot's keep first (a keep, a damage or a folder gone since the plan keeps the item): a
-          throwaway proved again after its move, a branch deleted at its proved tip only (git
-          update-ref -d), a branch still parked in the trash listed waiting for the trash; a
-          throwaway's --force removal starts only after its second proof, so a file written into it
-          in that moment goes with it; a deleted branch is restorable with git branch <branch> <tip>
-          (its removing line in cards.log holds the tip) until git's garbage collection, its
-          upstream config is not restored; worktrees git refused to delete from the trash for more
-          than ten minutes are listed with their git status and the forced removal, a throwaway its
-          second proof left in the trash with why and the command that moves it back; a git read an
-          item's decision rests on that fails keeps the item (could not read <what>: <git's error>),
-          never reads as empty; ids, --feature and --all exclude each other; exit 1 when an item
-          meant to go was kept (one another run removed since the plan is no failure), 2 for a usage
-          error or an id that names no lot or more than one
+          throwaway-add, or cut by hand at a commit of the lot with no commit of their own and held
+          by no store lot - its own worktree or branch, or the lot its root .dialecte/lot link
+          names, a lot whose identity does not read included: they go when every changed path is
+          held by a commit, else kept naming the path held nowhere), its branch and its throwaways'
+          branches; a lot kept on purpose (lot start --keep, lot keep) keeps every item, reason kept
+          by decision: <why> (by <who>, <date>), before any proof, damaged or not; an open lot's
+          items are kept, reason lot <name> <state>; a branch is kept while it is the base, the
+          branch the main checkout is on, an open or damaged lot's branch (a lot whose identity does
+          not read holds the branch its registry entry names), the stack parent of an open or
+          damaged lot (its stack.json read without its identity), a pending hand-over's or a
+          stash's, while deleting it would lose a commit (a canceled lot's names its commits and the
+          command to delete it anyway), and goes after its worktree when one checks it out; a lot
+          whose worktree is gone and whose landing is not proven is listed stale with the command to
+          stop it; without --yes the plan only; --yes acts in order (worktrees, throwaways,
+          branches), each proof read again at the move, the lot's keep first (a keep, a damage or a
+          folder gone since the plan keeps the item): a throwaway proved again after its move, a
+          branch deleted at its proved tip only (git update-ref -d), a branch still parked in the
+          trash listed waiting for the trash; a throwaway's --force removal starts only after its
+          second proof, so a file written into it in that moment goes with it; a deleted branch is
+          restorable with git branch <branch> <tip> (its removing line in cards.log holds the tip)
+          until git's garbage collection, its upstream config is not restored; worktrees git refused
+          to delete from the trash for more than ten minutes are listed with their git status and
+          the forced removal, a throwaway its second proof left in the trash with why and the
+          command that moves it back; a git read an item's decision rests on that fails keeps the
+          item (could not read <what>: <git's error>), never reads as empty; ids, --feature and
+          --all exclude each other; exit 1 when an item meant to go was kept (one another run
+          removed since the plan is no failure), 2 for a usage error or an id that names no lot or
+          more than one
   close - closes a lot or a hand-over: a hand-over of the registry (by name or index), or a lot (its
           id, name or index), with no registry entry needed; first the landing of every lot the
           arguments reach (the lot named, the lot an entry registers, the open lots naming an
@@ -562,18 +566,22 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
           naming both archives when both hold other bytes; every lot file it counted read again
           right before the move, one rewritten since keeping the worktree, nothing archived; a lot
           file is removable only when empty or byte-equal to an archive of its own package path;
-          kept first when an open lot names it (reason lot <name> <state>), then with why when it is
-          the main checkout, on another branch than the hand-over's, locked, another hand-over of
-          the same worktree is neither committed nor abandoned, a link from outside it points into
-          it, dirty, a landed lot holds commits made since its landing (<n> commit(s) made since its
-          landing: <commits>), its removal would lose a commit (<n> commit(s) its removal would
-          lose: <commits>: a commit only its HEAD or HEAD reflog reaches, that no surviving branch,
-          branch reflog, tag, landed tip or remote-tracking ref holds, nor the same change at the
-          same place (a commit of theirs with the same diff, its hunk line numbers included) - a
-          commit made on a detached HEAD), it holds ignored files its removal would delete that
-          nothing else holds (rebuilt folders, dialecte.rebuiltIgnored folders, the .dialecte/lot
-          link, an empty or archived .dialecte/lot.json and copies byte-equal to the main checkout's
-          go), a process or a mutation run works there, lot close itself runs from inside it, or the
+          kept first when a lot holds it: an open, damaged or kept on purpose lot naming it, or the
+          lot its root .dialecte/lot link names (a lot whose identity does not read included, reason
+          lot <name> damaged; a lot folder present in the store but not read, lot <name>: its
+          records do not read; a lot folder gone or moved aside holds nothing), the holding lot
+          first (reason lot <name> <state>, or its kept text), then with why when it is the main
+          checkout, on another branch than the hand-over's, locked, another hand-over of the same
+          worktree is neither committed nor abandoned, a link from outside it points into it, dirty,
+          a landed lot holds commits made since its landing (<n> commit(s) made since its landing:
+          <commits>), its removal would lose a commit (<n> commit(s) its removal would lose:
+          <commits>: a commit only its HEAD or HEAD reflog reaches, that no surviving branch, branch
+          reflog, tag, landed tip or remote-tracking ref holds, nor the same change at the same
+          place (a commit of theirs with the same diff, its hunk line numbers included) - a commit
+          made on a detached HEAD), it holds ignored files its removal would delete that nothing
+          else holds (rebuilt folders, dialecte.rebuiltIgnored folders, the .dialecte/lot link, an
+          empty or archived .dialecte/lot.json and copies byte-equal to the main checkout's go), a
+          process or a mutation run works there, lot close itself runs from inside it, or the
           processes are not known, or the final record cannot be kept or the lot's commit is not
           known; the branch never touched; a hand-over already closed, or a lot whose worktree a
           recorded removal moved, answers already closed, exit 0, nothing moved (a lot whose
@@ -589,18 +597,21 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
           closed on its own proof, branches untouched and not listed (lot prune removes them); then
           the rehearsal clones of the machine's scratch roots whose marker names a hand-over folder
           of a lot of the feature (its lot folder, or the folder of a committed or abandoned entry
-          naming its worktree and branch): a dead one (its pid gone, or running with another start
-          time) that no process works in and no link reaches (links read in this workspace and every
-          workspace of the feature's lots; processes, links and keeps read again before the moves)
-          moved to the workspace's .worktrees/_trash for its own .worktrees/_scratch, else its
-          scratch root's dialecte-trash, with removing and removed lines (item clone); one alive,
-          whose marker cannot tell (no marker, no pid, no start time, an unreadable one), a process
-          works in, or the processes or links cannot be read, kept and named for dialecte worktree
-          prune; a kept lot keeps every item, clones included, with its kept text; a clone of
-          another hand-over is listed, never moved; --json { open, lots: [{ lot, state, landing,
-          items: [{ item: worktree|throwaway|clone, name, decision, outcome }] }], clones: [{ clone,
-          kept }] }; a lot name beside --feature is a usage error (exit 2); exit 0 when every item
-          of the feature went, 1 when one was kept
+          naming exactly one lot's worktree and branch; two such lots keep it: owner not single:
+          <lots>): a dead one (its pid gone, or running with another start time) that no process
+          works in and no link reaches (links read in this workspace and every workspace of the
+          feature's lots; the processes read first, then the lots and the links, again before the
+          moves, the planned lot's keep read on its folder) moved to the workspace's
+          .worktrees/_trash for its own .worktrees/_scratch, else its scratch root's dialecte-trash,
+          with removing and removed lines (item clone); one alive, whose marker cannot tell (no
+          marker, no pid, no start time, an unreadable one), a process works in, or the processes or
+          links cannot be read, kept and named for dialecte worktree prune; a kept lot keeps every
+          item, clones included, with its kept text, and a lot damaged by the time its clones are
+          read keeps them at the plan with its damaged text; a clone of another hand-over is listed,
+          never moved; --json { open, lots: [{ lot, state, landing, items: [{ item:
+          worktree|throwaway|clone, name, decision, outcome }] }], clones: [{ clone, kept }] }; a
+          lot name beside --feature is a usage error (exit 2); exit 0 when every item of the feature
+          went, 1 when one was kept
 
 exit codes:
   1  risk --effort: the line could not be written

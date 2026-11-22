@@ -6,11 +6,13 @@
  * entries, no hygiene baseline stands in for its tip, no `.dialecte/` folder, no link, nothing uncommitted; an open
  * lot's branch is not merged into the base (a merged one has landed: prune reads it committed), a closed lot's is.
  */
-import { existsSync, readFileSync, symlinkSync } from 'node:fs'
+import { appendFileSync, existsSync, readFileSync, rmSync, symlinkSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createBriefWorkspace } from '../../test/brief-workspace.ts'
-import { REMOVABLE } from '../../test/lot-keep-workspace.constants.ts'
+import { replaceRecord } from '../../test/damaged-lot-workspace.ts'
+import { damageLot, worktreePruneItemsOf } from '../../test/keep-decision-workspace.ts'
+import { KEEP_NOW, REMOVABLE } from '../../test/lot-keep-workspace.constants.ts'
 import {
 	addBareWorktree,
 	addLotWithoutWorktree,
@@ -19,13 +21,22 @@ import {
 	pointIdentityAt,
 	worktreeFatesOf,
 } from '../../test/lot-keep-workspace.ts'
-import { temporaryFolder } from '../../test/scratch-repository.ts'
+import { stopOf } from '../../test/lot-stop-workspace.ts'
+import { linkLot } from '../../test/lot-stores.ts'
+import { git, temporaryFolder } from '../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
+import {
+	handoverStoreOf,
+	recordHandoverState,
+	registerHandover,
+} from '../lib/handover/handover-store.ts'
+import { runWorktreePrune } from './worktree.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { BriefWorkspace } from '../../test/brief-workspace.types.ts'
-import type { LotKeepState } from '../../test/lot-keep-workspace.types.ts'
+import type { WorktreePruneItems } from '../../test/keep-decision-workspace.types.ts'
+import type { LotKeepState, LotWorktree } from '../../test/lot-keep-workspace.types.ts'
 
 afterEach(function restoreEnvironment() {
 	vi.unstubAllEnvs()
@@ -37,6 +48,64 @@ const OTHER = '0002-repo-other'
 /** The keep reason prune shows for a worktree on `branch` kept by the lot `name` in `state`. */
 function lotReason(params: { branch: string; name: string; state: string }): string {
 	return `${params.branch}: lot ${params.name} ${params.state}`
+}
+
+const UNREADABLE = '0003-repo-unreadable'
+
+/** The identity text no reader parses. */
+const UNPARSABLE_IDENTITY = '{ "schema": 1, '
+
+/** The command prune offers for a worktree it removes, whatever the `cd` before it. */
+const REMOVE_COMMAND = expect.stringContaining('git worktree remove')
+
+/**
+ * `.dialecte/` ignored by the repository, as a lot's worktree has it: its root link alone makes no worktree dirty and
+ * leaves no ignored file `git worktree remove` would delete.
+ */
+function ignoreLotLinks(workspace: BriefWorkspace): void {
+	appendFileSync(join(workspace.repository, '.git', 'info', 'exclude'), '.dialecte/\n')
+}
+
+/**
+ * The lot `name` with its clean merged worktree (nothing else keeps it), then its `identity.json` made unparsable, as
+ * a hand that broke it leaves it; its root link `.dialecte/lot` to the lot folder when `link`.
+ */
+function unreadableLot(params: {
+	workspace: BriefWorkspace
+	name: string
+	link: boolean
+}): LotWorktree {
+	const { workspace } = params
+	ignoreLotLinks(workspace)
+	const lot = addLotWorktree({ workspace, name: params.name, state: 'working' })
+	replaceRecord({ folder: lot.lotFolder, name: 'identity.json', text: UNPARSABLE_IDENTITY })
+	if (params.link) linkLot({ worktree: lot.worktree, lotFolder: lot.lotFolder })
+	return lot
+}
+
+/** The registry entry the lot's landing writes: it names the lot folder, its worktree and its branch. */
+function registerLotFolder(params: { workspace: BriefWorkspace; lot: LotWorktree }): void {
+	const { lot } = params
+	registerHandover({ root: lot.worktree, folder: lot.lotFolder, branch: lot.branch, now: KEEP_NOW })
+	recordHandoverState({
+		store: handoverStoreOf(params.workspace.repository),
+		folder: lot.lotFolder,
+		state: 'committed',
+	})
+}
+
+/** Every item of the plan `worktree prune --json` makes for the workspace, keyed `<kind> <name>`. */
+async function pruneItemsOf(workspace: BriefWorkspace): Promise<WorktreePruneItems> {
+	const result = await runWorktreePrune({
+		argv: ['--root', workspace.workspace, '--json'],
+		cwd: workspace.workspace,
+		scratchRoot: temporaryFolder('dialecte-scratch-root-'),
+		isTerminal: false,
+		confirm: async function never() {
+			return false
+		},
+	})
+	return worktreePruneItemsOf(result)
 }
 
 /** The number of git processes the trace file holds, each process once (its children left out). */
@@ -203,3 +272,120 @@ describe('worktree prune: the lot keep rule', { timeout: STORE_CASE_TIMEOUT }, (
 		})
 	})
 })
+
+describe(
+	'worktree prune: a lot whose identity does not read still holds',
+	{ timeout: STORE_CASE_TIMEOUT },
+	() => {
+		it('a clean merged worktree of a lot whose identity.json does not parse, its root link there, no registry entry → kept, lot <name> damaged; its branch not offered', async () => {
+			const workspace = createBriefWorkspace()
+			const lot = unreadableLot({ workspace, name: UNREADABLE, link: true })
+
+			const items = await pruneItemsOf(workspace)
+
+			expect({
+				worktree: items[`worktree ${UNREADABLE}`],
+				branch: items[`branch ${lot.branch}`],
+			}).toEqual({
+				worktree: lotReason({ branch: lot.branch, name: UNREADABLE, state: 'damaged' }),
+				branch: undefined,
+			})
+		})
+
+		it('the same lot, its root link gone, a registry entry naming its folder → its worktree kept by the entry, lot <name> damaged', async () => {
+			const workspace = createBriefWorkspace()
+			const lot = unreadableLot({ workspace, name: UNREADABLE, link: false })
+			registerLotFolder({ workspace, lot })
+
+			await expect(pruneItemsOf(workspace)).resolves.toMatchObject({
+				[`worktree ${UNREADABLE}`]: lotReason({
+					branch: lot.branch,
+					name: UNREADABLE,
+					state: 'damaged',
+				}),
+			})
+		})
+
+		it('the same lot, its worktree removed and unregistered, a registry entry naming its folder → its merged branch kept by the entry’s branch, lot <name> damaged', async () => {
+			const workspace = createBriefWorkspace()
+			const lot = unreadableLot({ workspace, name: UNREADABLE, link: false })
+			registerLotFolder({ workspace, lot })
+			rmSync(lot.worktree, { recursive: true, force: true })
+			git({ root: workspace.repository, args: ['worktree', 'prune'] })
+
+			await expect(pruneItemsOf(workspace)).resolves.toMatchObject({
+				[`branch ${lot.branch}`]: `lot ${UNREADABLE} damaged`,
+			})
+		})
+
+		for (const suffix of ['round-1', 'verify'])
+			it(`its clean merged throwaway <worktree>-${suffix}, the lot found by its root link → kept with the lot’s reason`, async () => {
+				const workspace = createBriefWorkspace()
+				unreadableLot({ workspace, name: UNREADABLE, link: true })
+				const throwaway = addBareWorktree({ workspace, name: `${UNREADABLE}-${suffix}` })
+
+				await expect(pruneItemsOf(workspace)).resolves.toMatchObject({
+					[`worktree ${throwaway.name}`]: lotReason({
+						branch: throwaway.branch,
+						name: UNREADABLE,
+						state: 'damaged',
+					}),
+				})
+			})
+
+		it('a worktree whose identity-named lot is committed, its root link naming a damaged lot → kept with the damaged lot’s reason', async () => {
+			const workspace = createBriefWorkspace()
+			ignoreLotLinks(workspace)
+			const committed = addLotWorktree({ workspace, name: ASKING, state: 'committed' })
+			const damaged = addLotWithoutWorktree({ workspace, name: OTHER, state: 'working' })
+			damageLot({ lotFolder: damaged })
+			linkLot({ worktree: committed.worktree, lotFolder: damaged })
+
+			await expect(pruneItemsOf(workspace)).resolves.toMatchObject({
+				[`worktree ${ASKING}`]: lotReason({
+					branch: committed.branch,
+					name: OTHER,
+					state: 'damaged',
+				}),
+			})
+		})
+
+		it('a committed lot’s own worktree, its root link naming that lot → still its own item naming lot prune', async () => {
+			// guard: the link candidate never turns a closed lot's own item into a removal (prune keeps on any item)
+			const workspace = createBriefWorkspace()
+			ignoreLotLinks(workspace)
+			const committed = addLotWorktree({ workspace, name: ASKING, state: 'committed' })
+			linkLot({ worktree: committed.worktree, lotFolder: committed.lotFolder })
+
+			await expect(pruneItemsOf(workspace)).resolves.toMatchObject({
+				[`worktree ${ASKING}`]: `${committed.branch}: lot ${ASKING} committed: its own item, removed by dialecte lot prune ${ASKING}`,
+			})
+		})
+
+		it('a clean merged worktree whose root link names a closed unkept lot naming another worktree and branch → decided by prune’s own rules: its removal offered', async () => {
+			// guard: main has no link candidate; a link alone to a closed lot must not strand the worktree as its item
+			const workspace = createBriefWorkspace()
+			ignoreLotLinks(workspace)
+			const closed = addLotWithoutWorktree({ workspace, name: ASKING, state: 'committed' })
+			const linked = addBareWorktree({ workspace, name: OTHER })
+			linkLot({ worktree: linked.worktree, lotFolder: closed })
+
+			await expect(pruneItemsOf(workspace)).resolves.toMatchObject({
+				[`worktree ${OTHER}`]: REMOVE_COMMAND,
+			})
+		})
+
+		it('the unreadable lot moved aside by lot stop, its root link left dangling → its clean merged worktree offered for removal', async () => {
+			// guard: a lot folder gone from the store releases what it held (KEEP 3.7); main never held it
+			const workspace = createBriefWorkspace()
+			unreadableLot({ workspace, name: UNREADABLE, link: true })
+			const stopped = stopOf({ cwd: workspace.repository, id: UNREADABLE })
+			const items = await pruneItemsOf(workspace)
+
+			expect({ stopped: stopped.exitCode, worktree: items[`worktree ${UNREADABLE}`] }).toEqual({
+				stopped: 0,
+				worktree: REMOVE_COMMAND,
+			})
+		})
+	},
+)

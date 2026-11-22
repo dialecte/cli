@@ -13,28 +13,32 @@ import { readEvents } from '../events/read-events.ts'
 import { isAtOrInsideReal, realPathOf } from '../file-system.ts'
 import { findBaseBranchRef } from '../gate/gate-base.ts'
 import { readCommitOrNone, tryReadGit } from '../git.ts'
-import { decideCloseTargets, readProcesses } from '../handover/close-handovers.ts'
+import { decideCloseTargets } from '../handover/close-handovers.ts'
 import { closeTargetsOf } from '../handover/close-targets.ts'
 import { handoverLockPath } from '../handover/handover-lock.ts'
 import { readStoreEntries } from '../handover/handover-store-read.ts'
 import { findHandoverStore, handoverStoreOf } from '../handover/handover-store.ts'
-import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { lostWork, workSinceLanding } from '../landing/lost-work.ts'
 import { settleLotLanding } from '../landing/lot-landing.ts'
 import { readPackageJson } from '../package-json.ts'
 import { roundNames } from '../review-rounds/round-names.ts'
 import { readIdentity } from '../store/identity.ts'
-import { KEEP_TEXTS } from '../store/keep-decisions.constants.ts'
-import { keptByDecision, keptOfChecked } from '../store/lot-keep.ts'
+import { lotItemOf, readLotItems } from '../store/lot-items.ts'
+import { keptByDecision } from '../store/lot-keep.ts'
 import { readCheckedLotState, registryOfLotFolder } from '../store/lot-records.ts'
 import { lotState } from '../store/lot-state.ts'
 import { readStack } from '../store/stack.ts'
-import { listLotIdentities, locateStore } from '../store/store-folder.ts'
-import { LOT_KEEP_REASON, LOTS_KEEPING_NOTHING, STORE_FILES } from '../store/store.constants.ts'
+import {
+	DAMAGED_STATE,
+	LOT_KEEP_REASON,
+	LOTS_KEEPING_NOTHING,
+	STORE_FILES,
+} from '../store/store.constants.ts'
 import { WORKTREES_FOLDER } from '../workspace.constants.ts'
 import { listWorktrees } from '../worktree/add-worktree.ts'
-import { listProcessFolders, processWorkingIn } from '../worktree/process-folders.ts'
-import { linkReaching, mutationRunKeeping, readOwnedRuns } from '../worktree/prune-worktrees.ts'
+import { linkReaching } from '../worktree/folder-links.ts'
+import { listProcessFolders, processWorkingIn, readProcesses } from '../worktree/process-folders.ts'
+import { mutationRunKeeping, readOwnedRuns } from '../worktree/prune-worktrees.ts'
 import { isParked } from '../worktree/trash.ts'
 import { STASH_SUBJECT_PATTERN } from '../worktree/worktree.constants.ts'
 import { linesOf, readGitOrWhy } from './git-read.ts'
@@ -54,6 +58,7 @@ import type { StoreEntry } from '../handover/handover.types.ts'
 import type { HostAdapter } from '../host/host.types.ts'
 import type { SettledLot } from '../landing/lot-landing.types.ts'
 import type { KeepDecision } from '../store/keep-decisions.types.ts'
+import type { LotRecord } from '../store/lot-items.types.ts'
 import type { ListedWorktree, ProcessFolder } from '../worktree/worktree.types.ts'
 import type {
 	BranchFacts,
@@ -64,7 +69,6 @@ import type {
 	PruneReads,
 	ReadLot,
 	RecordedThrowaway,
-	StoreLot,
 	KeepReads,
 	LeftInTrash,
 	LotPruneFacts,
@@ -121,10 +125,13 @@ function readRepositoryFacts(params: {
 	const lots = params.lotFolders.map((lotFolder) => readLot({ reads: read, lotFolder }))
 	// the lots this run settled read their settled state: a merged lot is no open lot holding its own branch
 	const settledStates = new Map(lots.map((lot) => [lot.lotFolder, lot.state]))
-	const storeLots = read.storeLots.map((lot) => ({
-		...lot,
-		state: settledStates.get(realPathOf(lot.lotFolder)) ?? lot.state,
-	}))
+	const lotItems = {
+		...read.lotItems,
+		lots: read.lotItems.lots.map((lot) => ({
+			...lot,
+			state: settledStates.get(realPathOf(lot.lotFolder)) ?? lot.state,
+		})),
+	}
 	// a merged lot's entry reads committed: the acts commit it before anything moves
 	const landedFolders = new Set(
 		lots.flatMap((lot) => ('landed' in lot.settled ? [realPathOf(lot.lotFolder)] : [])),
@@ -135,8 +142,13 @@ function readRepositoryFacts(params: {
 	const reads: PruneReads = {
 		...read,
 		entries,
-		storeLots,
-		holders: holdersOf({ main: read.main, worktrees: read.worktrees, entries, storeLots }),
+		lotItems,
+		holders: holdersOf({
+			main: read.main,
+			worktrees: read.worktrees,
+			entries,
+			lots: lotItems.lots,
+		}),
 	}
 	const decided = decideWorktrees({ ...params, reads, lots })
 	const candidates = candidateBranchesOf({ reads, lots })
@@ -179,8 +191,7 @@ function readRepository(params: {
 	const entries = store === undefined ? [] : readStoreEntries(store)
 	const cardsLog = join(store ?? handoverStoreOf(main), CARDS_LOG_FILE)
 	const cards = existsSync(cardsLog) ? readCardsLog({ file: cardsLog }) : undefined
-	const lotStore = locateStore({ from: main })?.store
-	const storeLots = lotStore === undefined ? [] : readStoreLots({ store: lotStore, entries })
+	const lotItems = readLotItems({ repository: main })
 	return {
 		main,
 		baseBranch,
@@ -191,55 +202,18 @@ function readRepository(params: {
 		cardsLog,
 		cards: cards?.cards ?? [],
 		removals: cards?.removals ?? [],
-		storeLots,
+		lotItems,
 		processes: readProcesses(params.listProcesses ?? listProcessFolders),
 		links: readLinkScanSet({ workspace: dirname(main), scratchRoots: params.scratchRoots ?? [] }),
 		runs: readOwnedRuns(main),
 		leftInTrash: leftInTrashOf(main),
-		holders: holdersOf({ main, worktrees, entries, storeLots }),
+		holders: holdersOf({ main, worktrees, entries, lots: lotItems.lots }),
 		host: params.host,
 		now: params.now,
 		runFrom: params.runFrom,
 		listProcesses: params.listProcesses,
 		scratchRoots: params.scratchRoots,
 	}
-}
-
-/** The lots of `main`'s store, read now (the acts read them again before a branch goes). */
-export function storeLotsOf(main: string): StoreLot[] {
-	const lotStore = locateStore({ from: main })?.store
-	if (lotStore === undefined) return []
-	const store = findHandoverStore(main)
-	return readStoreLots({
-		store: lotStore,
-		entries: store === undefined ? [] : readStoreEntries(store),
-	})
-}
-
-/** Every lot of the store with its identity and state (`damaged` when its records do not read). */
-function readStoreLots(params: { store: string; entries: readonly StoreEntry[] }): StoreLot[] {
-	const registry = registryOfLotFolder(join(params.store, 'x'))
-	return listLotIdentities({ store: params.store }).map(function readStoreLot(entry) {
-		const lotFolder = join(params.store, entry.name)
-		const checked = readCheckedLotState({ lotFolder, registry, entries: params.entries })
-		const state =
-			checked === undefined || 'damage' in checked
-				? ('damaged' as const)
-				: lotState(checked.input).state
-		// the move-time keep: the kept text, else a damaged lot's (it holds every item), read with the state
-		// a folder gone between the listing and its read holds its items too (fail closed)
-		const kept =
-			checked === undefined
-				? fillMessage({ template: KEEP_TEXTS.gone, values: { name: entry.name } })
-				: keptOfChecked({ name: entry.name, checked })
-		return {
-			name: entry.name,
-			lotFolder,
-			identity: entry.identity,
-			state,
-			...(kept !== undefined && { kept }),
-		}
-	})
 }
 
 /**
@@ -250,31 +224,10 @@ export function holdersOf(params: {
 	main: string
 	worktrees: readonly ListedWorktree[]
 	entries: readonly StoreEntry[]
-	storeLots: readonly StoreLot[]
+	/** The store's lots (`readLotItems`): an open or damaged one holds its branch and its stack parent's. */
+	lots: readonly LotRecord[]
 }): BranchHolders {
-	const open = params.storeLots.filter(
-		(lot) =>
-			lot.state === 'damaged' || !LOTS_KEEPING_NOTHING.some((closed) => closed === lot.state),
-	)
-	const openLots = new Map(
-		open.map((lot) => [
-			lot.identity.branch,
-			LOT_KEEP_REASON.replace('{name}', lot.name).replace('{state}', lot.state),
-		]),
-	)
-	const branchOfLot = new Map(params.storeLots.map((lot) => [lot.name, lot.identity.branch]))
-	const stackParents = new Map<string, string>()
-	const damagedStacks: string[] = []
-	for (const child of open) {
-		const stack = readStack({ lotFolder: child.lotFolder })
-		if (stack === undefined) continue
-		if ('damage' in stack) {
-			damagedStacks.push(child.name)
-			continue
-		}
-		const parentBranch = branchOfLot.get(stack.parent)
-		if (parentBranch !== undefined) stackParents.set(parentBranch, `${child.name} (${child.state})`)
-	}
+	const { openLots, stackParents, damagedStacks } = lotHoldersOf(params.lots)
 	const stashList = readGitOrWhy({
 		root: params.main,
 		args: ['stash', 'list', '--format=%gs'],
@@ -311,6 +264,48 @@ export function holdersOf(params: {
 		pendingHandovers,
 		checkedOut,
 	}
+}
+
+/**
+ * What the store's open or damaged lots hold: their own branches (a lot whose identity does not read holds the branch
+ * its registry entry names, fail closed), their stack parents' branches (a stack needs no identity), and the lots whose
+ * stack is damaged.
+ */
+function lotHoldersOf(
+	lots: readonly LotRecord[],
+): Pick<BranchHolders, 'openLots' | 'stackParents' | 'damagedStacks'> {
+	const open = lots.filter(
+		(lot) =>
+			lot.state === DAMAGED_STATE || !LOTS_KEEPING_NOTHING.some((closed) => closed === lot.state),
+	)
+	const openLots = new Map(
+		open.flatMap((lot) =>
+			lot.branch === undefined
+				? []
+				: [
+						[
+							lot.branch,
+							LOT_KEEP_REASON.replace('{name}', lot.name).replace('{state}', lot.state),
+						] as const,
+					],
+		),
+	)
+	const branchOfLot = new Map(
+		lots.flatMap((lot) => (lot.branch === undefined ? [] : [[lot.name, lot.branch] as const])),
+	)
+	const stackParents = new Map<string, string>()
+	const damagedStacks: string[] = []
+	for (const child of open) {
+		const stack = readStack({ lotFolder: child.lotFolder })
+		if (stack === undefined) continue
+		if ('damage' in stack) {
+			damagedStacks.push(child.name)
+			continue
+		}
+		const parentBranch = branchOfLot.get(stack.parent)
+		if (parentBranch !== undefined) stackParents.set(parentBranch, `${child.name} (${child.state})`)
+	}
+	return { openLots, stackParents, damagedStacks }
 }
 
 /** One lot's records and settled landing. */
@@ -713,12 +708,6 @@ function handMadeOf(params: {
 }): ThrowawayFacts[] {
 	const { reads, lot } = params
 	if (!params.terminal || lot.identity === undefined) return []
-	const owned = new Set(
-		reads.storeLots.flatMap((one) =>
-			typeof one.identity.worktree === 'string' ? [realPathOf(one.identity.worktree)] : [],
-		),
-	)
-	const ownedBranches = new Set(reads.storeLots.map((one) => one.identity.branch))
 	const named = new Set(
 		reads.entries.flatMap((entry) => [realPathOf(entry.worktree), entry.branch]),
 	)
@@ -731,8 +720,11 @@ function handMadeOf(params: {
 			isParked({ path: listed.path, main: reads.main })
 		)
 			return []
-		if (owned.has(path) || ownedBranches.has(branch) || named.has(path) || named.has(branch))
+		// a store lot's own worktree or branch, its root link's lot included, is no hand-made throwaway; read at the plan
+		// only: lot start never takes over an existing worktree
+		if (lotItemOf({ items: reads.lotItems, worktree: path, branch, link: true }) !== undefined)
 			return []
+		if (named.has(path) || named.has(branch)) return []
 		if (THROWAWAY_ROUND_PATTERN.test(branch) && branch.startsWith(`${lot.identity?.branch}-round-`))
 			return []
 		return [{ path, branch }]

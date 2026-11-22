@@ -1,5 +1,7 @@
+import type { OwnerReads } from '../cleanup/clone-decision.types.ts'
 import type { HandoverFolder, StoreEntry } from '../handover/handover.types.ts'
 import type { RunEntry } from '../mutation/mutation.types.ts'
+import type { LotItems } from '../store/lot-items.types.ts'
 import type {
 	POOL_MISS_BUSY,
 	POOL_MISS_CROSS_DEVICE,
@@ -135,6 +137,21 @@ export type PruneItem = {
 	kept?: string
 	/** The removal, with its absolute `cd`. */
 	command?: string
+	/**
+	 * A rehearsal clone let go: the folder of the lot that owned it at the plan, whose keep `--yes` reads again on that
+	 * folder right before the move (gone since the plan keeps).
+	 */
+	owner?: string
+}
+
+/** What `worktree prune` decides a rehearsal clone on, read once per plan and once per `--yes` execution. */
+export type PruneCloneReads = {
+	/** The processes and their working folders, or why they are not known. */
+	processes: readonly ProcessFolder[] | string
+	/** The links around the workspace and its scratch roots. */
+	links: readonly FolderLink[]
+	/** The lots and registry entries a clone's owner is read from. */
+	owners: OwnerReads
 }
 
 /** A hand-over `worktree prune` read, with the common git folder of its repository (undefined: in none). */
@@ -386,8 +403,8 @@ export type ReclaimContext = {
 	mainLockKey: string | undefined
 	/** `git worktree list`, the main checkout first. */
 	listed: readonly ListedWorktree[]
-	/** The worktrees open lots name, by real path, with their reason `lot <name> <state>`. */
-	lotKeeps: ReadonlyMap<string, string>
+	/** What the store lots hold (`readLotItems`): a held lot's worktree is kept. */
+	lotItems: LotItems
 	/** The hand-over registry of the repository. */
 	handovers: readonly StoreEntry[]
 	/** The processes and their working folders, or why they are not known. */
@@ -400,12 +417,3 @@ export type ReclaimContext = {
 
 /** What one reclaim execution knows of a repository: its context as the moves left it, its pool cap once a park read it. */
 export type ReclaimRepositoryRun = { context: ReclaimContext; cap: number | undefined }
-
-/** A store lot's item as `worktree prune` keeps it: whether its lot is open, and the reason shown. */
-export type LotItem = { open: boolean; reason: string }
-
-/** Every store lot's items, by worktree (real path) and by branch. */
-export type LotItems = {
-	byWorktree: ReadonlyMap<string, LotItem>
-	byBranch: ReadonlyMap<string, LotItem>
-}

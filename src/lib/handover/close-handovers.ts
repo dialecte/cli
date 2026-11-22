@@ -36,15 +36,16 @@ import {
 	workSinceLandingText,
 } from '../landing/lost-work.ts'
 import { readIdentity } from '../store/identity.ts'
-import { lotsKeepingWorktrees } from '../store/lot-keep.ts'
+import { lotItemOf, readLotItems } from '../store/lot-items.ts'
 import { listLotIdentities, locateStore } from '../store/store-folder.ts'
 import { LOT_LINK_SEGMENTS } from '../store/store.constants.ts'
 import { WORKTREES_FOLDER } from '../workspace.constants.ts'
 import { checkNodeModules } from '../worktree/check-node-modules.ts'
 import { relinkEscapingLinks } from '../worktree/copy-node-modules.ts'
+import { linkReaching } from '../worktree/folder-links.ts'
 import { parkNodeModules, readPackageLockText } from '../worktree/node-modules-pool.ts'
-import { listProcessFolders, processWorkingIn } from '../worktree/process-folders.ts'
-import { linkReaching, mutationRunKeeping, readOwnedRuns } from '../worktree/prune-worktrees.ts'
+import { listProcessFolders, processWorkingIn, readProcesses } from '../worktree/process-folders.ts'
+import { mutationRunKeeping, readOwnedRuns } from '../worktree/prune-worktrees.ts'
 import { trashWorktree } from '../worktree/trash.ts'
 import { IGNORED_FILES_SHOWN, WORKTREE_STATUS_ARGUMENTS } from '../worktree/worktree.constants.ts'
 import { keepDeclarations, writeDeclarationArchives } from './archived-declarations.ts'
@@ -57,6 +58,7 @@ import { CLOSE_FROM_INSIDE } from './handover.constants.ts'
 
 import type { RemovalBy } from '../events/cards-log.types.ts'
 import type { RunEntry } from '../mutation/mutation.types.ts'
+import type { LotItems } from '../store/lot-items.types.ts'
 import type {
 	BackgroundSpawner,
 	FolderLink,
@@ -264,7 +266,7 @@ function closeDecisionsOf(params: CloseDecisionParams): {
 	// branch), and the check of its worktree's node_modules
 	// the lot keep rule: the repository's store read once for every argument, after the landings were settled (a
 	// merged lot holds its landed fact: committed, it keeps nothing)
-	const lotKeeps = lotsKeepingWorktrees({ repository: main })
+	const lotItems = readLotItems({ repository: main })
 	// the lot each worktree was made for, read once: its node_modules parks with that lot as its owner
 	const lotOwners = readLotOwners(main)
 	// read once for every argument: the registry's entries, the links around the workspace
@@ -292,7 +294,7 @@ function closeDecisionsOf(params: CloseDecisionParams): {
 			worktreesFolder,
 			runs,
 			processes,
-			lotKeeps,
+			lotItems,
 			registered,
 			links,
 		})
@@ -355,8 +357,8 @@ function decideTarget(params: {
 	worktreesFolder: string
 	runs: readonly RunEntry[]
 	processes: readonly ProcessFolder[] | string
-	/** The worktrees the open lots name, by real path, with their reason. */
-	lotKeeps: ReadonlyMap<string, string>
+	/** What the store lots hold (`readLotItems`): a held lot's worktree is kept. */
+	lotItems: LotItems
 	/** Every entry of the registry. */
 	registered: readonly StoreEntry[]
 	/** The links around the workspace (`readLinkScanSet`). */
@@ -422,22 +424,6 @@ function movedByRemoval(params: { file: string; lot: string; worktree: string })
 }
 
 /**
- * The processes, or "not known" when the lister throws or cannot tell: then everything is kept.
- *
- * @intent read the processes once, a lister failure reading as "not known"
- * @internal
- */
-export function readProcesses(
-	listProcesses: () => ProcessFolder[] | string,
-): ProcessFolder[] | string {
-	try {
-		return listProcesses()
-	} catch (error) {
-		return `the processes are not known (${(error as Error).message}): nothing is moved`
-	}
-}
-
-/**
  * Why the hand-over's worktree stays, or the worktree itself when it may close. The cheap rules first, then the
  * links reaching it, then git: its status, the commits only its HEAD reflog reaches, the ignored files its removal
  * would delete. The first reason that keeps it wins.
@@ -450,8 +436,8 @@ export function whyKeep(params: {
 	runs: readonly RunEntry[]
 	/** The processes and their working folders, or why the system could not tell (then nothing closes). */
 	processes: readonly ProcessFolder[] | string
-	/** The worktrees the open lots name, by real path, with their reason: checked first. */
-	lotKeeps: ReadonlyMap<string, string>
+	/** What the store lots hold (`readLotItems`): a held lot's worktree, or the one its root link names, is kept first. */
+	lotItems: LotItems
 	/** Every entry of the registry: another hand-over of the same worktree still open keeps it. */
 	registered: readonly StoreEntry[]
 	/** The links around the workspace: one from outside the worktree reaching into it keeps it. */
@@ -464,8 +450,9 @@ export function whyKeep(params: {
 	// a target whose identity names no branch has nothing to compare its worktree with: kept
 	if (target.branch === undefined) return { kept: CLOSE_TARGET_TEXTS.noBranch }
 	const { branch } = target
-	const lotKeep = params.lotKeeps.get(worktreePath)
-	if (lotKeep) return { kept: lotKeep }
+	// a held lot only, by the worktree or its root link (never its branch, no throwaway): a closed lot's item closes
+	const lotItem = lotItemOf({ items: params.lotItems, worktree: worktreePath, link: true })
+	if (lotItem?.held) return { kept: lotItem.reason }
 	// a lot target closes on its own settled state; one an entry registers, by that entry's state too
 	if (target.kind === 'lot' && target.lotState === undefined) return { kept: 'not decided' }
 	if (entry && entry.state !== 'committed' && entry.state !== 'abandoned')
