@@ -13,7 +13,7 @@ import { CARDS_LOG_FILE } from '../events/cards-log.constants.ts'
 import { writeRemoved, writeRemoving } from '../events/cards-log.ts'
 import { realPathOf } from '../file-system.ts'
 import { readCommitOrNone, readGit, tryReadGit } from '../git.ts'
-import { closeHandovers, readProcesses } from '../handover/close-handovers.ts'
+import { closeHandovers } from '../handover/close-handovers.ts'
 import { closeTargetsOf } from '../handover/close-targets.ts'
 import { readStoreEntries } from '../handover/handover-store-read.ts'
 import {
@@ -28,7 +28,7 @@ import { KEEP_TEXTS } from '../store/keep-decisions.constants.ts'
 import { keptByDecisionOf } from '../store/lot-keep.ts'
 import { WORKTREES_FOLDER } from '../workspace.constants.ts'
 import { listWorktrees } from '../worktree/add-worktree.ts'
-import { listProcessFolders } from '../worktree/process-folders.ts'
+import { listProcessFolders, readProcesses } from '../worktree/process-folders.ts'
 import { isParked, trashWorktree } from '../worktree/trash.ts'
 import { ACT_TEXTS, NO_SUCH_SECTION } from './act-lot-prune.constants.ts'
 import { THROWAWAY_ROUND_PATTERN } from './lot-prune-facts.constants.ts'
@@ -39,6 +39,7 @@ import { proveThrowaway } from './throwaway-proof.ts'
 
 import type { RemovalBy } from '../events/cards-log.types.ts'
 import type { CloseSettle } from '../handover/close-targets.types.ts'
+import type { LotItems, LotRecord } from '../store/lot-items.types.ts'
 import type { BackgroundSpawner, ProcessFolder } from '../worktree/worktree.types.ts'
 import type { ActedItem, ActedItems, LotPruneOutcomes } from './act-lot-prune.types.ts'
 import type {
@@ -48,7 +49,6 @@ import type {
 	LotFacts,
 	LotPruneFacts,
 	RepositoryFacts,
-	StoreLot,
 } from './lot-prune-facts.types.ts'
 import type { LotPrunePlan, PlannedItem } from './plan-lot-prune.types.ts'
 
@@ -69,8 +69,8 @@ export function actLotPrune(params: {
 	scratchRoots?: readonly string[]
 	/** Told a throwaway's place in the trash once it moved, before its second proof (a test seam). */
 	afterThrowawayMove?: (trashed: string) => void
-	/** The store's lots, read again before a branch is deleted (a stack started since keeps its parent). */
-	readStoreLots: (main: string) => readonly StoreLot[]
+	/** The store's lots (`readLotItems`), read again before a branch is deleted (a stack started since keeps its parent). */
+	readLotItems: (params: { repository: string }) => LotItems
 }): LotPruneOutcomes {
 	const outcomes: LotPruneOutcomes = new Map()
 	params.plan.repositories.forEach(function actRepository(planned, index) {
@@ -438,7 +438,7 @@ function deleteBranches(params: {
 	started: ReadonlySet<string>
 	by: RemovalBy
 	now: Date
-	readStoreLots: (main: string) => readonly StoreLot[]
+	readLotItems: (params: { repository: string }) => LotItems
 }): [string, ActedItem][] {
 	const { repository } = params
 	const main = repository.main
@@ -488,21 +488,22 @@ function deleteAtMove(params: {
 	leftInTrash: ReadonlyMap<string, LeftInTrash>
 	by: RemovalBy
 	now: Date
-	readStoreLots: (main: string) => readonly StoreLot[]
+	readLotItems: (params: { repository: string }) => LotItems
 }): ActedItem {
 	const { main, store, branch } = params
 	const tip = readCommitOrNone({ root: main, ref: `refs/heads/${branch.branch}` })
 	if (tip === undefined) return { kept: ACT_TEXTS.gone }
-	const storeLots = params.readStoreLots(main)
+	// one store read at the move, for the lot's keep and the holders
+	const lots = params.readLotItems({ repository: main }).lots
 	// the branch's lot read again before anything else: kept on purpose, damaged, or no longer in the store since the
 	// plan keeps every branch it reaches (its own, its throwaways', a waiting one) - never read as checked out (KEEP 3.5.3)
-	const lotKept = keptAtMoveOf({ storeLots, lot: params.lot })
+	const lotKept = keptAtMoveOf({ lots, lot: params.lot })
 	if (lotKept !== undefined) return { kept: lotKept }
 	const holders = holdersOf({
 		main,
 		worktrees: listWorktrees(main),
 		entries: store === undefined ? [] : readStoreEntries(store),
-		storeLots,
+		lots,
 	})
 	// the main checkout's branch read again: a checkout made there since the plan keeps it
 	const mainBranch = tryReadGit({
@@ -543,8 +544,8 @@ function deleteAtMove(params: {
  * Why the run's lot holds its branches at the move: its kept or damaged text as the store reads it now, or that it is
  * no longer in the store; undefined for a lot not kept whose records hold.
  */
-function keptAtMoveOf(params: { storeLots: readonly StoreLot[]; lot: string }): string | undefined {
-	const read = params.storeLots.find((lot) => lot.name === params.lot)
+function keptAtMoveOf(params: { lots: readonly LotRecord[]; lot: string }): string | undefined {
+	const read = params.lots.find((lot) => lot.name === params.lot)
 	if (read === undefined)
 		return fillMessage({ template: KEEP_TEXTS.gone, values: { name: params.lot } })
 	return read.kept

@@ -18,6 +18,8 @@ import {
 } from 'node:fs'
 import { basename, join } from 'node:path'
 
+import { replaceRecord } from '../../../test/damaged-lot-workspace.ts'
+import { linkLot } from '../../../test/lot-stores.ts'
 import {
 	DAY_MS,
 	IDLE_DAYS,
@@ -540,6 +542,42 @@ describe(
 					nodeModules: existsSync(join(round, 'node_modules')),
 				}).toEqual({ round: true, nodeModules: true })
 			})
+	},
+)
+
+describe(
+	'worktree prune --reclaim: a lot whose identity does not read',
+	{ timeout: POOL_COMMAND_CASE_MS },
+	() => {
+		/** The lot `ASKING` with its idle worktree, its `identity.json` made unparsable, its root link to its folder. */
+		function unreadableLot(workspace: BriefWorkspace): void {
+			const worktree = addReclaimWorktree({ workspace, name: ASKING, lot: 'working' })
+			const lotFolder = realpathSync(join(workspace.store, ASKING))
+			replaceRecord({ folder: lotFolder, name: 'identity.json', text: '{ "schema": 1, ' })
+			linkLot({ worktree, lotFolder })
+		}
+
+		it('its worktree, found by its root link, idle for weeks → keep, its line says lot <name> damaged', () => {
+			const workspace = createReclaimWorkspace()
+			unreadableLot(workspace)
+			ageEverything({ workspace })
+
+			expect(
+				itemOf({ plan: planReclaim(planArguments({ workspace })), name: ASKING }),
+			).toMatchObject({ action: 'keep', reason: `lot ${ASKING} damaged` })
+		})
+
+		it('its idle review-round throwaway → still reclaimed: its node_modules parked', () => {
+			// guard: reclaim asks no throwaway expansion, so an unreadable lot's round is reclaimed like an open lot's
+			const workspace = createReclaimWorkspace()
+			unreadableLot(workspace)
+			addReclaimWorktree({ workspace, name: ROUND, merged: false })
+			ageEverything({ workspace })
+
+			expect(itemOf({ plan: planReclaim(planArguments({ workspace })), name: ROUND })?.action).toBe(
+				'park',
+			)
+		})
 	},
 )
 

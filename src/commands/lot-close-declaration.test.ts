@@ -146,7 +146,7 @@ describe('lot close: the lot’s own declaration', { timeout: STORE_CASE_TIMEOUT
 		})
 	})
 
-	it('a lot link naming another lot (new work started in the worktree) → kept for .dialecte/lot.json, nothing archived', () => {
+	it('a lot link naming another lot (new work started in the worktree) → kept as that open lot’s, nothing archived', () => {
 		const lot = landingLotOf()
 		const other = addLandingLot({ lot, name: '0002-repo-y', branch: 'feat/y' })
 		mkdirSync(join(lot.worktree, '.dialecte'), { recursive: true })
@@ -163,9 +163,7 @@ describe('lot close: the lot’s own declaration', { timeout: STORE_CASE_TIMEOUT
 			worktreeLeft: existsSync(lot.worktree),
 			archived: archiveIn({ lot, name: 'lot.json' }),
 		}).toEqual({
-			outcomes: [
-				{ closed: false, kept: expect.stringContaining('.dialecte/lot.json'), ...landedLine(lot) },
-			],
+			outcomes: [{ closed: false, kept: `lot ${other.name} working`, ...landedLine(lot) }],
 			worktreeLeft: true,
 			archived: undefined,
 		})

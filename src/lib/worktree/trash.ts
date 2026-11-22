@@ -4,10 +4,10 @@
  * the person to look at.
  */
 import { spawn } from 'node:child_process'
-import { existsSync, lstatSync, mkdirSync, renameSync } from 'node:fs'
+import { existsSync, mkdirSync, renameSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 
-import { realPathOf } from '../file-system.ts'
+import { isLink, realPathOf } from '../file-system.ts'
 import { readGit } from '../git.ts'
 import { WORKTREES_FOLDER } from '../workspace.constants.ts'
 import {
@@ -114,21 +114,12 @@ function trashPathOf(params: {
 	trashName?: string
 }): string {
 	const trash = join(params.worktreesFolder, params.trashName ?? TRASH_FOLDER)
-	if (isSymbolicLink(trash)) throw new Error(TRASH_LINK_REFUSAL.replace('{trash}', () => trash))
+	if (isLink(trash)) throw new Error(TRASH_LINK_REFUSAL.replace('{trash}', () => trash))
 	mkdirSync(trash, { recursive: true })
 	const base = join(trash, `${params.name}-${timeStamp(params.now)}`)
 	let path = base
 	for (let counter = 2; existsSync(path); counter++) path = `${base}-${counter}`
 	return path
-}
-
-/** `path` is a symbolic link itself (not followed); false when nothing is there. */
-function isSymbolicLink(path: string): boolean {
-	try {
-		return lstatSync(path).isSymbolicLink()
-	} catch {
-		return false
-	}
 }
 
 /** `20261106T100000`: the UTC time to the second. */

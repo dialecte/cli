@@ -4,6 +4,7 @@ import type { HostAdapter } from '../host/host.types.ts'
 import type { LostCommit } from '../landing/lost-work.types.ts'
 import type { SettledLot } from '../landing/lot-landing.types.ts'
 import type { RunEntry } from '../mutation/mutation.types.ts'
+import type { LotItems } from '../store/lot-items.types.ts'
 import type { LotIdentity, LotStateName } from '../store/store.types.ts'
 import type { FolderLink, ListedWorktree, ProcessFolder } from '../worktree/worktree.types.ts'
 import type { ThrowawayProof } from './throwaway-proof.types.ts'
@@ -103,19 +104,6 @@ export type BranchFacts = {
 /** The commits deleting a branch would lose, or why the commits it reaches could not be read. */
 export type BranchLoss = { lost: readonly LostCommit[]; unread?: string }
 
-/** A lot of the repository's store: its name, folder, identity and state (`damaged` when its records do not read). */
-export type StoreLot = {
-	name: string
-	lotFolder: string
-	identity: LotIdentity
-	state: LotStateName | 'damaged'
-	/**
-	 * Why the lot holds its items at the move (KEEP 3.5.3): its kept text, else for a damaged lot its damaged text;
-	 * absent for a lot not kept whose records hold.
-	 */
-	kept?: string
-}
-
 /** What a repository's lots share, read once for the run. */
 export type PruneReads = {
 	main: string
@@ -128,7 +116,8 @@ export type PruneReads = {
 	cardsLog: string
 	cards: readonly CardLine[]
 	removals: readonly Removal[]
-	storeLots: readonly StoreLot[]
+	/** What the store's lots hold (`readLotItems`), the lots this run settled read with their settled state. */
+	lotItems: LotItems
 	processes: readonly ProcessFolder[] | string
 	links: readonly FolderLink[]
 	runs: readonly RunEntry[]

@@ -30,12 +30,12 @@ import {
 } from '../../test/inbox-workspace.ts'
 import { HOSTILE_TEXT } from '../../test/lot-questions.constants.ts'
 import { snapshotOf, withJson } from '../../test/lot-start-workspace.ts'
-import { readyLot } from '../../test/lot-stop-workspace.ts'
+import { heldWorktreesOf, readyLot } from '../../test/lot-stop-workspace.ts'
 import { writeStoreListFile } from '../../test/lot-stores.ts'
 import { transitionOf, writeRecordFile } from '../../test/store-records.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { DISPLAY_ESCAPED_RANGES } from '../lib/print/print.constants.ts'
-import { lotsKeepingWorktrees } from '../lib/store/lot-keep.ts'
+import { readLotItems } from '../lib/store/lot-items.ts'
 import { lotStatusOf } from './lot-status.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -378,7 +378,7 @@ describe('inbox: the hand-over registry (G16)', { timeout: STORE_CASE_TIMEOUT },
 
 		expect({
 			status: lotStatusOf({ lotFolder })?.state,
-			kept: Object.fromEntries(lotsKeepingWorktrees({ repository: lot.start.repository })),
+			kept: heldWorktreesOf(readLotItems({ repository: lot.start.repository })),
 			inbox: withJson(inboxIn({ cwd: lot.start.repository, words: ['--json'] })),
 		}).toMatchObject({
 			status: 'ready',
@@ -404,9 +404,7 @@ describe('inbox: the hand-over registry (G16)', { timeout: STORE_CASE_TIMEOUT },
 		const { lot, name } = readyLot()
 		setEntryState({ root: lot.start.repository, name, state: 'committed' })
 
-		expect(Object.fromEntries(lotsKeepingWorktrees({ repository: lot.start.repository }))).toEqual(
-			{},
-		)
+		expect(heldWorktreesOf(readLotItems({ repository: lot.start.repository }))).toEqual({})
 		expect({
 			status: lotStatusOf({ lotFolder: lot.lotFolder })?.state,
 			inbox: withJson(inboxIn({ cwd: lot.start.repository, words: ['--json'] })),

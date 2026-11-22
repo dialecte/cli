@@ -1,14 +1,5 @@
 import type { FolderLink, ProcessFolder } from '../worktree/worktree.types.ts'
-
-/** The lot a hand-over folder belongs to, for the clones that rehearse it: the lot, its main checkout, its keep. */
-export type CloneOwner = {
-	lot: string
-	/** The lot's folder: its keep is read again at the move. */
-	lotFolder: string
-	main: string
-	/** Why the lot is kept on purpose (`keptByDecision`): its clones are kept with this text. */
-	kept?: string
-}
+import type { CloneOwner, OwnerLookups } from './clone-decision.types.ts'
 
 /**
  * A rehearsal clone in a scratch root and its decision: its owner when its marker names a hand-over folder of a lot
@@ -25,10 +16,12 @@ export type FeatureClone = {
 /** What became of a clone once the act ran: moved into the trash (where to), or kept (why). */
 export type MovedClone = { removed: string } | { kept: string }
 
-/** What every clone decision reads: the owners by hand-over folder, the links, the workspace, the start time reader. */
+/** What every clone decision reads: the owner reads, the feature's lots, the links, the processes, the workspace. */
 export type CloneReads = {
-	/** The lot each hand-over folder of the feature belongs to, by real path. */
-	owners: ReadonlyMap<string, CloneOwner>
+	/** The lots and registry entries a clone's owner is read from (`cloneOwnerOf`), indexed once (`ownerLookupsOf`). */
+	owners: OwnerLookups
+	/** The feature's lot folders, by real path: a clone of any other lot is decided by `worktree prune`. */
+	featureLots: ReadonlySet<string>
 	/** The links that may reach a clone; why they could not be read (every clone then stays). */
 	links: readonly FolderLink[] | string
 	/** The processes and their working folders; why they are not known (every clone then stays). */

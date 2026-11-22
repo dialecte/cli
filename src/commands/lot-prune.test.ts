@@ -3,10 +3,11 @@
  * lists every item of every lot with its decision and moves nothing; `--yes` acts through `lot close`'s own rules, writes
  * appended lines, landed facts and archived declarations only, and asks the host for a landing git cannot read.
  */
-import { existsSync, realpathSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { writeStoreLot } from '../../test/brief-workspace.ts'
+import { writeKeepLine } from '../../test/keep-decision-workspace.ts'
 import {
 	AFTER_LANDING_FILE,
 	LANDING_LOT_FILE,
@@ -47,12 +48,14 @@ import {
 	writeWaitingThrowaway,
 } from '../../test/lot-prune-workspace.ts'
 import { git } from '../../test/scratch-repository.ts'
-import { transitionOf } from '../../test/store-records.ts'
+import { transitionOf, writeRecordFile } from '../../test/store-records.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { createRecordingSpawner } from '../../test/worktree-pool.ts'
 import { registeredEntryOf } from '../lib/handover/handover-store-read.ts'
 import { handoverStoreOf } from '../lib/handover/handover-store.ts'
 import { readLanded } from '../lib/landing/landed-record.ts'
+import { STACK_SCHEMA } from '../lib/store/stack.constants.ts'
+import { writeStack } from '../lib/store/stack.ts'
 import { resolveTddBase } from '../lib/tdd/tdd-base.ts'
 import { runLotPrune } from './lot-prune.ts'
 
@@ -460,5 +463,143 @@ describe(
 					entry: { state: 'committed', closed: expect.any(String) },
 				})
 			})
+	},
+)
+
+/** A store lot whose `identity.json` is cut short: its records do not read. */
+const UNREADABLE_LOT = '0002-repo-check'
+const UNREADABLE_BRANCH = 'feat/check'
+
+/** The identity a write cut short leaves: a document that does not parse. */
+const CUT_IDENTITY = '{\n  "schema": 1,\n  "name": "0002-repo-ch'
+
+/** The lot folder's read-only `identity.json` replaced by a document cut short: its identity no longer reads. */
+function cutIdentityOf(lotFolder: string): void {
+	rmSync(join(lotFolder, 'identity.json'))
+	writeRecordFile({ folder: lotFolder, name: 'identity.json', text: CUT_IDENTITY })
+}
+
+/** A committed lot landed by a fast-forward on origin, its landed fact written, its worktree removed: its branch goes. */
+function landedBranchOnly(): LandingLot {
+	const lot = landingLotOf()
+	mergeOnOrigin({ repository: lot.repository, how: 'fast-forward' })
+	writeLandedFact({ lot, tip: lot.tip })
+	removeLotWorktree(lot)
+	return lot
+}
+
+/**
+ * A store lot `UNREADABLE_LOT` whose identity does not read, its folder holding `stack.json` naming `parent` (as `lot
+ * start --on` records it), no worktree, no registry entry: its lot folder.
+ */
+function writeUnreadableChild(parent: LandingLot): string {
+	const lotFolder = writeStoreLot({
+		workspace: parent.workspace,
+		name: UNREADABLE_LOT,
+		scope: ['src/check.ts'],
+		branch: UNREADABLE_BRANCH,
+		repository: parent.workspace.repository,
+	})
+	writeStack({ lotFolder, record: { schema: STACK_SCHEMA, parent: parent.name } })
+	cutIdentityOf(lotFolder)
+	return lotFolder
+}
+
+describe(
+	'lot prune: what a lot whose identity does not read holds',
+	{ timeout: STORE_CASE_TIMEOUT },
+	() => {
+		it('an unreadable lot’s clean worktree cut at a committed lot’s tip, no registry entry, its root lot link present; --yes on the committed lot → not its hand-made throwaway, its folder still there', () => {
+			const lot = landingLotOf()
+			mergeOnOrigin({ repository: lot.repository, how: 'fast-forward' })
+			writeLandedFact({ lot, tip: lot.tip })
+			const path = join(lot.workspace.workspace, '.worktrees', UNREADABLE_LOT)
+			git({
+				root: lot.workspace.repository,
+				args: ['worktree', 'add', '-q', '-b', UNREADABLE_BRANCH, path, lot.tip],
+			})
+			const worktree = realpathSync(path)
+			const lotFolder = realpathSync(
+				writeStoreLot({
+					workspace: lot.workspace,
+					name: UNREADABLE_LOT,
+					scope: ['src/check.ts'],
+					branch: UNREADABLE_BRANCH,
+					worktree,
+					repository: lot.workspace.repository,
+					base: { ref: 'main', commit: lot.tip },
+				}),
+			)
+			// its root link alone: no other file of the worktree keeps it from a move
+			mkdirSync(join(worktree, '.dialecte'))
+			symlinkSync(lotFolder, join(worktree, '.dialecte', 'lot'))
+			cutIdentityOf(lotFolder)
+
+			expect(
+				((result: CommandResult) => ({
+					throwaway: prunedItemsOf({ result, lot: lot.name })[`throwaway ${worktree}`],
+					there: existsSync(worktree),
+				}))(runLotPrune(lotPruneArgumentsOf({ lot, argv: [lot.name, '--yes'] }))),
+			).toEqual({ throwaway: undefined, there: true })
+		})
+
+		it('a child lot whose identity does not read, its stack.json naming the landed parent → the parent’s branch kept at the plan as the child’s stack parent', () => {
+			const parent = landedBranchOnly()
+			writeUnreadableChild(parent)
+
+			expect(
+				prunedItemsOf({
+					result: runLotPrune(lotPruneArgumentsOf({ lot: parent, argv: [parent.name] })),
+					lot: parent.name,
+				})[`branch ${parent.branch}`],
+			).toEqual({
+				decision: { kept: expect.stringContaining(`the stack parent of ${UNREADABLE_LOT}`) },
+			})
+		})
+
+		it('no child at the plan, one whose identity does not read stacked on the landed parent before the move → the parent’s branch planned to go, kept at the move, its tip untouched', () => {
+			const parent = landedBranchOnly()
+
+			expect(
+				((result: CommandResult) => ({
+					branch: prunedItemsOf({ result, lot: parent.name })[`branch ${parent.branch}`],
+					tip: lotBranchTipOf(parent),
+				}))(
+					runLotPrune(
+						lotPruneArgumentsOf({
+							lot: parent,
+							argv: [parent.name, '--yes'],
+							onPlanned: function stackUnreadableChild() {
+								writeUnreadableChild(parent)
+							},
+						}),
+					),
+				),
+			).toEqual({
+				branch: {
+					decision: { go: true },
+					outcome: { kept: expect.stringContaining(`the stack parent of ${UNREADABLE_LOT}`) },
+				},
+				tip: parent.tip,
+			})
+		})
+
+		it('a committed child kept on purpose, its stack.json naming the landed parent → the parent’s branch not held by it: go', () => {
+			// guard: a terminal child holds no stack parent today, kept on purpose or not; the one reader keeps that
+			const parent = landingLotOf()
+			const child = addStackedLot({ lot: parent, name: UNREADABLE_LOT, branch: UNREADABLE_BRANCH })
+			mergeOnOrigin({ repository: parent.repository, how: 'fast-forward' })
+			writeLandedFact({ lot: parent, tip: parent.tip })
+			removeLotWorktree(parent)
+			registerLotEntry({ lot: child })
+			writeKeepLine({ lotFolder: child.lotFolder })
+
+			expect(
+				prunedItemsOf({
+					result: runLotPrune(lotPruneArgumentsOf({ lot: parent, argv: [parent.name] })),
+					lot: parent.name,
+				})[`branch ${parent.branch}`],
+			).toEqual({ decision: { go: true } })
+		})
 	},
 )

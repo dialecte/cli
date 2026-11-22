@@ -8,6 +8,7 @@ import { existsSync, realpathSync, symlinkSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 
 import { createBriefWorkspace, writeStoreLot } from '../../test/brief-workspace.ts'
+import { replaceRecord } from '../../test/damaged-lot-workspace.ts'
 import { deadPid } from '../../test/dead-pid.ts'
 import { keepTextOf, keptTextOf, writeKeepLine } from '../../test/keep-decision-workspace.ts'
 import {
@@ -1036,6 +1037,57 @@ describe(
 			expect(removalsOf(lot).filter((removal) => removal.path === clone)).toEqual([
 				expect.objectContaining({ item: 'clone', by: 'lot-close', outcome: 'trashed' }),
 			])
+		})
+	},
+)
+
+/** The plan's decision on the rehearsal clone `clone`: its item's decision, or its keep as a clone of no lot. */
+function plannedCloneDecisionOf(params: {
+	result: CommandResult
+	clone: string
+}): Record<string, unknown> | undefined {
+	const { output } = closedFeatureOf(params.result)
+	const item = output?.lots
+		.flatMap((lot) => lot.items)
+		.find((one) => one.item === 'clone' && one.name === params.clone)
+	if (item !== undefined) return item.decision
+	const other = output?.clones.find((one) => one.clone === params.clone)
+	return other === undefined ? undefined : { kept: other.kept }
+}
+
+describe(
+	'lot close --feature: a lot damaged after the refusal check',
+	{ timeout: STORE_CASE_TIMEOUT },
+	() => {
+		it('the feature’s lot whose identity stops reading once its worktree is closed, a dead clone of it → the clone kept at the plan with the damaged text, exit 1', () => {
+			const { lot } = featureWorkspace()
+			const scratchRoot = newScratchRoot()
+			const clone = addRehearsalFolder({
+				scratchRoot,
+				name: 'dialecte-rehearse-damaged',
+				pid: deadPid(),
+				handover: lot.lotFolder,
+			})
+
+			const result = runLotClose({
+				...closeFeatureArgumentsOf({ lot, feature: CLOSED_FEATURE, scratchRoots: [scratchRoot] }),
+				// by state: the identity breaks once the act has moved the lot's worktree, whoever lists the processes
+				listProcesses: function breakIdentityOnceClosed() {
+					if (!existsSync(lot.worktree))
+						replaceRecord({ folder: lot.lotFolder, name: 'identity.json', text: '{' })
+					return []
+				},
+			})
+
+			expect({
+				exitCode: result.exitCode,
+				cloneLeft: existsSync(clone),
+				decision: plannedCloneDecisionOf({ result, clone }),
+			}).toEqual({
+				exitCode: 1,
+				cloneLeft: true,
+				decision: { kept: expect.stringContaining(`lot ${lot.name} damaged`) },
+			})
 		})
 	},
 )

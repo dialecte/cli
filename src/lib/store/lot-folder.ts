@@ -58,8 +58,13 @@ export function lotNameOfPath(params: { folder: string }): string | undefined {
 	return TEMPORARY_FOLDER_PATTERN.test(name) ? undefined : name
 }
 
-/** The folder is a store: a `dialecte-lots` folder of a git common folder. */
-function isStoreFolder(store: string): boolean {
+/**
+ * The folder is a store: a `dialecte-lots` folder of a git common folder.
+ *
+ * @intent tell a lot store folder from any other, for every reader of a store child
+ * @internal
+ */
+export function isStoreFolder(store: string): boolean {
 	return basename(store) === STORE_FOLDER && isCommonFolder(dirname(store))
 }
 

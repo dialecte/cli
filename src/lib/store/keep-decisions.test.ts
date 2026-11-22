@@ -28,10 +28,12 @@ import {
 } from '../../../test/keep-decision-workspace.ts'
 import { KEEP_SCOPE } from '../../../test/lot-keep-workspace.constants.ts'
 import { addLotWithoutWorktree, addLotWorktree } from '../../../test/lot-keep-workspace.ts'
+import { heldWorktreesOf } from '../../../test/lot-stop-workspace.ts'
 import { temporaryFolder } from '../../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
 import { readKeepDecision } from './keep-decisions.ts'
-import { keepNextOf, keptByDecision, keptByDecisionOf, lotsKeepingWorktrees } from './lot-keep.ts'
+import { lotItemOf, readLotItems } from './lot-items.ts'
+import { keepNextOf, keptByDecision, keptByDecisionOf } from './lot-keep.ts'
 import { isOpenRealLot, overlappingOpenLots, readCheckedLotState } from './lot-records.ts'
 import { lotState } from './lot-state.ts'
 
@@ -499,7 +501,7 @@ const OPEN_FIRST = { open: '0001-repo-open', kept: '0002-repo-kept' }
 const KEPT_FIRST = { open: '0002-repo-open', kept: '0001-repo-kept' }
 
 describe(
-	'lotsKeepingWorktrees: a kept closed lot keeps its worktree, an open lot wins a shared one',
+	'the held items of readLotItems: a kept closed lot holds its worktree, an open lot wins a shared one',
 	{ timeout: STORE_CASE_TIMEOUT },
 	() => {
 		it.each([
@@ -525,13 +527,25 @@ describe(
 				const alone = addLotWorktree({ workspace, name: '0003-repo-alone', state: 'committed' })
 				writeKeepLine({ lotFolder: alone.lotFolder })
 
-				expect(
-					Object.fromEntries(lotsKeepingWorktrees({ repository: workspace.repository })),
-				).toEqual({
+				expect(heldWorktreesOf(readLotItems({ repository: workspace.repository }))).toEqual({
 					[open.worktree]: `lot ${names.open} working`,
 					[alone.worktree]: keptTextOf(),
 				})
 			},
 		)
+
+		it('a damaged lot kept on purpose → its worktree held with its kept text, not lot <name> damaged', () => {
+			const workspace = createBriefWorkspace()
+			const lot = addLotWorktree({ workspace, name: '0001-repo-damaged', state: 'working' })
+			damageLot({ lotFolder: lot.lotFolder })
+			writeKeepLine({ lotFolder: lot.lotFolder })
+
+			expect(
+				lotItemOf({
+					items: readLotItems({ repository: workspace.repository }),
+					worktree: lot.worktree,
+				}),
+			).toMatchObject({ held: true, reason: keptTextOf() })
+		})
 	},
 )

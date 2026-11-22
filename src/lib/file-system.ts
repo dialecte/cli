@@ -26,6 +26,15 @@ export function isPresent(path: string): boolean {
 	}
 }
 
+/** The path itself is a symbolic link (dangling or not, never followed); false when nothing is there. */
+export function isLink(path: string): boolean {
+	try {
+		return lstatSync(path).isSymbolicLink()
+	} catch {
+		return false
+	}
+}
+
 /** A folder at the path (through its links); false when nothing is there or it is a file. */
 export function isFolder(path: string): boolean {
 	try {
