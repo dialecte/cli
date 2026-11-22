@@ -12,6 +12,7 @@ import type {
 	ChangelogPart,
 	ChangelogParts,
 	MarkdownBlocks,
+	MarkdownToken,
 	PartBoundary,
 } from './changelog.types.ts'
 
@@ -22,6 +23,8 @@ import type {
  * last part (a link reference definition among entries ends nothing).
  * Headings are CommonMark's top-level ATX headings: one inside a fence, an HTML block, a list or a quote is text. An
  * HTML comment that never closes hides nothing (`readMarkdownBlocks`). A version heading's part is keyed by its bracketed token.
+ * `definitionLines` are the non-blank top-level lines no block covers: the link reference definitions CommonMark
+ * consumes, a title on its own line included, wherever they stand.
  *
  * @intent read a changelog's parts once for the release fold and the released-section check
  * @internal
@@ -38,7 +41,12 @@ export function readChangelogParts(params: { text: string }): ChangelogParts {
 		return [{ kind: 'version', version: boundary.opens.version, heading: boundary.index, end }]
 	})
 	const link = boundaries.find((boundary) => boundary.opens === 'nothing')
-	return { lines, parts, linkLine: link?.index }
+	return {
+		lines,
+		parts,
+		linkLine: link?.index,
+		definitionLines: new Set(uncoveredLinesOf({ blocks })),
+	}
 }
 
 /**
@@ -69,17 +77,32 @@ function boundariesOf(params: { blocks: MarkdownBlocks }): PartBoundary[] {
  * (a closing comment); a definition inside an item's own paragraph belongs to the item, as CommonMark reads it.
  */
 function linkBlockLineOf(params: { blocks: MarkdownBlocks }): number | undefined {
-	const { lines, tokens } = params.blocks
-	const top = tokens.filter((token) => token.level === 0 && token.nesting !== -1 && token.map)
+	const { lines } = params.blocks
+	const top = topLevelBlocksOf(params)
 	const lastHeading = top.filter((token) => token.type === 'heading_open').at(-1)?.map?.[0] ?? -1
-	const first = lines.findIndex(
-		(line, index) =>
+	return uncoveredLinesOf(params).find(
+		(index) =>
 			index > lastHeading &&
-			!top.some(({ map }) => map !== null && index >= map[0] && index < map[1]) &&
-			LINK_REFERENCE_PATTERN.test(line) &&
+			LINK_REFERENCE_PATTERN.test(lines[index] ?? '') &&
 			top.every(({ type, map }) => map === null || map[0] < index || type === 'html_block'),
 	)
-	return first === -1 ? undefined : first
+}
+
+/** The non-blank lines no top-level block covers, in order: the link reference definitions CommonMark consumes. */
+function uncoveredLinesOf(params: { blocks: MarkdownBlocks }): number[] {
+	const top = topLevelBlocksOf(params)
+	return params.blocks.lines.flatMap((line, index) =>
+		line.trim() !== '' && !top.some(({ map }) => map !== null && index >= map[0] && index < map[1])
+			? [index]
+			: [],
+	)
+}
+
+/** The top-level block tokens that open a block (no closing token), each with its line range. */
+function topLevelBlocksOf(params: { blocks: MarkdownBlocks }): MarkdownToken[] {
+	return params.blocks.tokens.filter(
+		(token) => token.level === 0 && token.nesting !== -1 && token.map,
+	)
 }
 
 /** What a `## [` heading opens: a version's section keyed by its token, or (a second Unreleased heading) the Unreleased kind. */

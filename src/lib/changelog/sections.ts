@@ -3,6 +3,7 @@ import {
 	CHANGELOG_SECTIONS,
 	FRAGMENT_PROBLEMS,
 	SECTION_HEADING_MARKUP,
+	SHOWN_HTML_LENGTH,
 } from './changelog.constants.ts'
 import { readMarkdownBlocks } from './markdown-blocks.ts'
 
@@ -18,7 +19,7 @@ import type {
  * The sections of `text` in the order written, each one's text trimmed; a section heading is a top-level level-3 ATX
  * heading as CommonMark reads it (one inside a fence, an HTML block, a list or a quote is text), its name the heading's
  * text. Or the first problem: an HTML comment, a code fence or an HTML block that never closes (it would hide what
- * follows it once folded), a heading that is no changelog section, an empty section, and in a fragment text before
+ * follows it once folded), raw HTML a block or item holds other than whole comments and balanced bare inert tags, a heading that is no changelog section, an empty section, and in a fragment text before
  * the first heading or a repeated section. The Unreleased part (`unreleased`) keeps its text before the first heading (the
  * release's summary) and merges a repeated section into the first. No section at all is `sections: []`.
  *
@@ -69,7 +70,17 @@ function unclosedProblemOf(params: { blocks: MarkdownBlocks }): string | undefin
 	if (blocks.unclosedBlock === 'html') return FRAGMENT_PROBLEMS.unclosedHtml
 	if (blocks.unclosedBlock === 'nesting')
 		return FRAGMENT_PROBLEMS.tooDeep.replace('{levels}', String(blocks.maxNesting))
+	if (blocks.unclosedBlock === 'open-html') {
+		const piece = shownPiece({ piece: blocks.openHtml ?? '' })
+		return FRAGMENT_PROBLEMS.openHtml.replace('{piece}', () => piece)
+	}
 	return undefined
+}
+
+/** A refused HTML piece on one line: white space runs collapsed, cut with `…` past the shown length. */
+function shownPiece(params: { piece: string }): string {
+	const line = params.piece.replace(/\s+/g, ' ').trim()
+	return line.length > SHOWN_HTML_LENGTH ? `${line.slice(0, SHOWN_HTML_LENGTH - 1)}…` : line
 }
 
 /** Each section heading's line and its name: the top-level `###` headings, named by their inline text. */

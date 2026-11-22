@@ -301,3 +301,86 @@ describe('releasedSectionChanges: a deleted CHANGELOG.md', () => {
 		])
 	})
 })
+
+const FOOTED_RELEASE = `# Changelog
+
+## [Unreleased]
+
+## [0.1.0] - 2026-01-01
+
+### Added
+
+- x.
+
+[0.1.0]: https://e.example/v0.1.0
+
+Footer text.
+`
+
+const DEFINED_RELEASES = `# Changelog
+
+## [1.1.0]
+
+- three.
+
+## [1.0.0]
+
+- a [x].
+
+[x]: https://e.example/x
+
+- b.
+`
+
+describe('releasedSectionChanges: link reference definitions', () => {
+	it.each([
+		{
+			label: 'a definition added next to the link line before trailing text → nothing',
+			checked: FOOTED_RELEASE.replace('[0.1.0]:', '[0.2.0]: https://e.example/v0.2.0\n[0.1.0]:'),
+			tip: FOOTED_RELEASE,
+			changes: [],
+		},
+		{
+			label: 'a definition added with a blank line of its own → nothing',
+			checked: FOOTED_RELEASE.replace('[0.1.0]:', '[0.2.0]: https://e.example/v0.2.0\n\n[0.1.0]:'),
+			tip: FOOTED_RELEASE,
+			changes: [],
+		},
+		{
+			label: 'the trailing text after the link line edited → the last version changed at its line',
+			checked: FOOTED_RELEASE.replace('Footer text.', 'Footer text, edited.'),
+			tip: FOOTED_RELEASE,
+			changes: [
+				{ kind: 'changed', version: '0.1.0', line: 13, added: 1, removed: 1, reordered: false },
+			],
+		},
+		{
+			label:
+				'a definition right after the trailing text (paragraph text) → the last version changed',
+			checked: FOOTED_RELEASE.replace(
+				'Footer text.',
+				'Footer text.\n[0.2.0]: https://e.example/v0.2.0',
+			),
+			tip: FOOTED_RELEASE,
+			changes: [
+				{ kind: 'changed', version: '0.1.0', line: 14, added: 1, removed: 0, reordered: false },
+			],
+		},
+		{
+			label: 'an entry edited after a definition among entries → changed at that entry line',
+			checked: DEFINED_RELEASES.replace('- b.', '- b, edited.'),
+			tip: DEFINED_RELEASES,
+			changes: [
+				{ kind: 'changed', version: '1.0.0', line: 13, added: 1, removed: 1, reordered: false },
+			],
+		},
+		{
+			label: 'a definition among entries of an older released section edited → nothing',
+			checked: DEFINED_RELEASES.replace('https://e.example/x', 'https://e.example/y'),
+			tip: DEFINED_RELEASES,
+			changes: [],
+		},
+	])('$label', ({ checked, tip, changes }) => {
+		expect(releasedSectionChanges({ checked, tip })).toEqual(changes)
+	})
+})

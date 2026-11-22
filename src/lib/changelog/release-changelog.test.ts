@@ -308,4 +308,16 @@ describe('foldChangelog', () => {
 	])('$label → refused, nothing folded', ({ text, version, refusal }) => {
 		expect(foldChangelog({ text, version, date: '2026-11-16', fragments: [] })).toEqual({ refusal })
 	})
+
+	it.each([
+		{
+			label: 'the Unreleased part holding a script opened in one item and closed in a later one',
+			text: `${HEAD}\n## [Unreleased]\n\n### Changed\n\n- a <script>\n- **Breaking:** b\n- c </script>\n\n${OLD_RELEASE}`,
+			version: '0.8.0',
+			refusal:
+				'the Unreleased part of CHANGELOG.md: HTML `<script>` is not a whole comment or a balanced bare tag of its block or item (<b>, <i>, <u>, <s>, <em>, <strong>, <small>, <mark>, <del>, <ins>, <sub>, <sup>, <code>, <kbd>, <samp>, <var>, <details>, <summary>, <br>, <wbr>); put code in backticks',
+		},
+	])('$label → refused naming the open HTML, nothing folded', ({ text, version, refusal }) => {
+		expect(foldChangelog({ text, version, date: '2026-11-16', fragments: [] })).toEqual({ refusal })
+	})
 })

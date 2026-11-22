@@ -148,4 +148,24 @@ describe('readChangelogParts', () => {
 	])('$label → the link block starts at line $linkLine', ({ text, linkLine }) => {
 		expect(readChangelogParts({ text }).linkLine).toBe(linkLine)
 	})
+
+	it.each([
+		{
+			label: 'a link line between an entry and trailing text',
+			text: '## [0.1.0]\n\n- x\n\n[0.1.0]: https://e.example/v0.1.0\n\nFooter text.\n',
+			lines: [4],
+		},
+		{
+			label: 'a definition with its title on the next line',
+			text: '## [0.1.0]\n\n- x\n\n[a]: https://e.example\n  "title"\n',
+			lines: [4, 5],
+		},
+		{
+			label: 'a definition line inside an item paragraph (no blank line before it)',
+			text: '## [0.1.0]\n\n- x\n[x]: https://e.example\n',
+			lines: [],
+		},
+	])('$label → definition lines $lines', ({ text, lines }) => {
+		expect([...readChangelogParts({ text }).definitionLines]).toEqual(lines)
+	})
 })
