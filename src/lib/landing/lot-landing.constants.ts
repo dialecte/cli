@@ -36,5 +36,8 @@ export const STACK_UNREADABLE = 'its landing cannot be read: {reason}'
 export const STACK_PARENT_UNREADABLE =
 	'the stack parent {parent} cannot be read: {reason}; the lot is never measured as one not stacked'
 
+/** A stacked lot whose stack record does not read: `{reason}` the damage. */
+export const STACK_RECORD_DAMAGED = '{reason}; the lot is never measured as one not stacked'
+
 /** Why a folder's landing is not settled: it holds no store lot's records. */
 export const SETTLE_NOT_A_LOT = 'not a lot of the store: its folder holds no lot records'

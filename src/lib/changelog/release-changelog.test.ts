@@ -3,6 +3,8 @@ import { foldChangelog } from './release-changelog.ts'
 
 import { describe, expect, it } from 'vitest'
 
+import type { Fragment } from './changelog.types.ts'
+
 const HEAD = '# Changelog\n\nAll notable changes.\n'
 
 const OLD_RELEASE = '## [0.7.0] - 2026-11-14\n\n### Added\n\n- the old entry.\n'
@@ -17,6 +19,11 @@ const FRAGMENTS = [
 		],
 	},
 ]
+
+/** A fragment holding only a Changed section. */
+function changed(file: string, text: string): Fragment {
+	return { file, sections: [{ section: 'Changed', text }] }
+}
 
 describe('foldChangelog', () => {
 	it.each([
@@ -78,6 +85,190 @@ describe('foldChangelog', () => {
 
 	it.each([
 		{
+			label:
+				"a later fragment holding a breaking item → that item first in its section, the earlier fragment's items after it in order",
+			unreleased: '',
+			added: '',
+			fragments: [
+				changed('changes/a.md', '- a one.\n- a two.'),
+				changed('changes/b.md', '- **Breaking:** b.'),
+			],
+			section: '- **Breaking:** b.\n- a one.\n- a two.',
+		},
+		{
+			label:
+				"breaking items in the Unreleased part and in a fragment → the Unreleased one first, then the fragment's, then the rest in order",
+			unreleased: '### Changed\n\n- u plain.\n- **Breaking:** u.\n\n',
+			added: '',
+			fragments: [changed('changes/a.md', '- **Breaking:** a.\n- a plain.')],
+			section: '- **Breaking:** u.\n- **Breaking:** a.\n- u plain.\n- a plain.',
+		},
+		{
+			label: 'a plain item then a breaking one in one fragment → the breaking one lifted above it',
+			unreleased: '',
+			added: '',
+			fragments: [changed('changes/a.md', '- plain.\n- **Breaking:** lifted.')],
+			section: '- **Breaking:** lifted.\n- plain.',
+		},
+		{
+			label: 'the marker forms of other changelogs → lifted alike',
+			unreleased: '',
+			added: '',
+			fragments: [
+				changed('changes/a.md', '- plain.'),
+				changed('changes/b.md', '- **Breaking: a whole sentence.**\n- **BREAKING**: shouted.'),
+				changed(
+					'changes/c.md',
+					'- **Breaking** - dashed.\n- Breaking a long line no longer wraps.',
+				),
+			],
+			section:
+				'- **Breaking: a whole sentence.**\n- **BREAKING**: shouted.\n- **Breaking** - dashed.\n- plain.\n- Breaking a long line no longer wraps.',
+		},
+		{
+			label:
+				'an item holding a second paragraph, then one-line items of other fragments → one blank line after it only',
+			unreleased: '',
+			added: '',
+			fragments: [
+				changed('changes/a.md', '- a.\n\n  more of a.'),
+				changed('changes/b.md', '- b.'),
+				changed('changes/c.md', '- c.'),
+			],
+			section: '- a.\n\n  more of a.\n\n- b.\n- c.',
+		},
+		{
+			label:
+				'an ordered list next to a fragment of bullets → a blank line between, its order and numbers kept, its breaking-looking line not lifted',
+			unreleased: '',
+			added: '',
+			fragments: [
+				changed('changes/a.md', '1. first.\n2. **Breaking:** second.'),
+				changed('changes/b.md', '- b.'),
+			],
+			section: '1. first.\n2. **Breaking:** second.\n\n- b.',
+		},
+		{
+			label:
+				'a breaking item under an intro paragraph → lifted above the intro, the intro and the plain item after it',
+			unreleased: '',
+			added: '',
+			fragments: [changed('changes/a.md', 'Intro:\n\n- a.\n- **Breaking:** b.')],
+			section: '- **Breaking:** b.\n\nIntro:\n\n- a.',
+		},
+		{
+			label:
+				'a breaking-looking line inside an HTML comment → never lifted, the comment kept whole after the items',
+			unreleased: '',
+			added: '',
+			fragments: [
+				changed('changes/a.md', '- a.\n<!--\n- **Breaking:** hidden.\n-->'),
+				changed('changes/b.md', '- **Breaking:** b.'),
+			],
+			section: '- **Breaking:** b.\n- a.\n\n<!--\n- **Breaking:** hidden.\n-->',
+		},
+		{
+			label:
+				'a section heading inside an HTML comment of the Unreleased part → kept inside the comment, the real section after it',
+			unreleased:
+				'### Changed\n\n- a.\n<!--\n### Fixed\n- y.\n-->\n\n### Fixed\n\n- **Breaking:** real.\n\n',
+			added: '',
+			fragments: [],
+			section: '- a.\n\n<!--\n### Fixed\n- y.\n-->\n\n### Fixed\n\n- **Breaking:** real.',
+		},
+		{
+			label:
+				'a breaking-looking line inside a comment indented by one space → never lifted, the comment kept whole',
+			unreleased: '',
+			added: '',
+			fragments: [
+				changed('changes/a.md', '- a.\n\n <!--\n- **Breaking:** hidden.\n -->'),
+				changed('changes/b.md', '- b.'),
+			],
+			section: '- a.\n\n <!--\n- **Breaking:** hidden.\n -->\n\n- b.',
+		},
+		{
+			label:
+				'a breaking item whose note follows an indented comment → lifted with its comment and note, the next item apart',
+			unreleased: '',
+			added: '',
+			fragments: [
+				changed(
+					'changes/a.md',
+					'- c.\n- **Breaking:** a.\n\n  <!-- x -->\n  Migrate with `foo --bar`.\n- d.',
+				),
+			],
+			section: '- **Breaking:** a.\n\n  <!-- x -->\n  Migrate with `foo --bar`.\n\n- c.\n- d.',
+		},
+		{
+			label:
+				'a fence ending the list, then an indented comment hiding a breaking bullet → nothing lifted, the comment kept whole',
+			unreleased: '',
+			added: '',
+			fragments: [
+				changed('changes/a.md', '- a.\n```\nf\n```\n  <!--\n- **Breaking:** cm-hidden\n  -->'),
+				changed('changes/b.md', '- b.'),
+			],
+			section: '- a.\n\n```\nf\n```\n\n  <!--\n- **Breaking:** cm-hidden\n  -->\n\n- b.',
+		},
+		{
+			label:
+				'a four-backtick fence holding a three-backtick fence and a section heading → kept as text of its section',
+			unreleased: '### Changed\n\n- x:\n\n````md\n```\n### Fixed\n```\n````\n\n',
+			added: '',
+			fragments: [],
+			section: '- x:\n\n````md\n```\n### Fixed\n```\n````',
+		},
+		{
+			label:
+				'a breaking item under a sub-heading of its fragment → lifted above the plain item, the sub-heading after them',
+			unreleased: '',
+			added: '',
+			fragments: [changed('changes/a.md', '- a.\n\n#### Migration\n\n- **Breaking:** b.')],
+			section: '- **Breaking:** b.\n- a.\n\n#### Migration',
+		},
+		{
+			label: 'a loose fragment list of one-line items → written tight',
+			unreleased: '',
+			added: '',
+			fragments: [changed('changes/a.md', '- a.\n\n- b.')],
+			section: '- a.\n- b.',
+		},
+		{
+			label:
+				'an Unreleased section written twice, each a paragraph → two paragraphs, a blank line between',
+			unreleased:
+				'### Changed\n\nFirst paragraph.\n\n### Added\n\n- x.\n\n### Changed\n\nSecond paragraph.\n\n',
+			added: '### Added\n\n- x.\n\n',
+			fragments: [],
+			section: 'First paragraph.\n\nSecond paragraph.',
+		},
+		{
+			label:
+				'an item whose indented fence holds a blank line, then a one-line item → still tight (the fenced blank is no second block)',
+			unreleased: '',
+			added: '',
+			fragments: [
+				changed('changes/a.md', '- a:\n  ```ts\n  const a = 1\n\n  const b = 2\n  ```'),
+				changed('changes/b.md', '- b.'),
+			],
+			section: '- a:\n  ```ts\n  const a = 1\n\n  const b = 2\n  ```\n- b.',
+		},
+	])('$label', ({ unreleased, added, fragments, section }) => {
+		expect(
+			foldChangelog({
+				text: `${HEAD}\n## [Unreleased]\n\n${unreleased}${OLD_RELEASE}`,
+				version: '0.8.0',
+				date: '2026-11-16',
+				fragments,
+			}),
+		).toEqual({
+			text: `${HEAD}\n## [Unreleased]\n\n## [0.8.0] - 2026-11-16\n\n${added}### Changed\n\n${section}\n\n${OLD_RELEASE}`,
+		})
+	})
+
+	it.each([
+		{
 			label: 'the version is already released',
 			text: `${HEAD}\n## [Unreleased]\n\n### Added\n\n- x.\n\n${OLD_RELEASE}`,
 			version: '0.7.0',
@@ -95,6 +286,24 @@ describe('foldChangelog', () => {
 			version: '0.8.0',
 			refusal:
 				'the Unreleased part of CHANGELOG.md: heading "### Improved" is no section: Added, Changed, Deprecated, Removed, Fixed, Security',
+		},
+		{
+			label: 'the Unreleased part holding an HTML comment that never closes',
+			text: `${HEAD}\n## [Unreleased]\n\n### Changed\n\n- a.\n<!--\n- hidden.\n\n${OLD_RELEASE}`,
+			version: '0.8.0',
+			refusal: 'the Unreleased part of CHANGELOG.md: an HTML comment opens and never closes',
+		},
+		{
+			label: 'the Unreleased part holding a code fence that never closes',
+			text: `${HEAD}\n## [Unreleased]\n\n### Changed\n\n- a.\n\n\`\`\`\nx\n\n${OLD_RELEASE}`,
+			version: '0.8.0',
+			refusal: 'the Unreleased part of CHANGELOG.md: a code fence opens and never closes',
+		},
+		{
+			label: 'the Unreleased part holding a pre block that never closes',
+			text: `${HEAD}\n## [Unreleased]\n\n### Changed\n\n- a.\n\n<pre>\nx\n\n${OLD_RELEASE}`,
+			version: '0.8.0',
+			refusal: 'the Unreleased part of CHANGELOG.md: an HTML block opens and never closes',
 		},
 	])('$label → refused, nothing folded', ({ text, version, refusal }) => {
 		expect(foldChangelog({ text, version, date: '2026-11-16', fragments: [] })).toEqual({ refusal })

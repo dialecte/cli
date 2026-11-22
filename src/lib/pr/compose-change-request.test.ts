@@ -2,7 +2,7 @@
  * The pull request of a lot is its final state rendered from its records through one template: the parts the records
  * hold, "not recorded" for a record missing, never a guess, and never what stays private.
  */
-import { composeChangeRequest, keptTextOf } from './compose-change-request.ts'
+import { composeChangeRequest, keptTextOf, titleVersionFault } from './compose-change-request.ts'
 
 import { describe, expect, it } from 'vitest'
 
@@ -139,7 +139,6 @@ const FULL: ChangeRequestSources = {
 	overlaps: [{ lot: '0007-repo-other', reason: 'separate lines in one file' }],
 	effort: 'medium',
 	docsPassed: true,
-	versionBumped: false,
 	release: false,
 }
 
@@ -246,7 +245,7 @@ Closes #12
 
 	it('a lot with no record but its message → every part reads not recorded, no issue named, boxes left', () => {
 		const body = bodyOf({
-			sources: { messages: ['feat(x): x'], treeHash: TREE, versionBumped: true, release: false },
+			sources: { messages: ['feat(x): x'], treeHash: TREE, bumpedTo: '1.1.0', release: false },
 		})
 
 		expect(
@@ -320,7 +319,7 @@ Closes #12
 				...FULL,
 				changelog: { kind: 'none', reason: 'wording only', file: 'changes/x.none.md' },
 				review: { findings: [], verdicts: [] },
-				versionBumped: true,
+				bumpedTo: '1.1.0',
 				release: true,
 			},
 		})
@@ -331,7 +330,7 @@ Closes #12
 	})
 
 	it('a lot that is no release and bumps the version → version box left', () => {
-		const body = bodyOf({ sources: { ...FULL, versionBumped: true } })
+		const body = bodyOf({ sources: { ...FULL, bumpedTo: '1.1.0' } })
 
 		expect(partOf({ body, heading: 'Checklist' })).toContain('- [ ] Version:')
 	})
@@ -641,5 +640,40 @@ describe('composeChangeRequest keeps the quality lines short and the notes apart
 			listed: 10,
 			more: [expect.stringMatching(/… 2 more \(dialecte rules --base c+ --json\)$/)],
 		})
+	})
+})
+
+describe('titleVersionFault', () => {
+	it.each([
+		{ label: 'the stale version', title: 'chore(release): @scope/x 0.8.4' },
+		{ label: 'a pre-release of it', title: 'chore(release): @scope/x 0.9.0-rc.1' },
+		{ label: 'a longer patch number', title: 'chore(release): @scope/x 0.9.01' },
+		{ label: 'a longer major number', title: 'chore(release): @scope/x 10.9.0' },
+		{ label: 'its digits with other separators', title: 'chore(release): @scope/x 0x9x0' },
+	])('a lot setting 0.9.0 titled with $label → refused naming lot brief', ({ title }) => {
+		expect(
+			titleVersionFault({ sources: { messages: [title], bumpedTo: '0.9.0' }, lot: '0042-x' }),
+		).toBe(
+			`the title "${title}" does not name 0.9.0, the version this lot sets: correct lots[0].message with dialecte lot brief 0042-x --from <brief.json> --by <who> --reason <why>`,
+		)
+	})
+
+	it.each([
+		{ label: 'the version set', title: 'chore(release): @scope/x 0.9.0' },
+		{ label: 'the version set, v-prefixed', title: 'chore(release): v0.9.0' },
+		{ label: 'the version set, ending the sentence', title: 'chore(release): ship 0.9.0.' },
+	])('a lot setting 0.9.0 titled with $label → no fault', ({ title }) => {
+		expect(
+			titleVersionFault({ sources: { messages: [title], bumpedTo: '0.9.0' }, lot: '0042-x' }),
+		).toBeUndefined()
+	})
+
+	it('a lot that sets no version → no fault whatever its title', () => {
+		expect(
+			titleVersionFault({
+				sources: { messages: ['chore(release): @scope/x 0.8.4'] },
+				lot: '0042-x',
+			}),
+		).toBeUndefined()
 	})
 })

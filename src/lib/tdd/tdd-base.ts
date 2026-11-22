@@ -3,19 +3,15 @@
  * for `tdd red`, `green`, `status`, the gate and the hook (FIX-ci-loop design, section 4): `--base <ref>` when given,
  * else the lot base (`lotBaseOf`), so a green taken before a rebase still counts after it.
  */
-import { dirname, join } from 'node:path'
-
 import { findBaseBranchRef, resolveFlagBase } from '../gate/gate-base.ts'
 import { readGit, tryReadGit } from '../git.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { lotBaseOf } from '../landing/lot-base.ts'
-import { STACK_PARENT_UNREADABLE } from '../landing/lot-landing.constants.ts'
-import { readLotLanding } from '../landing/lot-landing.ts'
+import { readStackParent } from '../landing/read-stack-parent.ts'
 import { lotOfWorktree } from '../store/resolve-lot.ts'
-import { readStackRecord } from '../store/stack.ts'
+import { readStack } from '../store/stack.ts'
 import { TDD_BASE_SOURCES } from './tdd.constants.ts'
 
-import type { StackParent } from '../landing/lot-base.types.ts'
 import type { PackageJson } from '../package-json.types.ts'
 import type { TddBase } from './tdd.types.ts'
 
@@ -49,7 +45,8 @@ export function resolveTddBase(params: {
 		return packageJson.dialecte?.baseBranch === undefined
 			? { commit: head, kind: 'head', source: TDD_BASE_SOURCES.head }
 			: { failure: found.refusal }
-	const parent = stackParentOf({ root })
+	const lotFolder = lotOfWorktree({ cwd: root })
+	const parent = lotFolder === undefined ? undefined : readStackParent({ lotFolder, root })
 	if (parent !== undefined && 'refusal' in parent) return { failure: `tdd base: ${parent.refusal}` }
 	const base = lotBaseOf({
 		root,
@@ -66,39 +63,16 @@ export function resolveTddBase(params: {
 }
 
 /**
- * Whether the worktree at `root` holds a store lot started on another (`stack.json`): its base is then its parent's
- * fork point, not the base branch's merge-base. Files only, no git.
+ * Whether the worktree at `root` holds a store lot started on another (`stack.json`, a damaged one included): its base
+ * is then its parent's fork point, not the base branch's merge-base, and a damaged record refuses there. Files only, no
+ * git.
  *
  * @intent tell when a lot's base differs from the base branch's merge-base
  * @internal
  */
 export function isStackedLotWorktree(params: { root: string }): boolean {
 	const lotFolder = lotOfWorktree({ cwd: params.root })
-	return lotFolder !== undefined && readStackRecord({ lotFolder }) !== undefined
-}
-
-/**
- * The lot the worktree's lot was started on (`stack.json`), its branch and its landing state as the one lot reader
- * gives it (its landed fact, else git; never the host): merged only when proven; undefined for a worktree of no store
- * lot or a lot not stacked; refused when the parent's records or base branch cannot be read (a child is never measured
- * as a lot not stacked, which would take in its parent's commits).
- */
-function stackParentOf(params: { root: string }): StackParent | { refusal: string } | undefined {
-	const { root } = params
-	const lotFolder = lotOfWorktree({ cwd: root })
-	if (lotFolder === undefined) return undefined
-	const stack = readStackRecord({ lotFolder })
-	if (stack === undefined) return undefined
-	// the one lot reader: the parent's landed fact first (a squash main later edited is merged once recorded), else git
-	const parent = readLotLanding({ lotFolder: join(dirname(lotFolder), stack.parent), root })
-	if ('refusal' in parent)
-		return {
-			refusal: fillMessage({
-				template: STACK_PARENT_UNREADABLE,
-				values: { parent: stack.parent, reason: parent.refusal },
-			}),
-		}
-	return { branch: parent.identity.branch, landing: parent.state }
+	return lotFolder !== undefined && readStack({ lotFolder }) !== undefined
 }
 
 /** The short id of `commit`, as git abbreviates it in the repository at `root`. */

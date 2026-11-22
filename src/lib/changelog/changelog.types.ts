@@ -46,7 +46,7 @@ export type PartBoundary = { index: number; opens: 'unreleased' | 'nothing' | { 
 
 /**
  * A changelog read into parts: its lines (LF), its parts in file order, and its first link reference line outside a
- * code fence (undefined when none).
+ * code fence or HTML comment (undefined when none).
  */
 export type ChangelogParts = {
 	lines: string[]
@@ -92,3 +92,45 @@ export type ReleaseBaseRead = { base: ReleaseBase } | { notJudged: string }
  * merge-base's. A record keyed on them answers only while neither changed.
  */
 export type ReleaseChangelog = { tip: string; mergeBase: string }
+
+/**
+ * A top-level block of a section's text: a `- ` bullet item, or any other block (`text`: a paragraph, a list of
+ * another kind, a fence); `multiBlock` when it holds a blank line outside a fence, `breaking` for an item opening with
+ * a breaking marker.
+ */
+export type SectionBlock = {
+	kind: 'item' | 'text'
+	text: string
+	breaking: boolean
+	multiBlock: boolean
+}
+
+/**
+ * A block opened in a text that runs to its end: a code fence, an HTML block of a kind only its close ends (or a raw-text
+ * element left open in any block), or a nesting deeper than the reader reads.
+ */
+export type UnclosedBlock = 'fence' | 'html' | 'nesting'
+
+/**
+ * A text read as CommonMark blocks: its lines (split as the parser splits them), the parser's block tokens (unclosed
+ * comment openers neutralised, so they hide nothing), the line of the first HTML block holding an unclosed comment,
+ * and the kind of a block that runs to the end of the text.
+ */
+export type MarkdownBlocks = {
+	lines: string[]
+	tokens: readonly MarkdownToken[]
+	unclosedComment: number | undefined
+	unclosedBlock: UnclosedBlock | undefined
+	/** How many nesting levels the reader reads before it stops. */
+	maxNesting: number
+}
+
+/** A parser block token as the readers use it: its type, nesting level, markup, line range and content. */
+export type MarkdownToken = {
+	type: string
+	level: number
+	nesting: number
+	markup: string
+	map: [number, number] | null
+	content: string
+}

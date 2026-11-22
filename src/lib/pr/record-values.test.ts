@@ -16,7 +16,6 @@ function sourcesWith(params: Pick<ChangeRequestSources, 'review' | 'tests'>): Ch
 	return {
 		messages: ['feat(x): x'],
 		treeHash: TREE,
-		versionBumped: false,
 		release: false,
 		...params,
 	}

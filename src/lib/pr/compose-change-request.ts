@@ -6,6 +6,7 @@
 import { counted } from '../counted.ts'
 import { DESIGN_STATE_WORDS } from '../design/design.constants.ts'
 import { SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
+import { REGEX_SPECIAL_PATTERN, REGEX_SPECIAL_REPLACEMENT } from '../knowledge/ask/ask.constants.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { qualityBodyLines } from '../quality/quality-body.ts'
 import {
@@ -61,6 +62,29 @@ export function composeChangeRequest(params: {
 		title: params.sources.messages[0] ?? '',
 		body: [rendered.join('\n').trim(), kept].join('\n\n').trim(),
 	}
+}
+
+/**
+ * Why the lot's title is refused: the lot sets a version (`bumpedTo`) its title (the first commit message) does not
+ * name as a whole token; undefined otherwise.
+ *
+ * @intent keep a release lot's pull request title on the version it sets
+ * @internal
+ */
+export function titleVersionFault(params: {
+	sources: Pick<ChangeRequestSources, 'messages' | 'bumpedTo'>
+	lot: string
+}): string | undefined {
+	const { bumpedTo, messages } = params.sources
+	if (bumpedTo === undefined) return undefined
+	const title = messages[0] ?? ''
+	const escaped = bumpedTo.replace(REGEX_SPECIAL_PATTERN, REGEX_SPECIAL_REPLACEMENT)
+	const named = new RegExp(`(^|[^\\w.])v?${escaped}($|[^\\w.+-]|\\.(?!\\w))`)
+	if (named.test(title)) return undefined
+	return fillMessage({
+		template: CHANGE_REQUEST_LINES.titleVersion,
+		values: { title, version: bumpedTo, lot: params.lot },
+	})
 }
 
 /**
@@ -343,7 +367,10 @@ function checklistLines(sources: ChangeRequestSources): string[] {
 		],
 		[CHECKLIST_LINES.changelog, sources.changelog !== undefined],
 		[CHECKLIST_LINES.docs, sources.docsPassed === true],
-		[CHECKLIST_LINES.version, sources.release ? sources.versionBumped : !sources.versionBumped],
+		[
+			CHECKLIST_LINES.version,
+			sources.release ? sources.bumpedTo !== undefined : sources.bumpedTo === undefined,
+		],
 	]
 	return boxes.map(([text, ticked]) => `- [${ticked ? 'x' : ' '}] ${text}`)
 }

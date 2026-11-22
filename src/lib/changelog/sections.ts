@@ -1,22 +1,25 @@
 /** Reading `### <section>` blocks: a fragment's text, or the Unreleased part of the changelog. */
 import {
 	CHANGELOG_SECTIONS,
-	CODE_FENCE_PATTERN,
 	FRAGMENT_PROBLEMS,
-	SECTION_HEADING_PATTERN,
+	SECTION_HEADING_MARKUP,
 } from './changelog.constants.ts'
+import { readMarkdownBlocks } from './markdown-blocks.ts'
 
 import type {
 	ChangelogSection,
 	SectionEntry,
+	MarkdownBlocks,
 	SectionsMode,
 	SectionsRead,
 } from './changelog.types.ts'
 
 /**
- * The sections of `text` in the order written, each one's text trimmed, a heading inside a code fence being text; or
- * the first problem: a heading that is no changelog section, an empty section, and in a fragment text before the first
- * heading or a repeated section. The Unreleased part (`unreleased`) keeps its text before the first heading (the
+ * The sections of `text` in the order written, each one's text trimmed; a section heading is a top-level level-3 ATX
+ * heading as CommonMark reads it (one inside a fence, an HTML block, a list or a quote is text), its name the heading's
+ * text. Or the first problem: an HTML comment, a code fence or an HTML block that never closes (it would hide what
+ * follows it once folded), a heading that is no changelog section, an empty section, and in a fragment text before
+ * the first heading or a repeated section. The Unreleased part (`unreleased`) keeps its text before the first heading (the
  * release's summary) and merges a repeated section into the first. No section at all is `sections: []`.
  *
  * @intent read the changelog entries of a fragment or of the Unreleased part
@@ -25,10 +28,12 @@ import type {
 export function readSections(params: { text: string; mode: SectionsMode }): SectionsRead {
 	const opened: { section: ChangelogSection; lines: string[] }[] = []
 	const leading: string[] = []
-	let fenced = false
-	for (const line of params.text.split('\n')) {
-		const heading = fenced ? undefined : SECTION_HEADING_PATTERN.exec(line)?.[1]
-		if (CODE_FENCE_PATTERN.test(line)) fenced = !fenced
+	const blocks = readMarkdownBlocks({ text: params.text })
+	const unclosed = unclosedProblemOf({ blocks })
+	if (unclosed !== undefined) return { problem: unclosed }
+	const headings = sectionHeadingsOf({ blocks })
+	for (const [index, line] of blocks.lines.entries()) {
+		const heading = headings.get(index)
 		if (heading === undefined) {
 			const current = opened.at(-1)
 			if (current) current.lines.push(line)
@@ -56,17 +61,41 @@ export function readSections(params: { text: string; mode: SectionsMode }): Sect
 	return { sections: mergedSections({ sections }), leading: leading.join('\n').trim() }
 }
 
+/** Why a text is refused before its sections are read: something opened in it never closes; undefined otherwise. */
+function unclosedProblemOf(params: { blocks: MarkdownBlocks }): string | undefined {
+	const { blocks } = params
+	if (blocks.unclosedComment !== undefined) return FRAGMENT_PROBLEMS.unclosedComment
+	if (blocks.unclosedBlock === 'fence') return FRAGMENT_PROBLEMS.unclosedFence
+	if (blocks.unclosedBlock === 'html') return FRAGMENT_PROBLEMS.unclosedHtml
+	if (blocks.unclosedBlock === 'nesting')
+		return FRAGMENT_PROBLEMS.tooDeep.replace('{levels}', String(blocks.maxNesting))
+	return undefined
+}
+
+/** Each section heading's line and its name: the top-level `###` headings, named by their inline text. */
+function sectionHeadingsOf(params: { blocks: MarkdownBlocks }): Map<number, string> {
+	const { tokens } = params.blocks
+	const headings = new Map<number, string>()
+	for (const [index, token] of tokens.entries()) {
+		const line = token.map?.[0]
+		if (token.type !== 'heading_open' || token.level !== 0 || line === undefined) continue
+		if (token.markup === SECTION_HEADING_MARKUP)
+			headings.set(line, tokens[index + 1]?.content ?? '')
+	}
+	return headings
+}
+
 /** The changelog section of that name; undefined for any other heading. */
 function sectionNamed(params: { name: string }): ChangelogSection | undefined {
 	return CHANGELOG_SECTIONS.find((section) => section === params.name)
 }
 
-/** One entry per section, in first-seen order, a repeated section's text after the first's on its own line. */
+/** One entry per section, in first-seen order, a repeated section's text after the first's, a blank line between. */
 function mergedSections(params: { sections: readonly SectionEntry[] }): SectionEntry[] {
 	const merged: SectionEntry[] = []
 	for (const entry of params.sections) {
 		const first = merged.find((kept) => kept.section === entry.section)
-		if (first) first.text = `${first.text}\n${entry.text}`
+		if (first) first.text = `${first.text}\n\n${entry.text}`
 		else merged.push({ ...entry })
 	}
 	return merged

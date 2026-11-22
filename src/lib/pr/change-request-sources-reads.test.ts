@@ -97,18 +97,23 @@ describe('the body on reads that fail at its head', { timeout: STORE_CASE_TIMEOU
 				why: expect.stringContaining('skills/demo/references/api.json'),
 			},
 		},
-		'a base that resolves to a commit whose tree is gone (the diff fails) → not judged': {
-			make: () => {
-				const lot = judgedLot()
-				const base = execFileSync(
-					'git',
-					['hash-object', '-t', 'commit', '--literally', '-w', '--stdin'],
-					{ cwd: lot.worktree, input: TREELESS_COMMIT, encoding: 'utf8' },
-				).trim()
-				return { lot, baseRef: base }
+		'a base that resolves to a commit whose tree is gone (no fork point) → refused naming it, nothing judged':
+			{
+				make: () => {
+					const lot = judgedLot()
+					const base = execFileSync(
+						'git',
+						['hash-object', '-t', 'commit', '--literally', '-w', '--stdin'],
+						{ cwd: lot.worktree, input: TREELESS_COMMIT, encoding: 'utf8' },
+					).trim()
+					return { lot, baseRef: base }
+				},
+				expected: {
+					refusal: expect.stringMatching(
+						/^the lot's head HEAD shares no commit with [0-9a-f]{40}$/,
+					),
+				},
 			},
-			expected: { kind: 'not-judged', why: expect.any(String) },
-		},
 	}
 
 	for (const [title, testCase] of Object.entries(testCases))
