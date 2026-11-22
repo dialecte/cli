@@ -131,6 +131,16 @@ describe('readChangelogParts', () => {
 			linkLine: 4,
 		},
 		{
+			label: 'a link block followed by a closing comment',
+			text: '## [0.1.0]\n\n- x\n\n[unreleased]: https://e.example/u\n[0.1.0]: https://e.example/0\n\n<!-- end -->\n',
+			linkLine: 4,
+		},
+		{
+			label: 'a link reference line inside an item paragraph (no blank line before it)',
+			text: '## [0.1.0]\n\n- x\n[x]: https://e.example\n',
+			linkLine: undefined,
+		},
+		{
 			label: 'a link reference definition among entries, no link block at the end',
 			text: '## [1.0.0]\n\n- a [x].\n\n[x]: https://e.example\n\n- b.\n',
 			linkLine: undefined,

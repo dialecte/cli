@@ -64,17 +64,22 @@ function boundariesOf(params: { blocks: MarkdownBlocks }): PartBoundary[] {
 }
 
 /**
- * The first line of the link block at the end of the text: the tail of lines no top-level block covers (a link
- * reference definition is consumed by the parser), when its first non-blank line is a link reference definition.
+ * The first line of the link block: the first run of link reference definitions standing as top-level text (no block
+ * token covers them: the parser consumes them) after the last version heading, after which only HTML blocks follow
+ * (a closing comment); a definition inside an item's own paragraph belongs to the item, as CommonMark reads it.
  */
 function linkBlockLineOf(params: { blocks: MarkdownBlocks }): number | undefined {
 	const { lines, tokens } = params.blocks
-	const covered = tokens.reduce(
-		(end, token) => (token.level === 0 && token.map ? Math.max(end, token.map[1]) : end),
-		0,
+	const top = tokens.filter((token) => token.level === 0 && token.nesting !== -1 && token.map)
+	const lastHeading = top.filter((token) => token.type === 'heading_open').at(-1)?.map?.[0] ?? -1
+	const first = lines.findIndex(
+		(line, index) =>
+			index > lastHeading &&
+			!top.some(({ map }) => map !== null && index >= map[0] && index < map[1]) &&
+			LINK_REFERENCE_PATTERN.test(line) &&
+			top.every(({ type, map }) => map === null || map[0] < index || type === 'html_block'),
 	)
-	const first = lines.findIndex((line, index) => index >= covered && line.trim() !== '')
-	return first !== -1 && LINK_REFERENCE_PATTERN.test(lines[first] ?? '') ? first : undefined
+	return first === -1 ? undefined : first
 }
 
 /** What a `## [` heading opens: a version's section keyed by its token, or (a second Unreleased heading) the Unreleased kind. */

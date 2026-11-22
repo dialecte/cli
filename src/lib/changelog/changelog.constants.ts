@@ -162,4 +162,4 @@ export const VERSION_TITLE_KEY_PATTERN = /^\[([^\]]+)\]/
 export const MARKDOWN_PRESET = 'commonmark'
 
 /** An HTML element whose raw text runs until its own close: `<script>`, `<style>`, `<textarea>`. */
-export const RAW_TEXT_OPEN_PATTERN = /<(script|style|textarea)\b/gi
+export const RAW_TEXT_OPEN_PATTERN = /<(script|style|textarea)(?=[\s/>])/gi

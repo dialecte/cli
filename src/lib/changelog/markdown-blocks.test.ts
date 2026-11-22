@@ -68,6 +68,16 @@ describe('readMarkdownBlocks', () => {
 			text: Array.from({ length: 25 }, (_, depth) => `${'  '.repeat(depth)}- l${depth}`).join('\n'),
 			kind: 'nesting',
 		},
+		{
+			label: 'an inline script element never closed in an item',
+			text: '- a <script>\n- b\n',
+			kind: 'html',
+		},
+		{
+			label: 'an inline textarea never closed in a paragraph',
+			text: 'Para <textarea>\n\n- b\n',
+			kind: 'html',
+		},
 	])('$label → an unclosed $kind block', ({ text, kind }) => {
 		expect(readMarkdownBlocks({ text }).unclosedBlock).toBe(kind)
 	})
@@ -81,6 +91,12 @@ describe('readMarkdownBlocks', () => {
 		{ label: 'indented code at the end', text: 'a\n\n    code\n' },
 		{ label: 'a list item at the end', text: '- a' },
 		{ label: 'a script element closed under an item', text: '- a\n\n  <script>x</script>\n- b\n' },
+		{ label: 'an inline script element closed in its item', text: '- a <script>x</script>\n- b\n' },
+		{ label: 'a script tag inside a code span', text: '- a `<script>`\n- b\n' },
+		{
+			label: 'a custom element whose name starts with script',
+			text: '<script-x>\nx\n',
+		},
 	])('$label → no unclosed block', ({ text }) => {
 		expect(readMarkdownBlocks({ text }).unclosedBlock).toBeUndefined()
 	})

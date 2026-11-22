@@ -24,7 +24,8 @@ import type { MarkdownIt } from 'markdown-it'
  * every comment block that never closes is neutralised (a backslash before its `<!--`, so it hides nothing from a
  * reader that goes on; the text itself never changes), the line of the first HTML block, at any level, whose last
  * `<!--` has no `-->` after it (a rendered page hides everything after it), and the kind of a block that runs to the
- * end of the text (an unclosed fence, or an HTML block only its own close ends).
+ * end of the text (an unclosed fence, an HTML block only its own close ends, a raw-text element opened in the raw
+ * HTML, a block or an inline tag, and never closed, or a nesting deeper than the parser reads).
  *
  * @intent read a changelog text's block structure as CommonMark does
  * @internal
@@ -40,7 +41,7 @@ export function readMarkdownBlocks(params: { text: string }): MarkdownBlocks {
 		unclosedComment: original.find(holdsUnclosedComment)?.map?.[0],
 		unclosedBlock:
 			unclosedBlockOf({ parser, lines: neutral.lines }) ??
-			(neutral.tokens.some(holdsOpenRawText) ? 'html' : undefined),
+			(holdsOpenRawText({ html: rawHtmlOf({ parser, lines }) }) ? 'html' : undefined),
 		maxNesting: parser.options.maxNesting ?? 0,
 	}
 }
@@ -50,12 +51,29 @@ function createParser(): MarkdownIt {
 	return markdownIt(MARKDOWN_PRESET)
 }
 
-/** An HTML block, at any level, holding a raw-text element (`<script>`, `<style>`, `<textarea>`) never closed in it. */
-function holdsOpenRawText(token: MarkdownToken): boolean {
-	if (token.type !== 'html_block') return false
-	return [...token.content.matchAll(RAW_TEXT_OPEN_PATTERN)].some(
+/**
+ * The raw HTML of the text in document order, as a raw-HTML render reads it: every HTML block's content and every
+ * inline HTML tag of the inline text (a tag inside a code span is code, never HTML).
+ */
+function rawHtmlOf(params: { parser: MarkdownIt; lines: readonly string[] }): string {
+	return params.parser
+		.parse(params.lines.join('\n'), {})
+		.flatMap((token) =>
+			token.type === 'html_block'
+				? [token.content]
+				: (token.children ?? [])
+						.filter((child) => child.type === 'html_inline')
+						.map((child) => child.content),
+		)
+		.join('\n')
+}
+
+/** Whether a raw-text element (`<script>`, `<style>`, `<textarea>`) opens in `html` with no close of it after. */
+function holdsOpenRawText(params: { html: string }): boolean {
+	const { html } = params
+	return [...html.matchAll(RAW_TEXT_OPEN_PATTERN)].some(
 		(opened) =>
-			!token.content
+			!html
 				.slice(opened.index)
 				.toLowerCase()
 				.includes(`</${(opened[1] ?? '').toLowerCase()}`),
