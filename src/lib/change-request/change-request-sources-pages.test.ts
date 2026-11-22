@@ -1,5 +1,5 @@
 /** The pull request body reads the doc pages at its committed head: a page edited only in the worktree never counts. */
-import { changeRequestLot } from '../../../test/lot-pr.ts'
+import { changeRequestLot } from '../../../test/lot-describe.ts'
 import {
 	DOC_PAGE,
 	EXPORT_SOURCE,

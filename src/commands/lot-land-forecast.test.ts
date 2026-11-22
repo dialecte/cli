@@ -1,3 +1,4 @@
+import { FIXTURE_TEMPLATE_PATH } from '../../test/change-request-template.constants.ts'
 /**
  * `lot land` with the forecast (33CO 4.2): the lot's committed HEAD against the base branch just fetched, refused
  * before any rebase or push on a conflict; its pairs with the other open lots printed for information only.
@@ -15,11 +16,10 @@ import {
 	workInLot,
 } from '../../test/forecast-workspace.ts'
 import { recordingHost } from '../../test/land-lot.ts'
-import { cliTemplate } from '../../test/lot-pr.ts'
+import { cliTemplate } from '../../test/lot-describe.ts'
 import { git } from '../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { readForecastRecord } from '../lib/coordination/forecast-record.ts'
-import { TEMPLATE_PATH } from '../lib/pr/change-request.constants.ts'
 import { runLotLand } from './lot-land.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -33,7 +33,7 @@ afterEach(function restoreEnvironment() {
 /** A forecast workspace whose origin's main holds the pull request template. */
 function landingWorkspace(): ForecastWorkspace {
 	const workspace = createForecastWorkspace()
-	commitOnMain({ workspace, files: { [TEMPLATE_PATH]: cliTemplate() } })
+	commitOnMain({ workspace, files: { [FIXTURE_TEMPLATE_PATH]: cliTemplate() } })
 	return workspace
 }
 

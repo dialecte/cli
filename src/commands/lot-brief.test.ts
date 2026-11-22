@@ -10,18 +10,18 @@ import { join } from 'node:path'
 import { createBriefWorkspace, writeStoreLot } from '../../test/brief-workspace.ts'
 import { FIRST_WORD } from '../../test/forbidden-words-workspace.constants.ts'
 import { configureMachine } from '../../test/forbidden-words-workspace.ts'
-import { LOT_NAME, LOT_STEP } from '../../test/lot-pr.constants.ts'
-import { changeRequestLot } from '../../test/lot-pr.ts'
+import { LOT_NAME, LOT_STEP } from '../../test/lot-describe.constants.ts'
+import { changeRequestLot } from '../../test/lot-describe.ts'
 import { planEntryOf, writeMarkedPlan } from '../../test/plan-block.ts'
 import { temporaryFolder } from '../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
-import { prepareChangeRequest } from '../lib/pr/change-request-sources.ts'
+import { prepareChangeRequest } from '../lib/change-request/change-request-sources.ts'
 import { readTransitions } from '../lib/store/transitions.ts'
 import { runLot } from './lot.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { ChangeRequestLot } from '../../test/lot-pr.types.ts'
+import type { ChangeRequestLot } from '../../test/lot-describe.types.ts'
 
 afterEach(function restoreEnvironment() {
 	vi.unstubAllEnvs()

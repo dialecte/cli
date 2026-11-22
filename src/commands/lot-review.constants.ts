@@ -1,20 +1,20 @@
 /** `dialecte lot review`: its flags and lines; `{lot}` the lot's name. */
 
 /** The flags `lot review` takes, without the dashes. */
-export const LOT_REVIEW_FLAGS = ['no-open', 'pull'] as const
+export const LOT_REVIEW_FLAGS = ['no-open', 'comments'] as const
 
-/** The options `lot review` takes followed by a value, without the dashes: `--pull`'s round. */
+/** The options `lot review` takes followed by a value, without the dashes: `--comments`' round. */
 export const LOT_REVIEW_OPTIONS = ['round'] as const
 
 export const LOT_REVIEW_LINES = {
 	prefix: 'lot review: ',
 	header: 'lot review {lot} · {state} · {branch}',
-	noChangeRequest: 'no pull request yet: dialecte lot land {lot} opens it',
-	changeRequestGone: 'pull request #{number} cannot be found',
-	changeRequest: 'pull request #{number}{draft} · {url}',
+	noChangeRequest: 'no {changeRequestNoun} yet: dialecte lot land {lot} opens it',
+	changeRequestGone: '{changeRequestNoun} #{number} cannot be found',
+	changeRequest: '{changeRequestNoun} #{number}{draft} · {url}',
 	draft: ' draft',
 	notOpen: ' {state}',
-	heads: 'heads: pull request {pushed}, landed {landed}, worktree {head}',
+	heads: 'heads: {changeRequestNoun} {pushed}, landed {landed}, worktree {head}',
 	checks: 'checks: {state}',
 	checksNamed: 'checks: {state} ({names})',
 	checksUnread: 'checks: not read ({refusal})',
@@ -40,6 +40,6 @@ export const LOT_REVIEW_LINES = {
 	filesOpened: 'files: {files} opened',
 	pulled: 'lot review: {id} {severity} {at} from comment {comment}',
 	commentsCut: 'lot review: the pull stopped after {done}: {reason}',
-	pulledNone: 'lot review: already: every comment of pull request #{number} is a finding',
+	pulledNone: 'lot review: already: every comment of {changeRequestNoun} #{number} is a finding',
 	filesNotOpened: 'files: {files} (not opened: {refusal})',
 } as const

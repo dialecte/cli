@@ -44,6 +44,15 @@ export type ReviewComment = {
 	replyTo?: number
 }
 
+/** How a vendor names its change requests in printed text; the keys are the placeholders a message fills. */
+export type HostNouns = { changeRequestNoun: string; changeRequestNouns: string }
+
+/** How the host merges a change request once its checks pass: a queue (merge queue, merge train), auto-merge, or neither. */
+export type QueueKind = 'queue' | 'auto-merge' | 'none'
+
+/** The queue the change request's base offers, and the vendor's word for it. */
+export type QueueSupport = { kind: QueueKind; noun: string }
+
 /** A host operation's refusal: git's or the host tool's first line. */
 export type HostRefusal = { refusal: string }
 
@@ -93,6 +102,8 @@ export type HostAdapter = {
 	 * pull request read cannot say).
 	 */
 	readQueued(params: { root: string; number: number }): { queued: boolean } | HostRefusal
+	/** The queue the change request's base offers (a queue, auto-merge or neither), named in the vendor's word. */
+	readQueueKind(params: { root: string; number: number }): QueueSupport | HostRefusal
 	/** The checks on the pull request's head. */
 	readChecks(params: { root: string; number: number }): ChangeRequestChecks | HostRefusal
 	/** The line comments of the pull request's reviews, oldest first. */
@@ -164,6 +175,14 @@ export type HostVendor<Calls extends HostCallTable, Subject extends keyof Calls>
 	tool: string
 	/** The hosts of an origin that mean this vendor (lower-case). */
 	remoteHosts: readonly string[]
+	/** Its change-request nouns, for printed text. */
+	nouns: HostNouns
+	/** Where a repository of this vendor keeps its change-request template. */
+	changeRequestTemplate: string
+	/** Its change-request noun as words of an identifier, lower case (a compound joined: `pullrequest`). */
+	nounWords: readonly string[]
+	/** Its change-request noun in a file's path. */
+	nounPathPattern: RegExp
 	/** The calls the adapter makes, by name. */
 	calls: Calls
 	/** The versions of the tool the record was taken from, by part (the keys `describe.versionOf` takes). */

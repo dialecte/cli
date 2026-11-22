@@ -42,12 +42,12 @@ import { lotAnswer } from './lot-answer.ts'
 import { runLotApprove } from './lot-approve.ts'
 import { runLotBrief } from './lot-brief.ts'
 import { runLotClose } from './lot-close.ts'
+import { runLotDescribe } from './lot-describe.ts'
 import { runLotDesign } from './lot-design.ts'
 import { lotExport } from './lot-export.ts'
 import { lotForecast } from './lot-forecast.ts'
 import { runLotKeepDecision } from './lot-keep-decision.ts'
 import { runLotLand } from './lot-land.ts'
-import { runLotPr } from './lot-pr.ts'
 import { runLotPrune } from './lot-prune.ts'
 import { lotReport } from './lot-report.ts'
 import { lotResult } from './lot-result.ts'
@@ -212,7 +212,7 @@ export function runLot(params: {
 	if (verb === 'land') return runLotLand({ cwd: params.cwd, argv: words, host: params.host })
 	if (verb === 'prune')
 		return runLotPrune({ cwd: params.cwd, argv: words, now: params.now, host: params.host })
-	if (verb === 'pr') return runLotPr({ cwd: params.cwd, argv: words })
+	if (verb === 'describe') return runLotDescribe({ cwd: params.cwd, argv: words })
 	if (verb === 'review') return runLotReview({ cwd: params.cwd, argv: words, now: params.now })
 	if (verb === 'approve') return runLotApprove({ cwd: params.cwd, argv: words, now: params.now })
 	if (verb === 'design')

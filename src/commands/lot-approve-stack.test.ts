@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 import { parentChangeRequest, recordingHost } from '../../test/land-lot.ts'
-import { LOT_NAME } from '../../test/lot-pr.constants.ts'
+import { LOT_NAME } from '../../test/lot-describe.constants.ts'
 import { REVIEW_CHANGE_REQUEST_NUMBER, REVIEWER } from '../../test/lot-review.constants.ts'
 import { landedLot } from '../../test/lot-review.ts'
 import { git, writeFiles } from '../../test/scratch-repository.ts'
@@ -62,6 +62,7 @@ function approveOnParent(params: { parent: ChangeRequest }) {
 		stacks: true,
 		parent: params.parent,
 		parentBranch: 'feat/p',
+		queueKind: { kind: 'queue', noun: 'merge queue' },
 	})
 	const result = runLotApprove({
 		cwd: lot.workspace.repository,
@@ -82,7 +83,15 @@ describe('dialecte lot approve of a stacked lot', { timeout: STORE_CASE_TIMEOUT 
 			exitCode: result.exitCode,
 			stackQueued: calls.includes(`stack-queue ${REVIEW_CHANGE_REQUEST_NUMBER}`),
 			autoQueued: calls.includes(`queue ${REVIEW_CHANGE_REQUEST_NUMBER}`),
-		}).toEqual({ exitCode: 0, stackQueued: true, autoQueued: false })
+			queueNamed: result.output.endsWith(`#${REVIEW_CHANGE_REQUEST_NUMBER} queued`),
+			queueKindRead: calls.some((call) => call.startsWith('queue-kind')),
+		}).toEqual({
+			exitCode: 0,
+			stackQueued: true,
+			autoQueued: false,
+			queueNamed: true,
+			queueKindRead: false,
+		})
 	})
 
 	it('the parent not queued → refused naming the parent, nothing recorded, nothing queued', () => {

@@ -1,11 +1,41 @@
 /** The GitHub adapter's constants: GitHub through the `gh` cli. */
-import type { HostVendorName } from '../host.types.ts'
+import type { HostNouns, HostVendorName, QueueKind } from '../host.types.ts'
 
 /** The vendor's name: its folder, and the config key `host`'s value. */
 export const GITHUB_VENDOR_NAME: HostVendorName = 'github'
 
 /** The hosts of an origin that mean GitHub; `ssh.github.com` is what `ssh -G` answers for the port-443 setup. */
 export const GITHUB_REMOTE_HOSTS: readonly string[] = ['github.com', 'ssh.github.com']
+
+/** GitHub's change-request nouns. */
+export const GITHUB_NOUNS: HostNouns = {
+	changeRequestNoun: 'pull request',
+	changeRequestNouns: 'pull requests',
+}
+
+/** GitHub's word for each queue kind; a merge queue is GitHub's only queue. */
+export const GITHUB_QUEUE_NOUNS: Readonly<Record<QueueKind, string>> = {
+	queue: 'merge queue',
+	'auto-merge': 'auto-merge',
+	none: 'no queue',
+}
+
+/** Where a GitHub repository keeps its pull request template. */
+export const GITHUB_CHANGE_REQUEST_TEMPLATE = '.github/pull_request_template.md'
+
+/**
+ * GitHub's change-request noun as words of an identifier, in lower case: an identifier holding one of these words
+ * spells it (`pullRequest`, `PULL_URL`, `#pull`, `Pulls`, the long noun as one word `pullrequest`); a word that only
+ * starts with it (`pulled`, `pullover`) does not.
+ */
+export const GITHUB_NOUN_WORDS: readonly string[] = ['pull', 'pulls', 'pullrequest', 'pullrequests']
+
+/** The same noun in a file's path: `pull-request`, `pull_request`, `pullRequest`, in any case; only the long form. */
+export const GITHUB_NOUN_PATH_PATTERN = /pull[-_]?request/i
+
+/** The query of the queue a pull request's base offers: the repository allows auto-merge, the base has a merge queue. */
+export const QUEUE_SETTINGS_QUERY =
+	'query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){autoMergeAllowed pullRequest(number:$number){isMergeQueueEnabled}}}'
 
 /** The `gh` command. */
 export const GH_COMMAND = 'gh'
@@ -87,6 +117,7 @@ export const GITHUB_PROBE_TEXTS = {
 	noPullRequestTextChanged: 'the text gh prints for no pull request changed: {refusal}',
 	checksRead: '#{number}: checks {state}',
 	queuedRead: '#{number}: queued {queued}',
+	queueKindRead: '#{number}: {kind} ({noun})',
 	commentsRead: '{reference}: {count} comments, {lines} on a line, {replies} replies',
 	commentKeysChanged:
 		'review-comment keys changed: {reference} reads {lines} comments on a line and {replies} replies, at least one of each expected',

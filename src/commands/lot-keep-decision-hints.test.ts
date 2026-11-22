@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createBriefWorkspace, writeStoreLot } from '../../test/brief-workspace.ts'
+import { FIXTURE_TEMPLATE_PATH } from '../../test/change-request-template.constants.ts'
 import { KEEP_REASON } from '../../test/keep-decision-workspace.constants.ts'
 import {
 	damageLot,
@@ -21,11 +22,10 @@ import {
 import { recordingHost } from '../../test/land-lot.ts'
 import { landingLotOf } from '../../test/landing-lot.ts'
 import { landingHostOf } from '../../test/landing-repository.ts'
-import { cliTemplate } from '../../test/lot-pr.ts'
+import { cliTemplate } from '../../test/lot-describe.ts'
 import { lotPruneArgumentsOf, prunedItemsOf } from '../../test/lot-prune-workspace.ts'
 import { git, writeFiles } from '../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
-import { TEMPLATE_PATH } from '../lib/pr/change-request.constants.ts'
 import { runLotLand } from './lot-land.ts'
 import { runLotPrune } from './lot-prune.ts'
 import { waitLot } from './lot-wait.ts'
@@ -222,7 +222,7 @@ describe('lot stop of a kept lot', { timeout: STORE_CASE_TIMEOUT }, () => {
  */
 function landableLot(): { workspace: BriefWorkspace; lotFolder: string; worktree: string } {
 	const workspace = createBriefWorkspace()
-	writeFiles({ root: workspace.repository, files: { [TEMPLATE_PATH]: cliTemplate() } })
+	writeFiles({ root: workspace.repository, files: { [FIXTURE_TEMPLATE_PATH]: cliTemplate() } })
 	git({ root: workspace.repository, args: ['add', '-A'] })
 	git({ root: workspace.repository, args: ['commit', '-qm', 'chore: the template'] })
 	const origin = join(workspace.workspace, 'origin.git')

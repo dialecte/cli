@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { recordingHost } from '../../test/land-lot.ts'
-import { FORBIDDEN_WORD, LOT_NAME } from '../../test/lot-pr.constants.ts'
+import { FORBIDDEN_WORD, LOT_NAME } from '../../test/lot-describe.constants.ts'
 import { REVIEWER } from '../../test/lot-review.constants.ts'
 import { landedLot } from '../../test/lot-review.ts'
 import { git } from '../../test/scratch-repository.ts'

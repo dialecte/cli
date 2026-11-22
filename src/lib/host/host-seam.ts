@@ -20,8 +20,6 @@ import {
 	NOUN_FILE_PATTERN,
 	NOUN_FOLDERS,
 	VENDOR_IMPORTERS,
-	VENDOR_NOUN_PATH_PATTERN,
-	VENDOR_NOUN_WORDS,
 } from './host-seam.constants.ts'
 
 import ts from 'typescript'
@@ -94,7 +92,12 @@ function fileFindingsOf(params: {
 	const { file, sourceFile, vendors, seam, noun } = params
 	const found: PlacedHostSeamFinding[] = []
 	const specifiers = new Set<ts.Node>()
-	if (noun && VENDOR_NOUN_PATH_PATTERN.test(file))
+	if (
+		noun &&
+		vendors.some(function namesNoun(vendor) {
+			return vendor.nounPathPattern.test(file)
+		})
+	)
 		found.push({ file, line: 1, kind: 'noun-path', text: file, column: 0 })
 	visit(sourceFile)
 	return found
@@ -106,7 +109,12 @@ function fileFindingsOf(params: {
 		})
 
 	function visit(node: ts.Node): void {
-		if (noun && isNounIdentifier(node)) found.push(findingOf({ node, kind: 'noun-identifier' }))
+		if (
+			noun &&
+			(ts.isIdentifier(node) || ts.isPrivateIdentifier(node)) &&
+			spellsVendorNoun({ text: node.text, vendors })
+		)
+			found.push(findingOf({ node, kind: 'noun-identifier' }))
 		if (seam) visitSeam(node)
 		ts.forEachChild(node, visit)
 	}
@@ -136,11 +144,20 @@ function fileFindingsOf(params: {
 	}
 }
 
-/** Whether the node is an identifier spelling a vendor's change-request noun: one of its words is the noun. */
-function isNounIdentifier(node: ts.Node): node is ts.Identifier | ts.PrivateIdentifier {
-	if (!ts.isIdentifier(node) && !ts.isPrivateIdentifier(node)) return false
-	return node.text.split(IDENTIFIER_WORD_BOUNDARY).some(function isNounWord(word) {
-		return VENDOR_NOUN_WORDS.includes(word.toLowerCase())
+/**
+ * Whether an identifier's text spells a vendor's change-request noun: one of its words, or two adjacent words joined
+ * (`merge` + `request`), is one of a vendor's noun words.
+ */
+function spellsVendorNoun(params: { text: string; vendors: readonly HostSeamVendor[] }): boolean {
+	const words = params.text
+		.split(IDENTIFIER_WORD_BOUNDARY)
+		.filter(Boolean)
+		.map((word) => word.toLowerCase())
+	const pairs = words.slice(1).map(function joinedWithPrevious(word, index) {
+		return `${words[index]}${word}`
+	})
+	return [...words, ...pairs].some(function isNounWord(word) {
+		return params.vendors.some((vendor) => vendor.nounWords.includes(word))
 	})
 }
 

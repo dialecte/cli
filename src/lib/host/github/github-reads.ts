@@ -1,13 +1,20 @@
-/** What `gh` writes for a pull request's checks and its line comments, read into the host's types. */
+/** What `gh` writes for a pull request's checks, its line comments and its queue, read into the host's types. */
 import {
 	COMPLETED_STATUS,
+	GITHUB_QUEUE_NOUNS,
 	PASSING_CONCLUSIONS,
 	PASSING_STATUS_STATE,
 	PENDING_STATUS_STATES,
 	STATUS_CONTEXT_TYPE,
 } from './github.constants.ts'
 
-import type { HostRefusal, ChangeRequestChecks, ReviewComment } from '../host.types.ts'
+import type {
+	HostRefusal,
+	ChangeRequestChecks,
+	QueueKind,
+	QueueSupport,
+	ReviewComment,
+} from '../host.types.ts'
 
 /**
  * The checks of `gh pr view --json headRefOid,statusCheckRollup`: failing when one failed, else pending when one runs,
@@ -133,5 +140,27 @@ function objectOf(text: string): Record<string, unknown> | undefined {
 			: undefined
 	} catch {
 		return undefined
+	}
+}
+
+/**
+ * The queue a pull request's base offers, from the queue settings query: its merge queue, else the repository's
+ * auto-merge, else none; a refusal when the text is not what gh writes.
+ */
+export function queueSupportOf(params: { text: string }): QueueSupport | HostRefusal {
+	try {
+		const parsed = JSON.parse(params.text) as {
+			autoMergeAllowed?: unknown
+			pullRequest?: { isMergeQueueEnabled?: unknown } | null
+		}
+		const kind: QueueKind =
+			parsed.pullRequest?.isMergeQueueEnabled === true
+				? 'queue'
+				: parsed.autoMergeAllowed === true
+					? 'auto-merge'
+					: 'none'
+		return { kind, noun: GITHUB_QUEUE_NOUNS[kind] }
+	} catch {
+		return { refusal: `gh api graphql: not the JSON it writes: ${params.text.slice(0, 80)}` }
 	}
 }

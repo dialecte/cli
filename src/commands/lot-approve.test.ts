@@ -7,7 +7,7 @@ import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { recordingHost } from '../../test/land-lot.ts'
-import { FORBIDDEN_WORD, LOT_NAME } from '../../test/lot-pr.constants.ts'
+import { FORBIDDEN_WORD, LOT_NAME } from '../../test/lot-describe.constants.ts'
 import {
 	OTHER_HEAD,
 	OTHER_PACKAGE,
@@ -38,6 +38,12 @@ function checksOn(params: {
 		failing: params.state === 'failing' ? ['ci-ok'] : [],
 		pending: params.state === 'pending' ? ['ci-ok'] : [],
 	}
+}
+
+/** How many approvals the lot folder records. */
+function approvalCount(folder: string): number {
+	const file = join(folder, STORE_FILES.approvals)
+	return existsSync(file) ? readFileSync(file, 'utf8').trim().split('\n').length : 0
 }
 
 describe('dialecte lot approve', { timeout: STORE_CASE_TIMEOUT }, () => {
@@ -77,7 +83,69 @@ describe('dialecte lot approve', { timeout: STORE_CASE_TIMEOUT }, () => {
 		expect(bodies.at(-1)).toContain('- person: approve')
 		expect(bodies.at(-1)).not.toContain(REVIEWER)
 		expect(result.output).toBe(
-			`lot approve: ${LOT_NAME} approved by ${REVIEWER} on ${lot.head.slice(0, 12)}, pull request #${REVIEW_CHANGE_REQUEST_NUMBER} queued`,
+			`lot approve: ${LOT_NAME} approved by ${REVIEWER} on ${lot.head.slice(0, 12)}, change request #${REVIEW_CHANGE_REQUEST_NUMBER} queued`,
+		)
+	})
+
+	it.each([
+		{
+			answer: 'a merge queue',
+			queueKind: { kind: 'queue', noun: 'merge queue' },
+			via: ' (merge queue)',
+		},
+		{
+			answer: 'auto-merge',
+			queueKind: { kind: 'auto-merge', noun: 'auto-merge' },
+			via: ' (auto-merge)',
+		},
+		{ answer: 'no queue', queueKind: { kind: 'none', noun: 'no queue' }, via: '' },
+		{ answer: 'a refused read', queueKind: { refusal: 'gh api graphql: HTTP 502' }, via: '' },
+	] as const)(
+		'the host answering $answer for the queue → approved, queued, the queue named only when there is one',
+		({ queueKind, via }) => {
+			const lot = landedLot()
+			const { host } = recordingHost({
+				existing: lot.changeRequest,
+				checks: checksOn({ head: lot.head, state: 'green' }),
+				queueKind,
+			})
+
+			const result = runLotApprove({
+				cwd: lot.workspace.repository,
+				argv: [LOT_NAME, '--by', REVIEWER],
+				host,
+				now: new Date('2026-11-17T10:00:00Z'),
+			})
+
+			expect([result.exitCode, result.output, approvalCount(lot.lotFolder)]).toEqual([
+				0,
+				`lot approve: ${LOT_NAME} approved by ${REVIEWER} on ${lot.head.slice(0, 12)}, change request #${REVIEW_CHANGE_REQUEST_NUMBER} queued${via}`,
+				1,
+			])
+		},
+	)
+
+	it('a GitHub origin whose base has a merge queue → the pull request noun and the merge queue named', () => {
+		const lot = landedLot()
+		git({
+			root: lot.workspace.repository,
+			args: ['remote', 'set-url', 'origin', 'https://github.com/o/r.git'],
+		})
+		const { host } = recordingHost({
+			existing: lot.changeRequest,
+			checks: checksOn({ head: lot.head, state: 'green' }),
+			queueKind: { kind: 'queue', noun: 'merge queue' },
+		})
+
+		const result = runLotApprove({
+			cwd: lot.workspace.repository,
+			argv: [LOT_NAME, '--by', REVIEWER],
+			host,
+			now: new Date('2026-11-17T10:00:00Z'),
+		})
+
+		expect(result.output).toBe(
+			`lot approve: ${LOT_NAME} approved by ${REVIEWER} on ${lot.head.slice(0, 12)}, pull request #${REVIEW_CHANGE_REQUEST_NUMBER} queued (merge queue)`,
 		)
 	})
 

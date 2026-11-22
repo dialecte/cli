@@ -72,7 +72,7 @@
 | [`dialecte coverage`](coverage.md)   | Generate type-coverage probes (surface, valid calls, deep, full method surface with extensions)                    |
 | [`dialecte narrowing`](narrowing.md) | Gate: assert schema-derived type narrowing still holds (IntelliSense safety net)                                   |
 | [`dialecte audit`](audit.md)         | Render the public type surface and flag readability issues (C1-C6)                                                 |
-| [`dialecte text`](text.md)           | The human part of a GitHub text, before it is posted                                                               |
+| [`dialecte text`](text.md)           | The human part of a host text, before it is posted                                                                 |
 
 ## Renamed in 1.0
 

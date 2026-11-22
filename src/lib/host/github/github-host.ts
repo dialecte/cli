@@ -2,7 +2,7 @@
 import { spawnSync } from 'node:child_process'
 
 import { BROWSER_OPENERS, OPEN_TIMEOUT_MS } from '../host.constants.ts'
-import { checksOf, reviewCommentsOf } from './github-reads.ts'
+import { checksOf, queueSupportOf, reviewCommentsOf } from './github-reads.ts'
 import { FILES_TAB_SUFFIX, NO_PULL_REQUEST_PATTERN, NO_STACKS_REASON } from './github.constants.ts'
 import { runGh } from './run-gh.ts'
 
@@ -12,6 +12,7 @@ import type {
 	HostToolRun,
 	ChangeRequest,
 	ChangeRequestChecks,
+	QueueSupport,
 	ReviewComment,
 	StackSupport,
 } from '../host.types.ts'
@@ -65,6 +66,7 @@ export function createGithubHost(): HostAdapter {
 		retargetChangeRequest: retargetOnGithub,
 		draftChangeRequest: draftOnGithub,
 		readQueued: readQueuedOnGithub,
+		readQueueKind: readQueueKindOnGithub,
 		queueChangeRequest: function queueChangeRequest(params) {
 			const number = String(params.number)
 			if (params.draft) {
@@ -274,11 +276,7 @@ function readQueuedOnGithub(params: {
 	root: string
 	number: number
 }): { queued: boolean } | HostRefusal {
-	const run = runGh({
-		root: params.root,
-		call: 'queuedState',
-		options: { '-F': ['owner={owner}', 'repo={repo}', `number=${params.number}`] },
-	})
+	const run = runPullRequestQuery({ ...params, call: 'queuedState' })
 	if ('refusal' in run) return run
 	try {
 		const parsed = JSON.parse(run.output) as {
@@ -293,6 +291,30 @@ function readQueuedOnGithub(params: {
 	} catch {
 		return { refusal: `gh api graphql: not the JSON it writes: ${run.output.slice(0, 80)}` }
 	}
+}
+
+// dialecte-allow duplicate-read: both reads share runPullRequestQuery; this one parses the queue settings, not the queued state
+/** The queue the pull request's base offers: one GraphQL read of the repository's auto-merge and the base's merge queue. */
+function readQueueKindOnGithub(params: {
+	root: string
+	number: number
+}): QueueSupport | HostRefusal {
+	const run = runPullRequestQuery({ ...params, call: 'queueSettings' })
+	return 'refusal' in run ? run : queueSupportOf({ text: run.output })
+}
+
+// dialecte-allow duplicate-read: the one GraphQL query runner of a numbered pull request; the probes read other calls
+/** One GraphQL query of the pull request `number` of the repository gh reads at `root` (owner and repo left to gh). */
+function runPullRequestQuery(params: {
+	root: string
+	number: number
+	call: 'queuedState' | 'queueSettings'
+}): { output: string } | HostRefusal {
+	return runGh({
+		root: params.root,
+		call: params.call,
+		options: { '-F': ['owner={owner}', 'repo={repo}', `number=${params.number}`] },
+	})
 }
 
 /** A pull request from `gh pr view --json`; a refusal when the text is not what gh writes. */

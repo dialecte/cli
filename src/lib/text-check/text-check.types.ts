@@ -1,7 +1,7 @@
-/** What `dialecte text check` reads of a GitHub text and what it finds wrong. */
+/** What `dialecte text check` reads of a host text (markdown, its recap in `<details>`) and what it finds wrong. */
 
-/** The kind of GitHub text: its headings and its word cap. */
-export type TextKind = 'pr' | 'issue' | 'comment' | 'commit'
+/** The kind of host text: its headings and its word cap. */
+export type TextKind = 'change-request' | 'issue' | 'comment' | 'commit'
 
 /** One line of the human part, as the checks read it. */
 export type TextLine = {

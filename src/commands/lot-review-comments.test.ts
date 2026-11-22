@@ -1,14 +1,15 @@
 /**
- * `dialecte lot review <id> --pull --round <n>`: the pull request's line comments come back as findings of the lot's
+ * `dialecte lot review <id> --comments --round <n>`: the change request's line comments come back as findings of the lot's
  * ledger, each once, so the lot fixes them as a review round.
  */
 import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { recordingHost } from '../../test/land-lot.ts'
-import { LOT_NAME } from '../../test/lot-pr.constants.ts'
+import { LOT_NAME } from '../../test/lot-describe.constants.ts'
 import { REVIEW_CHANGE_REQUEST_NUMBER } from '../../test/lot-review.constants.ts'
 import { landedLot } from '../../test/lot-review.ts'
+import { git } from '../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { readReviewRecord } from '../lib/review-rounds/review-record.ts'
 import { LEDGER_FILE } from '../lib/review-rounds/review-rounds.constants.ts'
@@ -34,14 +35,14 @@ function ledgerRows(folder: string): string[] {
 		.filter((line) => /^\| R\d/.test(line))
 }
 
-describe('dialecte lot review --pull', { timeout: STORE_CASE_TIMEOUT }, () => {
+describe('dialecte lot review --comments', { timeout: STORE_CASE_TIMEOUT }, () => {
 	it('line comments → findings of the round at their file and line, severity from their first word, replies left out', () => {
 		const lot = landedLot()
 		const { host, calls } = recordingHost({ existing: lot.changeRequest, comments: COMMENTS })
 
 		const result = runLotReview({
 			cwd: lot.workspace.repository,
-			argv: [LOT_NAME, '--pull', '--round', '2'],
+			argv: [LOT_NAME, '--comments', '--round', '2'],
 			host,
 		})
 
@@ -72,7 +73,7 @@ describe('dialecte lot review --pull', { timeout: STORE_CASE_TIMEOUT }, () => {
 		const { host } = recordingHost({ existing: lot.changeRequest, comments: COMMENTS })
 		const first = runLotReview({
 			cwd: lot.workspace.repository,
-			argv: [LOT_NAME, '--pull', '--round', '2'],
+			argv: [LOT_NAME, '--comments', '--round', '2'],
 			host,
 		})
 		expect(first.exitCode).toBe(0)
@@ -80,15 +81,39 @@ describe('dialecte lot review --pull', { timeout: STORE_CASE_TIMEOUT }, () => {
 
 		const result = runLotReview({
 			cwd: lot.workspace.repository,
-			argv: [LOT_NAME, '--pull', '--round', '3'],
+			argv: [LOT_NAME, '--comments', '--round', '3'],
 			host,
 		})
 
 		expect(result.exitCode).toBe(0)
 		expect(result.output.trim()).toBe(
-			`lot review: already: every comment of pull request #${REVIEW_CHANGE_REQUEST_NUMBER} is a finding`,
+			`lot review: already: every comment of change request #${REVIEW_CHANGE_REQUEST_NUMBER} is a finding`,
 		)
 		expect(readFileSync(join(lot.lotFolder, LEDGER_FILE), 'utf8')).toBe(before)
+	})
+
+	it('a GitHub origin, the same comments pulled again → already, in the pull request noun', () => {
+		const lot = landedLot()
+		const { host } = recordingHost({ existing: lot.changeRequest, comments: COMMENTS })
+		runLotReview({
+			cwd: lot.workspace.repository,
+			argv: [LOT_NAME, '--comments', '--round', '2'],
+			host,
+		})
+		git({
+			root: lot.workspace.repository,
+			args: ['remote', 'set-url', 'origin', 'https://github.com/o/r.git'],
+		})
+
+		const result = runLotReview({
+			cwd: lot.workspace.repository,
+			argv: [LOT_NAME, '--comments', '--round', '3'],
+			host,
+		})
+
+		expect(result.output.trim()).toBe(
+			`lot review: already: every comment of pull request #${REVIEW_CHANGE_REQUEST_NUMBER} is a finding`,
+		)
 	})
 
 	it('a comment holding only its severity → a finding of the comment as written, never an empty one', () => {
@@ -100,7 +125,7 @@ describe('dialecte lot review --pull', { timeout: STORE_CASE_TIMEOUT }, () => {
 
 		const result = runLotReview({
 			cwd: lot.workspace.repository,
-			argv: [LOT_NAME, '--pull', '--round', '2'],
+			argv: [LOT_NAME, '--comments', '--round', '2'],
 			host,
 		})
 
@@ -120,7 +145,7 @@ describe('dialecte lot review --pull', { timeout: STORE_CASE_TIMEOUT }, () => {
 
 		const result = runLotReview({
 			cwd: lot.workspace.repository,
-			argv: [LOT_NAME, '--pull', '--round', '2'],
+			argv: [LOT_NAME, '--comments', '--round', '2'],
 			host,
 		})
 
@@ -129,19 +154,36 @@ describe('dialecte lot review --pull', { timeout: STORE_CASE_TIMEOUT }, () => {
 		expect(result.output).toContain('R2-1 written, comment 301 not marked pulled')
 	})
 
-	it('--pull without --round → usage, exit 2, nothing asked or written', () => {
+	it('--comments without --round → usage, exit 2, nothing asked or written', () => {
 		const lot = landedLot()
 		const { host, calls } = recordingHost({ existing: lot.changeRequest, comments: COMMENTS })
 
 		const result = runLotReview({
 			cwd: lot.workspace.repository,
-			argv: [LOT_NAME, '--pull'],
+			argv: [LOT_NAME, '--comments'],
 			host,
 		})
 
 		expect(result.exitCode).toBe(2)
-		expect(result.output).toContain('review <id> --pull --round <n>')
+		expect(result.output).toContain('review <id> --comments --round <n>')
 		expect(calls).toEqual([])
 		expect(existsSync(join(lot.lotFolder, LEDGER_FILE))).toBe(false)
+	})
+
+	it('the retired --pull → usage, exit 2, nothing asked or written', () => {
+		const lot = landedLot()
+		const { host, calls } = recordingHost({ existing: lot.changeRequest, comments: COMMENTS })
+
+		const result = runLotReview({
+			cwd: lot.workspace.repository,
+			argv: [LOT_NAME, '--pull', '--round', '2'],
+			host,
+		})
+
+		expect([result.exitCode, calls, existsSync(join(lot.lotFolder, LEDGER_FILE))]).toEqual([
+			2,
+			[],
+			false,
+		])
 	})
 })

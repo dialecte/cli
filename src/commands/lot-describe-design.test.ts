@@ -8,10 +8,10 @@ import { join } from 'node:path'
 import { DESIGN_TEXT, EDITED_DESIGN_TEXT, APPROVER } from '../../test/design-workspace.constants.ts'
 import { isolateTemporaryFolders } from '../../test/design-workspace.ts'
 import { recordingHost } from '../../test/land-lot.ts'
-import { LOT_NAME } from '../../test/lot-pr.constants.ts'
-import { changeRequestLot } from '../../test/lot-pr.ts'
+import { LOT_NAME } from '../../test/lot-describe.constants.ts'
+import { changeRequestLot } from '../../test/lot-describe.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
-import { runLotPr } from './lot-pr.ts'
+import { runLotDescribe } from './lot-describe.ts'
 import { runLot } from './lot.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -33,7 +33,7 @@ describe('lot pr - the design line', { timeout: STORE_CASE_TIMEOUT }, () => {
 		writeFileSync(file, EDITED_DESIGN_TEXT)
 
 		expect(
-			runLotPr({ cwd, argv: [LOT_NAME, '--print'], host: recordingHost().host }).output,
+			runLotDescribe({ cwd, argv: [LOT_NAME, '--print'], host: recordingHost().host }).output,
 		).toContain('Design: stale since its approval by person')
 	})
 })

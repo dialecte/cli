@@ -2,6 +2,7 @@
 import {
 	GH_STACK,
 	QUEUED_QUERY,
+	QUEUE_SETTINGS_QUERY,
 	REVIEW_COMMENTS_ENDPOINT,
 	REVIEW_COMMENTS_JQ,
 } from './github.constants.ts'
@@ -64,6 +65,14 @@ export const GITHUB_CALLS = {
 		endpoint: 'graphql',
 		graphql: QUEUED_QUERY,
 		filter: '.data.repository.pullRequest',
+	},
+	queueSettings: {
+		words: ['api'],
+		flags: ['-F'],
+		kind: 'read',
+		endpoint: 'graphql',
+		graphql: QUEUE_SETTINGS_QUERY,
+		filter: '.data.repository',
 	},
 	stackHelp: { words: [GH_STACK], flags: ['--help'], kind: 'read' },
 	stackLink: { words: [GH_STACK, 'link'], flags: [], kind: 'write' },

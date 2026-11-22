@@ -4,6 +4,7 @@ import { join } from 'node:path'
 
 import { hashStateTree } from '../src/lib/gate-records/state-hash.ts'
 import { createBriefWorkspace, writeStoreLot } from './brief-workspace.ts'
+import { FIXTURE_TEMPLATE_PATH } from './change-request-template.constants.ts'
 import {
 	LOT_FRAGMENT,
 	LOT_ISSUE,
@@ -11,12 +12,12 @@ import {
 	LOT_NAME,
 	LOT_STEP,
 	LOT_SUMMARY,
-} from './lot-pr.constants.ts'
+} from './lot-describe.constants.ts'
 import { git, writeFiles } from './scratch-repository.ts'
 
 import type { StoreEntry } from '../src/lib/handover/handover.types.ts'
 import type { Transition } from '../src/lib/store/store.types.ts'
-import type { ChangeRequestLot } from './lot-pr.types.ts'
+import type { ChangeRequestLot } from './lot-describe.types.ts'
 
 /** The cli's own committed template: the one every dialecte repository holds. */
 export function cliTemplate(): string {
@@ -53,7 +54,7 @@ export function changeRequestLot(
 	writeFiles({
 		root: repository,
 		files: {
-			'.github/pull_request_template.md': params.template ?? cliTemplate(),
+			[FIXTURE_TEMPLATE_PATH]: params.template ?? cliTemplate(),
 			...params.mainFiles,
 		},
 	})

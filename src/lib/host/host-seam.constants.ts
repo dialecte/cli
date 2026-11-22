@@ -30,16 +30,3 @@ export const NOUN_FILE_PATTERN = /(?<!\.d)\.[cm]?tsx?$/
  * upper one, and an acronym's last capital before a capitalised word (`HTTPPull`: `HTTP`, `Pull`).
  */
 export const IDENTIFIER_WORD_BOUNDARY = /[^A-Za-z]+|(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])/
-
-/**
- * One vendor's change-request noun as a word of an identifier, in lower case: an identifier holding one of these words
- * spells it (`pullRequest`, `PULL_URL`, `#pull`, `Pulls`, the long noun as one word `pullrequest`); a word that only
- * starts with it (`pulled`, `pullover`) does not.
- */
-export const VENDOR_NOUN_WORDS: readonly string[] = ['pull', 'pulls', 'pullrequest', 'pullrequests']
-
-/**
- * The same noun in a file's path: `pull-request`, `pull_request`, `pullRequest`, in any case. Only the long form: the
- * short `pull` in a path names the `lot review --pull` flag (`pull-comments.ts`), whose word is decided with the verbs.
- */
-export const VENDOR_NOUN_PATH_PATTERN = /pull[-_]?request/i

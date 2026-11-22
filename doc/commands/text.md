@@ -2,18 +2,18 @@
 
 <!-- dialecte-reference: generated from the command map by npm run doc:generate; edit the map, not this block -->
 
-The human part of a GitHub text, before it is posted
+The human part of a host text, before it is posted
 
 ```text
-text - The human part of a GitHub text, before it is posted
+text - The human part of a host text, before it is posted
 
-  dialecte text check <file> [--kind pr|issue|comment|commit]
+  dialecte text check <file> [--kind change-request|issue|comment|commit]
 
-  the lines before <details: headings What changes, Why, How to check it (then Watch out) for pr and
-    issue, none for comment and commit; word cap 150 | 200 | 80 | 100, headings and code blocks not
-    counted; a commit subject of 72 at most
+  the lines before <details: headings What changes, Why, How to check it (then Watch out) for
+    change-request and issue, none for comment and commit; word cap 150 | 200 | 80 | 100, headings
+    and code blocks not counted; a commit subject of 72 at most
 
-e.g. dialecte text check pr.md --kind pr
+e.g. dialecte text check change-request.md
 ```
 
 Verbs: `check`

@@ -26,9 +26,13 @@ export const LOT_APPROVE_LINES = {
 	checksPending: 'checks pending on the head: {names}',
 	checksNone: 'no check on the head yet',
 	blocking: 'findings open: {rows}',
-	approved: 'lot approve: {lot} approved by {by} on {head}, pull request #{number} queued',
+	approved:
+		'lot approve: {lot} approved by {by} on {head}, {changeRequestNoun} #{number} queued{via}',
 	alreadyApproved:
-		'lot approve: {lot} already approved by {by} on {head}, pull request #{number} queued',
+		'lot approve: {lot} already approved by {by} on {head}, {changeRequestNoun} #{number} queued{via}',
 	notQueued:
-		'lot approve: {lot} approved by {by} on {head}, pull request #{number} not queued: {refusal}',
+		'lot approve: {lot} approved by {by} on {head}, {changeRequestNoun} #{number} not queued: {refusal}',
 } as const
+
+/** How the queue the host answered follows the queued line: ` (<noun>)`; nothing when there is none or it was not read. */
+export const QUEUE_VIA = ' ({noun})'

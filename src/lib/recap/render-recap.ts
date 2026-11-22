@@ -1,6 +1,6 @@
 import { counted } from '../counted.ts'
 /**
- * The recap as GitHub markdown: the expandable part of a pull request, each section always present and
+ * The recap as host markdown (its recap in `<details>`): the expandable part of a change request, each section always present and
  * built from the records only - no free prose beyond its fixed sentences, no path outside the repository.
  */
 import { CARD_GATE_MARKS } from '../gate-records/gate-records.constants.ts'

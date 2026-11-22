@@ -15,8 +15,18 @@ import { describe, expect, it } from 'vitest'
 
 import type { HostSeamVendor } from './host-seam.types.ts'
 
-const GITHUB: HostSeamVendor = { name: 'github', tool: 'gh' }
-const GITLAB: HostSeamVendor = { name: 'gitlab', tool: 'glab' }
+const GITHUB: HostSeamVendor = {
+	name: 'github',
+	tool: 'gh',
+	nounWords: ['pull', 'pulls', 'pullrequest', 'pullrequests'],
+	nounPathPattern: /pull[-_]?request/i,
+}
+const GITLAB: HostSeamVendor = {
+	name: 'gitlab',
+	tool: 'glab',
+	nounWords: ['mergerequest', 'mergerequests', 'mr', 'mrs'],
+	nounPathPattern: /merge[-_]?request/i,
+}
 
 /** A tree of whole files written under a new temporary folder; the folder is the scanned root. */
 function treeOf(files: Record<string, string>): string {
@@ -518,8 +528,8 @@ describe('scanHostSeam: the change-request noun of one vendor stays in the vendo
 	})
 
 	it.each([
-		{ name: 'snake case', file: 'src/lib/pr/pull_request.ts' },
-		{ name: 'camel case', file: 'src/lib/pr/pullRequest.ts' },
+		{ name: 'snake case', file: 'src/lib/change-request/pull_request.ts' },
+		{ name: 'camel case', file: 'src/lib/change-request/pullRequest.ts' },
 	])('a file name holding the noun in $name → one path finding naming the file', ({ file }) => {
 		const root = treeOf({ [file]: 'export const A = 1\n' })
 
@@ -541,14 +551,16 @@ describe('scanHostSeam: the change-request noun of one vendor stays in the vendo
 	})
 
 	it('a file whose name holds the noun → one path finding naming the file', () => {
-		const root = treeOf({ 'src/lib/pr/compose-pull-request.ts': 'export const A = 1\n' })
+		const root = treeOf({
+			'src/lib/change-request/compose-pull-request.ts': 'export const A = 1\n',
+		})
 
 		expect(scanHostSeam({ root, vendors: [GITHUB] })).toEqual([
 			{
-				file: 'src/lib/pr/compose-pull-request.ts',
+				file: 'src/lib/change-request/compose-pull-request.ts',
 				line: 1,
 				kind: 'noun-path',
-				text: 'src/lib/pr/compose-pull-request.ts',
+				text: 'src/lib/change-request/compose-pull-request.ts',
 			},
 		])
 	})
@@ -591,12 +603,65 @@ describe('scanHostSeam: the change-request noun of one vendor stays in the vendo
 	})
 })
 
+describe("scanHostSeam: each vendor's own noun words, compounds included", () => {
+	it.each([
+		{
+			name: "the second vendor's compound noun in generic code",
+			path: 'src/lib/landing/text.ts',
+			text: 'export function mergeRequestOf() {\n\treturn 1\n}\n',
+			expected: ['src/lib/landing/text.ts:noun-identifier'],
+		},
+		{
+			name: "the second vendor's short noun in generic code",
+			path: 'src/lib/landing/text.ts',
+			text: 'export const MR_URL = 1\n',
+			expected: ['src/lib/landing/text.ts:noun-identifier'],
+		},
+		{
+			name: "the second vendor's noun in a generic file's name",
+			path: 'src/lib/landing/merge-request-text.ts',
+			text: 'export const A = 1\n',
+			expected: ['src/lib/landing/merge-request-text.ts:noun-path'],
+		},
+		{
+			name: "git's own merge words in generic code",
+			path: 'src/lib/landing/text.ts',
+			text: 'export const mergeTree = 1\nexport const autoMerge = 2\nexport const requestOf = 3\n',
+			expected: [],
+		},
+		{
+			name: "the second vendor's compound noun in its own folder",
+			path: 'src/lib/host/gitlab/gitlab-host.ts',
+			text: 'export function mergeRequestOf() {\n\treturn 1\n}\n',
+			expected: [],
+		},
+		{
+			name: "GitHub's auto-merge request in GitHub's folder",
+			path: 'src/lib/host/github/github-host.ts',
+			text: 'export const autoMergeRequest = 1\n',
+			expected: [],
+		},
+		{
+			name: "GitHub's short noun in generic code",
+			path: 'src/lib/landing/text.ts',
+			text: 'export const pullNumber = 1\n',
+			expected: ['src/lib/landing/text.ts:noun-identifier'],
+		},
+	])('$name → $expected', ({ path, text, expected }) => {
+		expect(scanHostSeam(scanOf({ files: { [path]: text }, vendors: [GITHUB, GITLAB] }))).toEqual(
+			findingsOf(expected).map((finding) => expect.objectContaining(finding)),
+		)
+	})
+})
+
 describe("scanHostSeam on the cli's own sources", () => {
 	it('no vendor tool literal, vendor import or change-request noun outside its place → no finding', () => {
 		const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 		const vendors = HOST_VENDORS.map((vendor) => ({
 			name: vendor.name,
 			tool: vendor.tool,
+			nounWords: vendor.nounWords,
+			nounPathPattern: vendor.nounPathPattern,
 		}))
 
 		expect(scanHostSeam({ root, vendors })).toEqual([])

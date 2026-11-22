@@ -1,4 +1,4 @@
-/** `lot pr`: the pull request a lot's records render, through the repository's one template. */
+/** `lot describe`: the change request a lot's records render, through the repository's one template. */
 import { STATION_VERDICTS } from '../events/station-event.constants.ts'
 import { VERIFY_VERDICT } from '../review-rounds/review-record.constants.ts'
 import { SEVERITY_SPELLINGS } from '../review-rounds/review-rounds.constants.ts'
@@ -7,8 +7,8 @@ import { ORCHESTRATOR_SIGNER } from '../store/signer-rules.constants.ts'
 import type { GateRecordMode } from '../gate-records/gate-records.types.ts'
 import type { CaseStatus } from '../tdd/tdd.types.ts'
 
-/** Where every dialecte repository keeps its pull request template. */
-export const TEMPLATE_PATH = '.github/pull_request_template.md'
+/** How the template paths a refusal names are joined. */
+export const TEMPLATE_PATHS_JOIN = ' or '
 
 /** A template line the renderer fills: `<!-- dialecte:<part> -->` alone on its line. */
 export const PART_MARKER_PATTERN = /^<!-- dialecte:([a-z]+) -->$/
@@ -139,7 +139,8 @@ export const CHANGE_REQUEST_LINES = {
 	unreadBase: 'the base {base} cannot be read here: fetch it, or name a base this repository holds',
 	titleVersion:
 		'the title "{title}" does not name {version}, the version this lot sets: correct lots[0].message with dialecte lot brief {lot} --from <brief.json> --by <who> --reason <why>',
-	noTemplateFile: "the lot's head holds no {template}: copy the cli's template into the repository",
+	noTemplateFile:
+		"the lot's head holds no {templates}: copy the cli's template into the repository",
 	worktreeGone: 'the worktree {worktree} is gone: nothing rendered',
 	noTemplate:
 		"{template} is not the renderer's template ({fault}): copy the cli's template into the repository",

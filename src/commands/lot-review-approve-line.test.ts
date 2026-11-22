@@ -1,6 +1,6 @@
 /** `dialecte lot review`: the approve line gives the same answer `lot approve` would. */
 import { recordingHost } from '../../test/land-lot.ts'
-import { LOT_NAME } from '../../test/lot-pr.constants.ts'
+import { LOT_NAME } from '../../test/lot-describe.constants.ts'
 import { REVIEW_CHANGE_REQUEST_NUMBER } from '../../test/lot-review.constants.ts'
 import { landedLot } from '../../test/lot-review.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'

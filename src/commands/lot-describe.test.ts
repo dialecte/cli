@@ -5,6 +5,7 @@
 import { rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { FIXTURE_TEMPLATE_PATH } from '../../test/change-request-template.constants.ts'
 import { replaceRecord } from '../../test/damaged-lot-workspace.ts'
 import { recordingHost } from '../../test/land-lot.ts'
 import {
@@ -13,13 +14,13 @@ import {
 	LOT_MESSAGE,
 	LOT_NAME,
 	LOT_SUMMARY,
-} from '../../test/lot-pr.constants.ts'
-import { cliTemplate, changeRequestLot } from '../../test/lot-pr.ts'
+} from '../../test/lot-describe.constants.ts'
+import { cliTemplate, changeRequestLot } from '../../test/lot-describe.ts'
 import { git, writeFiles } from '../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { renderLotUsage } from '../lib/command-map/render-help.ts'
-import { TEMPLATE_PATH } from '../lib/pr/change-request.constants.ts'
-import { runLotPr } from './lot-pr.ts'
+import { runLotDescribe } from './lot-describe.ts'
+import { runLot } from './lot.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -48,7 +49,7 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 		const lot = changeRequestLot()
 		const { host, calls } = recordingHost()
 
-		const result = runLotPr({
+		const result = runLotDescribe({
 			cwd: lot.workspace.repository,
 			argv: [LOT_NAME, '--print'],
 			host,
@@ -63,16 +64,40 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 		expect(result.output).toContain(`Closes #${LOT_ISSUE}`)
 	})
 
-	it('no pull request yet → the text printed and lot land named, nothing sent, exit 0', () => {
+	it('a GitHub origin and no pull request yet → lot land named with the pull request noun', () => {
+		const lot = changeRequestLot()
+		git({
+			root: lot.workspace.repository,
+			args: ['remote', 'set-url', 'origin', 'https://github.com/o/r.git'],
+		})
+		const { host } = recordingHost()
+
+		const result = runLotDescribe({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
+
+		expect(result.output.split('\n').at(-1)).toBe(
+			`no pull request yet: dialecte lot land ${LOT_NAME} opens it with this text`,
+		)
+	})
+
+	it('the retired verb lot pr → the lot usage, exit 2', () => {
+		const lot = changeRequestLot()
+
+		expect(runLot({ cwd: lot.workspace.repository, argv: ['pr', LOT_NAME] })).toEqual({
+			exitCode: 2,
+			output: renderLotUsage(),
+		})
+	})
+
+	it('no change request yet → the text printed and lot land named, nothing sent, exit 0', () => {
 		const lot = changeRequestLot()
 		const { host, calls } = recordingHost()
 
-		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
+		const result = runLotDescribe({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
 
 		expect(result.exitCode).toBe(0)
 		expect(calls).toEqual(['read feat/x'])
 		expect(result.output.split('\n').at(-1)).toBe(
-			`no pull request yet: dialecte lot land ${LOT_NAME} opens it with this text`,
+			`no change request yet: dialecte lot land ${LOT_NAME} opens it with this text`,
 		)
 	})
 
@@ -82,13 +107,13 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 			existing: openChangeRequest({ title: 'merge: main into feat/x', body: '' }),
 		})
 
-		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
+		const result = runLotDescribe({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
 
 		expect(result.exitCode).toBe(0)
 		expect(calls).toEqual(['read feat/x', `edit 7 "${LOT_MESSAGE}"`])
 		expect(bodies[0]).toContain(LOT_SUMMARY)
 		expect(result.output).toBe(
-			'pull request #7 updated from the lot records: https://host.test/pull/7',
+			'change request #7 updated from the lot records: https://host.test/pull/7',
 		)
 	})
 
@@ -97,13 +122,13 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 		const { host, calls } = recordingHost({
 			existing: openChangeRequest({ title: 'old', body: '' }),
 		})
-		runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
+		runLotDescribe({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
 
-		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
+		const result = runLotDescribe({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
 
 		expect(calls.slice(2)).toEqual(['read feat/x'])
 		expect(result.output).toBe(
-			'pull request #7 already reads the lot records: https://host.test/pull/7',
+			'change request #7 already reads the lot records: https://host.test/pull/7',
 		)
 	})
 
@@ -120,7 +145,7 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 			existing: openChangeRequest({ title: LOT_MESSAGE, body: `rendered before\n\n${kept}\n` }),
 		})
 
-		runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
+		runLotDescribe({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
 
 		expect(bodies).toHaveLength(1)
 		expect(bodies[0]?.endsWith(`\n\n${kept}`)).toBe(true)
@@ -140,12 +165,12 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 		})
 		const { host, calls } = recordingHost()
 
-		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
+		const result = runLotDescribe({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
 
 		expect(result.exitCode).toBe(1)
 		expect(calls).toEqual([])
 		expect(result.output).toBe(
-			`lot pr: the pull request text holds a forbidden word \`${FORBIDDEN_WORD}\` in brief.json steps[0].behaviours[0]: rewrite that record, nothing sent`,
+			`lot describe: the pull request text holds a forbidden word \`${FORBIDDEN_WORD}\` in brief.json steps[0].behaviours[0]: rewrite that record, nothing sent`,
 		)
 	})
 
@@ -155,12 +180,12 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 		})
 		const { host, calls } = recordingHost()
 
-		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
+		const result = runLotDescribe({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
 
 		expect(result.exitCode).toBe(1)
 		expect(calls).toEqual([])
 		expect(result.output).toBe(
-			"lot pr: .github/pull_request_template.md is not the renderer's template (missing marker <!-- dialecte:summary -->): copy the cli's template into the repository",
+			"lot describe: .github/pull_request_template.md is not the renderer's template (missing marker <!-- dialecte:summary -->): copy the cli's template into the repository",
 		)
 	})
 
@@ -168,7 +193,11 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 		const lot = changeRequestLot({ staleTests: true })
 		const { host } = recordingHost()
 
-		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME, '--print'], host })
+		const result = runLotDescribe({
+			cwd: lot.workspace.repository,
+			argv: [LOT_NAME, '--print'],
+			host,
+		})
 
 		expect(result.output).toContain(
 			'- tdd: stale, taken on 0123456789ab, not the tree this pull request lands',
@@ -182,18 +211,22 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 			existing: { ...openChangeRequest({ title: 'x', body: 'y' }), state: 'merged' },
 		})
 
-		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
+		const result = runLotDescribe({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
 
 		expect(result.exitCode).toBe(1)
 		expect(calls).toEqual(['read feat/x'])
-		expect(result.output).toBe('lot pr: pull request #7 is merged: nothing sent')
+		expect(result.output).toBe('lot describe: change request #7 is merged: nothing sent')
 	})
 
 	it('--json → the title, the body, the pull request and whether it was sent', () => {
 		const lot = changeRequestLot()
 		const { host } = recordingHost({ existing: openChangeRequest({ title: 'old', body: '' }) })
 
-		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME, '--json'], host })
+		const result = runLotDescribe({
+			cwd: lot.workspace.repository,
+			argv: [LOT_NAME, '--json'],
+			host,
+		})
 
 		expect(result.output).toMatch(/^\{/)
 		expect(JSON.parse(result.output)).toEqual({
@@ -211,7 +244,11 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 			existing: { ...openChangeRequest({ title: 'old', body: '' }), head: 'a'.repeat(40) },
 		})
 
-		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME, '--json'], host })
+		const result = runLotDescribe({
+			cwd: lot.workspace.repository,
+			argv: [LOT_NAME, '--json'],
+			host,
+		})
 
 		expect(result.output).toMatch(/^\{/)
 		expect(JSON.parse(result.output)).toMatchObject({
@@ -224,7 +261,11 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 		const lot = changeRequestLot()
 		const { host, calls } = recordingHost()
 
-		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME, '--prnit'], host })
+		const result = runLotDescribe({
+			cwd: lot.workspace.repository,
+			argv: [LOT_NAME, '--prnit'],
+			host,
+		})
 
 		expect(result.exitCode).toBe(2)
 		expect(calls).toEqual([])
@@ -249,7 +290,7 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 			existing: openChangeRequest({ title: 'old', body: '' }),
 		})
 
-		runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
+		runLotDescribe({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
 
 		expect(calls[0]).toBe('read 7')
 	})
@@ -261,10 +302,10 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 			editRefusal: 'gh pr edit: HTTP 403',
 		})
 
-		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
+		const result = runLotDescribe({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
 
 		expect(result.exitCode).toBe(1)
-		expect(result.output).toBe('lot pr: gh pr edit: HTTP 403')
+		expect(result.output).toBe('lot describe: gh pr edit: HTTP 403')
 	})
 
 	it('a body the host gives back with Windows line ends, the same text → nothing sent', () => {
@@ -272,12 +313,16 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 		const { host, bodies } = recordingHost({
 			existing: openChangeRequest({ title: 'old', body: '' }),
 		})
-		runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
+		runLotDescribe({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
 		const windows = recordingHost({
 			existing: openChangeRequest({ title: LOT_MESSAGE, body: bodies[0].replaceAll('\n', '\r\n') }),
 		})
 
-		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host: windows.host })
+		const result = runLotDescribe({
+			cwd: lot.workspace.repository,
+			argv: [LOT_NAME],
+			host: windows.host,
+		})
 
 		expect(windows.calls).toEqual(['read feat/x'])
 		expect(result.output).toContain('already reads the lot records')
@@ -289,10 +334,10 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 			existing: { ...openChangeRequest({ title: 'old', body: '' }), head: 'a'.repeat(40) },
 		})
 
-		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
+		const result = runLotDescribe({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
 
 		expect(result.output.split('\n').at(-1)).toBe(
-			`! pull request #7 is at aaaaaaaaaaaa, the lot at ${git({ root: lot.worktree, args: ['rev-parse', '--short=12', 'HEAD'] }).trim()}: the text describes the lot; dialecte lot land ${LOT_NAME} pushes it`,
+			`! change request #7 is at aaaaaaaaaaaa, the lot at ${git({ root: lot.worktree, args: ['rev-parse', '--short=12', 'HEAD'] }).trim()}: the text describes the lot; dialecte lot land ${LOT_NAME} pushes it`,
 		)
 	})
 
@@ -303,11 +348,11 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 		git({ root: lot.workspace.repository, args: ['push', '-q', 'origin', 'main'] })
 		const { host } = recordingHost()
 
-		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
+		const result = runLotDescribe({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
 
 		expect(result.exitCode).toBe(1)
 		expect(result.output).toBe(
-			"lot pr: the lot's head holds no .github/pull_request_template.md: copy the cli's template into the repository",
+			"lot describe: the lot's head holds no .github/pull_request_template.md: copy the cli's template into the repository",
 		)
 	})
 
@@ -317,13 +362,13 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 		const { host } = recordingHost()
 
 		function run() {
-			return runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
+			return runLotDescribe({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
 		}
 
 		expect(run).not.toThrow()
 		expect(run()).toEqual({
 			exitCode: 1,
-			output: expect.stringMatching(/^lot pr: the worktree .* is gone: nothing rendered\n?$/),
+			output: expect.stringMatching(/^lot describe: the worktree .* is gone: nothing rendered\n?$/),
 		})
 	})
 
@@ -331,7 +376,11 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 		const lot = changeRequestLot()
 		const { host } = recordingHost()
 
-		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME, '--print'], host })
+		const result = runLotDescribe({
+			cwd: lot.workspace.repository,
+			argv: [LOT_NAME, '--print'],
+			host,
+		})
 
 		expect(result.output).toContain(`### Summary\n\n${LOT_SUMMARY}\n\n### Behaviours`)
 	})
@@ -342,12 +391,12 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 			existing: openChangeRequest({ title: 'old', body: 'Notes a person wrote on the page.' }),
 		})
 
-		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
+		const result = runLotDescribe({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
 
 		expect(result).toEqual({
 			exitCode: 1,
 			output:
-				"lot pr: the pull request body holds text the render would drop (no '### Checklist for the reviewer when doing the PR review' heading): move it under that heading or clear it, nothing sent",
+				"lot describe: the pull request body holds text the render would drop (no '### Checklist for the reviewer when doing the PR review' heading): move it under that heading or clear it, nothing sent",
 		})
 		expect(calls).toEqual(['read feat/x'])
 	})
@@ -361,7 +410,7 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 			}),
 		})
 
-		runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
+		runLotDescribe({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
 
 		expect(calls).toContain(`edit 7 "${LOT_MESSAGE}"`)
 	})
@@ -371,18 +420,21 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 		replaceRecord({ folder: lot.lotFolder, name: 'brief.json', text: '{}' })
 		const { host, calls } = recordingHost()
 
-		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
+		const result = runLotDescribe({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
 
 		expect(result).toEqual({
 			exitCode: 1,
-			output: `lot pr: ${LOT_NAME} is damaged: dialecte lot status ${LOT_NAME} says how`,
+			output: `lot describe: ${LOT_NAME} is damaged: dialecte lot status ${LOT_NAME} says how`,
 		})
 		expect(calls).toEqual([])
 	})
 
 	it("a lot cut before the template's markers → lot pr reads origin's template", () => {
 		const lot = changeRequestLot({ template: '### No markers here\n' })
-		writeFiles({ root: lot.workspace.repository, files: { [TEMPLATE_PATH]: cliTemplate() } })
+		writeFiles({
+			root: lot.workspace.repository,
+			files: { [FIXTURE_TEMPLATE_PATH]: cliTemplate() },
+		})
 		git({
 			root: lot.workspace.repository,
 			args: ['commit', '-qam', 'chore: the template with its markers'],
@@ -390,7 +442,11 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 		git({ root: lot.workspace.repository, args: ['push', '-q', 'origin', 'main'] })
 		const { host } = recordingHost()
 
-		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME, '--print'], host })
+		const result = runLotDescribe({
+			cwd: lot.workspace.repository,
+			argv: [LOT_NAME, '--print'],
+			host,
+		})
 
 		expect(result.exitCode).toBe(0)
 		expect(result.output).toContain('### Summary')

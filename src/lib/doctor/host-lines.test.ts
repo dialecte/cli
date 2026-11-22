@@ -94,6 +94,10 @@ function fakeHost(overrides: Partial<HostAdapter> = {}): HostAdapter {
 		readChangeRequest: ({ ref }) => (ref === '73' ? CHANGE_REQUEST : undefined),
 		readQueued: ({ number }) =>
 			number === 73 ? { queued: false } : { refusal: `gh api graphql: no pull request ${number}` },
+		readQueueKind: ({ number }) =>
+			number === 73
+				? { kind: 'queue', noun: 'merge queue' }
+				: { refusal: `gh api graphql: no pull request ${number}` },
 		readChecks: ({ number }) =>
 			number === 73
 				? { head: 'abc', state: 'green', failing: [], pending: [] }
@@ -381,7 +385,7 @@ describe('the probes read only', () => {
 			'a probe called the write queueChangeRequest',
 		)
 		expect([...HOST_READ_METHODS].sort()).toEqual(
-			['probeStacks', 'readChecks', 'readChangeRequest', 'readQueued'].sort(),
+			['probeStacks', 'readChecks', 'readChangeRequest', 'readQueueKind', 'readQueued'].sort(),
 		)
 	})
 
@@ -416,6 +420,10 @@ describe('a vendor whose table has a read without a probe', () => {
 		name: 'github',
 		tool: 'tool',
 		remoteHosts: [],
+		nouns: { changeRequestNoun: 'change', changeRequestNouns: 'changes' },
+		changeRequestTemplate: 'template.md',
+		nounWords: [],
+		nounPathPattern: /change/,
 		calls,
 		recordedVersions: {},
 		subject: { call: 'first', find },

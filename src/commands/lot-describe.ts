@@ -1,44 +1,58 @@
 /**
  * `dialecte lot pr <id> [--print] [--json]`: the lot's pull request rendered from its records through the repository's
- * one template (`src/lib/pr/`), checked as public text, then sent to its open pull request when that reads otherwise:
+ * one template (`src/lib/change-request/`), checked as public text, then sent to its open pull request when that reads otherwise:
  * the squash commit on the base branch takes this title and body, so they hold the lot's final state. `--print` sends
  * nothing; a lot without a pull request yet prints its text (`lot land` opens it).
  */
 import { existsSync } from 'node:fs'
 import { basename } from 'node:path'
 
+import { prepareChangeRequest } from '../lib/change-request/change-request-sources.ts'
+import { CHANGE_REQUEST_LINES } from '../lib/change-request/change-request.constants.ts'
+import {
+	composeChangeRequest,
+	keptPartOf,
+	linesOf,
+} from '../lib/change-request/compose-change-request.ts'
 import { renderLotUsage } from '../lib/command-map/render-help.ts'
 import { hasFlag, positionalArguments } from '../lib/config.ts'
 import { SHORT_SHA_LENGTH } from '../lib/gate-records/gate-records.constants.ts'
 import { findBaseBranchRef } from '../lib/gate/gate-base.ts'
 import { mainCheckoutOf, readGit } from '../lib/git.ts'
 import { readLanding } from '../lib/handover/land-record.ts'
-import { createHost } from '../lib/host/select-host.ts'
+import { createHost, hostNounsOf } from '../lib/host/select-host.ts'
+import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { readPackageJson } from '../lib/package-json.ts'
-import { prepareChangeRequest } from '../lib/pr/change-request-sources.ts'
-import { CHANGE_REQUEST_LINES } from '../lib/pr/change-request.constants.ts'
-import { composeChangeRequest, keptPartOf, linesOf } from '../lib/pr/compose-change-request.ts'
 import { textOf } from '../lib/print/print.ts'
 import { readIdentity } from '../lib/store/identity.ts'
 import { readCheckedLotState, registryOfLotFolder } from '../lib/store/lot-records.ts'
 import { lotState } from '../lib/store/lot-state.ts'
 import { requiredLotOf } from '../lib/store/resolve-lot.ts'
-import { LOT_PLACE_LINES, LOT_PR_LINES, LOT_PR_OPTIONS } from './lot-pr.constants.ts'
+import {
+	LOT_PLACE_LINES,
+	LOT_DESCRIBE_LINES,
+	LOT_DESCRIBE_VERB,
+	LOT_DESCRIBE_OPTIONS,
+} from './lot-describe.constants.ts'
 
+import type {
+	PreparedChangeRequest,
+	ChangeRequestText,
+} from '../lib/change-request/change-request.types.ts'
 import type { CommandResult } from '../lib/command-result.types.ts'
-import type { HostAdapter, ChangeRequest } from '../lib/host/host.types.ts'
-import type { PreparedChangeRequest, ChangeRequestText } from '../lib/pr/change-request.types.ts'
-import type { LotPlace } from './lot-pr.types.ts'
+import type { HostAdapter, HostNouns, ChangeRequest } from '../lib/host/host.types.ts'
+import type { LotPlace } from './lot-describe.types.ts'
 
-export function runLotPr(params: {
+export function runLotDescribe(params: {
 	cwd: string
 	argv: string[]
-	/** Where the pull request lives; default: the repository's host. */
+	/** Where the change request lives; default: the repository's host. */
 	host?: HostAdapter
 }): CommandResult {
 	const place = lotPlaceOf(params)
 	if ('exitCode' in place) return place
 	const { lot, lotFolder, worktree, branch, baseRef } = place
+	const nouns = hostNounsOf({ root: worktree })
 	// the lot's head, else the base's template: a lot cut before the template changed renders as it will land
 	const prepared = prepareChangeRequest({
 		lotFolder,
@@ -46,11 +60,12 @@ export function runLotPr(params: {
 		baseRef,
 		templateRefs: ['HEAD', baseRef],
 	})
-	if ('refusal' in prepared) return refused({ line: `${LOT_PR_LINES.prefix}${prepared.refusal}` })
+	if ('refusal' in prepared)
+		return refused({ line: `${LOT_DESCRIBE_LINES.prefix}${prepared.refusal}` })
 	const json = hasFlag(params.argv, 'json')
 	// the template was checked by `prepareChangeRequest`: composing cannot refuse it
 	const fresh = composeChangeRequest({ ...prepared, kept: undefined })
-	if ('refusal' in fresh) return refused({ line: `${LOT_PR_LINES.prefix}${fresh.refusal}` })
+	if ('refusal' in fresh) return refused({ line: `${LOT_DESCRIBE_LINES.prefix}${fresh.refusal}` })
 	if (hasFlag(params.argv, 'print')) return printed({ text: fresh, json, sent: false, lines: [] })
 	const host = params.host ?? createHost()
 	const landing = readLanding({ lotFolder })
@@ -59,36 +74,55 @@ export function runLotPr(params: {
 		ref: landing === undefined ? branch : String(landing.number),
 	})
 	if (read !== undefined && 'refusal' in read)
-		return refused({ line: `${LOT_PR_LINES.prefix}${read.refusal}` })
+		return refused({ line: `${LOT_DESCRIBE_LINES.prefix}${read.refusal}` })
 	if (read === undefined)
 		return printed({
 			text: fresh,
 			json,
 			sent: false,
-			lines: [LOT_PR_LINES.noChangeRequest.replace('{lot}', () => lot)],
+			lines: [
+				fillMessage({ template: LOT_DESCRIBE_LINES.noChangeRequest, values: { ...nouns, lot } }),
+			],
 		})
 	if (read.state !== 'open')
 		return refused({
-			line: LOT_PR_LINES.notOpen
-				.replace('{number}', String(read.number))
-				.replace('{state}', read.state),
+			line: fillMessage({
+				template: LOT_DESCRIBE_LINES.notOpen,
+				values: { ...nouns, number: String(read.number), state: read.state },
+			}),
 		})
 	const rendered = sendRenderedText({ host, worktree, prepared, changeRequest: read })
-	if ('refusal' in rendered) return refused({ line: `${LOT_PR_LINES.prefix}${rendered.refusal}` })
+	if ('refusal' in rendered)
+		return refused({ line: `${LOT_DESCRIBE_LINES.prefix}${rendered.refusal}` })
 	const head = readGit({ root: worktree, args: ['rev-parse', 'HEAD'] }).trim()
-	const sent = sentAnswer({ changeRequest: read, ...rendered, json, head })
+	const sent = sentAnswer({ changeRequest: read, ...rendered, json, head, nouns })
 	if (json || sent.exitCode !== 0 || read.head === '' || read.head === head) return sent
 	return {
 		...sent,
 		output: textOf([
 			...linesOf(sent.output).filter((line) => line !== ''),
-			LOT_PR_LINES.headElsewhere
-				.replace('{number}', String(read.number))
-				.replace('{pushed}', read.head.slice(0, SHORT_SHA_LENGTH))
-				.replace('{head}', head.slice(0, SHORT_SHA_LENGTH))
-				.replace('{lot}', () => lot),
+			headElsewhereLine({ nouns, changeRequest: read, head, lot }),
 		]),
 	}
+}
+
+/** The line saying the change request is at another head than the lot's, which lot land pushes. */
+function headElsewhereLine(params: {
+	nouns: HostNouns
+	changeRequest: ChangeRequest
+	head: string
+	lot: string
+}): string {
+	return fillMessage({
+		template: LOT_DESCRIBE_LINES.headElsewhere,
+		values: {
+			...params.nouns,
+			number: String(params.changeRequest.number),
+			pushed: params.changeRequest.head.slice(0, SHORT_SHA_LENGTH),
+			head: params.head.slice(0, SHORT_SHA_LENGTH),
+			lot: params.lot,
+		},
+	})
 }
 
 /**
@@ -98,10 +132,10 @@ export function runLotPr(params: {
 function lotPlaceOf(params: { cwd: string; argv: string[] }): LotPlace | CommandResult {
 	const ids = positionalArguments({ argv: params.argv, valueOptions: [] })
 	const unknown = params.argv.filter(
-		(word) => word.startsWith('-') && !LOT_PR_OPTIONS.includes(word),
+		(word) => word.startsWith('-') && !LOT_DESCRIBE_OPTIONS.includes(word),
 	)
 	if (ids.length !== 1 || unknown.length > 0) return { exitCode: 2, output: renderLotUsage() }
-	return resolveLotPlace({ cwd: params.cwd, id: ids[0], verb: 'pr', mode: 'read' })
+	return resolveLotPlace({ cwd: params.cwd, id: ids[0], verb: LOT_DESCRIBE_VERB, mode: 'read' })
 }
 
 /**
@@ -188,8 +222,10 @@ function sentAnswer(params: {
 	text: ChangeRequestText
 	sent: boolean
 	json: boolean
-	/** The lot's HEAD: the JSON gives it beside the pull request's head. */
+	/** The lot's HEAD: the JSON gives it beside the change request's head. */
 	head: string
+	/** The host's change-request nouns, for the line. */
+	nouns: HostNouns
 }): CommandResult {
 	const { changeRequest, text, sent } = params
 	if (params.json)
@@ -211,9 +247,10 @@ function sentAnswer(params: {
 	return {
 		exitCode: 0,
 		output: textOf([
-			(sent ? LOT_PR_LINES.updated : LOT_PR_LINES.unchanged)
-				.replace('{number}', String(changeRequest.number))
-				.replace('{url}', () => changeRequest.url),
+			fillMessage({
+				template: sent ? LOT_DESCRIBE_LINES.updated : LOT_DESCRIBE_LINES.unchanged,
+				values: { ...params.nouns, number: String(changeRequest.number), url: changeRequest.url },
+			}),
 		]),
 	}
 }
@@ -233,7 +270,7 @@ function printed(params: {
 	return {
 		exitCode: 0,
 		output: textOf([
-			LOT_PR_LINES.title.replace('{title}', () => params.text.title),
+			LOT_DESCRIBE_LINES.title.replace('{title}', () => params.text.title),
 			'',
 			...linesOf(params.text.body),
 			...(params.lines.length === 0 ? [] : ['', ...params.lines]),
