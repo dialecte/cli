@@ -62,9 +62,10 @@ that reordering blocks never changes what a raw-HTML render hides: each block or
 `<var>`, `<details>`, `<summary>`, `<br>` and `<wbr>`, each closed inside it; a tag inside a comment is text. Anything
 else is refused, naming the piece: write a placeholder such as `<version>` in backticks, and use markdown links and
 images. HTML already in a released section or above the Unreleased part is not read. A section keeps every line's
-indentation (only blank lines around it are dropped), and a section whose breaking items cannot move first without
-changing how a block reads (indented code or HTML placed after an item joins that item) is refused, naming the block:
-fence it, or indent it less. Fragments and the changelog are read as CommonMark reads them (markdown-it): a section heading is
+indentation (only blank lines around it are dropped), and a section whose blocks, joined with the breaking items
+first, read otherwise (indented code or HTML placed after an item joins that item) is refused, naming the block, and at
+release the fragment it comes from and the one it joins (two fragments can meet only there): fence it, or indent it
+less. Fragments and the changelog are read as CommonMark reads them (markdown-it): a section heading is
 a top-level `###` heading, a version heading a top-level `##` one. The release runs
 `dialecte changelog release <x.y.z> [--date YYYY-MM-DD]`: the new version's section is written under an emptied
 `## [Unreleased]` (written above the first version when the changelog has none; `## UNRELEASED` is read too), the

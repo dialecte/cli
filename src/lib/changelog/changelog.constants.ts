@@ -109,15 +109,19 @@ export const FRAGMENT_PROBLEMS = {
 	unclosedHtml: 'an HTML block opens and never closes',
 	tooDeep: 'it nests deeper than the {levels} levels the markdown reader reads',
 	reordered:
-		'section {section}: putting its breaking items first changes how `{piece}` reads; fence that block or indent it less',
+		'section {section}: joining its blocks (breaking items first) changes how `{piece}` reads; fence that block or indent it less',
 	openHtml: `HTML \`{piece}\` is not a whole comment or a balanced bare tag of its block or item (${[...INERT_HTML_ELEMENTS, ...INERT_VOID_HTML_ELEMENTS].map((name) => `<${name}>`).join(', ')}); put code in backticks`,
 } as const
 
-/** Why a release fold is refused; `{version}` filled. */
+/** Where an Unreleased entry of a release comes from, as a refusal names it. */
+export const UNRELEASED_SOURCE = `the Unreleased part of ${CHANGELOG_FILE}`
+
+/** Why a release fold is refused; `{version}`, `{problem}` and `{sources}` filled. */
 export const FOLD_REFUSALS = {
 	released: `${CHANGELOG_FILE} already holds version {version}`,
 	nothing: 'nothing to release: no fragment and no Unreleased entry',
 	unreleased: 'the Unreleased part of CHANGELOG.md: {problem}',
+	reorderedFrom: '{problem} ({sources})',
 	noChangelog: `no ${CHANGELOG_FILE} in the package`,
 	leftover:
 		'{file} could not be deleted ({reason}): delete it before the next release, its entries are released',

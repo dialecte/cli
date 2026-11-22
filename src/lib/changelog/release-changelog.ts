@@ -1,6 +1,11 @@
 /** The release fold: the Unreleased entries and the fragments become the new version's section of the changelog. */
 import { readChangelogParts } from './changelog-parts.ts'
-import { CHANGELOG_SECTIONS, FOLD_REFUSALS, UNRELEASED_HEADING } from './changelog.constants.ts'
+import {
+	CHANGELOG_SECTIONS,
+	FOLD_REFUSALS,
+	UNRELEASED_HEADING,
+	UNRELEASED_SOURCE,
+} from './changelog.constants.ts'
 import { breakingFirst, sectionItemsOf } from './section-items.ts'
 import { readSections, reorderedProblem } from './sections.ts'
 
@@ -9,6 +14,7 @@ import type {
 	FoldResult,
 	Fragment,
 	OrderedSection,
+	SourcedEntry,
 	SectionEntry,
 	SectionsRead,
 } from './changelog.types.ts'
@@ -39,14 +45,17 @@ export function foldChangelog(params: {
 	if ('problem' in unreleased)
 		return { refusal: FOLD_REFUSALS.unreleased.replace('{problem}', unreleased.problem) }
 	const entries = [
-		...unreleased.sections,
-		...params.fragments.flatMap((fragment) => fragment.sections),
+		...unreleased.sections.map((entry) => ({ ...entry, source: UNRELEASED_SOURCE })),
+		...params.fragments.flatMap((fragment) =>
+			fragment.sections.map((entry) => ({ ...entry, source: fragment.file })),
+		),
 	]
 	if (entries.length === 0 && unreleased.leading === '') return { refusal: FOLD_REFUSALS.nothing }
 	const sections = orderedSections({ entries })
-	const moved = sections.find((entry) => 'moved' in entry.ordered)
-	if (moved !== undefined && 'moved' in moved.ordered)
-		return { refusal: reorderedProblem({ section: moved.section, moved: moved.ordered.moved }) }
+	const refused = sections
+		.map((entry) => reorderRefusalOf({ entry }))
+		.find((refusal) => refusal !== undefined)
+	if (refused !== undefined) return { refusal: refused }
 	const release = [
 		`## [${params.version}] - ${params.date}`,
 		'',
@@ -109,13 +118,34 @@ function readUnreleased(params: { lines: readonly string[] }): SectionsRead {
  * Each section that holds entries, in the changelog's order, with its blocks (each entry read on its own) ordered
  * breaking first, or the block that order would read otherwise.
  */
-function orderedSections(params: { entries: readonly SectionEntry[] }): OrderedSection[] {
+function orderedSections(params: { entries: readonly SourcedEntry[] }): OrderedSection[] {
 	return CHANGELOG_SECTIONS.flatMap(function orderedSection(section): OrderedSection[] {
-		const blocks = params.entries
+		const sourced = params.entries
 			.filter((entry) => entry.section === section)
-			.flatMap((entry) => sectionItemsOf({ text: entry.text }))
-		return blocks.length === 0 ? [] : [{ section, ordered: breakingFirst({ blocks }) }]
+			.flatMap((entry) =>
+				sectionItemsOf({ text: entry.text }).map((block) => [block, entry.source] as const),
+			)
+		if (sourced.length === 0) return []
+		const blocks = sourced.map(([block]) => block)
+		return [{ section, ordered: breakingFirst({ blocks }), sources: new Map(sourced) }]
 	})
+}
+
+/**
+ * The refusal of a section whose joined blocks read otherwise, naming the file the block comes from and, when another,
+ * the file of the block it joins; undefined when the section joins cleanly.
+ */
+function reorderRefusalOf(params: { entry: OrderedSection }): string | undefined {
+	const { entry } = params
+	const { ordered, sources } = entry
+	if (!('moved' in ordered)) return undefined
+	const from = sources.get(ordered.moved) ?? ''
+	const after = ordered.after === undefined ? undefined : sources.get(ordered.after)
+	return FOLD_REFUSALS.reorderedFrom
+		.replace('{problem}', () => reorderedProblem({ section: entry.section, moved: ordered.moved }))
+		.replace('{sources}', () =>
+			after === undefined || after === from ? from : `${from}, after ${after}`,
+		)
 }
 
 function trimTrailingBlank(params: { lines: readonly string[] }): string[] {

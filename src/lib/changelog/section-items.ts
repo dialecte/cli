@@ -50,7 +50,8 @@ export function joinBlocks(params: { blocks: readonly SectionBlock[] }): string 
 /**
  * A section's blocks with its breaking items first, every other block after them, each group in the order written,
  * joined as a formatter leaves them; or, when the joined text reads otherwise (a block indented enough to join the item
- * placed before it), the first block the joined text does not hold as one of its blocks or the start of one.
+ * placed before it), the first block the joined text does not hold as one of its blocks or the start of one, and the
+ * block placed before it.
  *
  * @intent order a changelog section's blocks breaking first without changing how any block reads
  * @internal
@@ -68,10 +69,11 @@ export function breakingFirst(params: { blocks: readonly SectionBlock[] }): Brea
 			(block, index) => block.kind === ordered[index]?.kind && block.text === ordered[index]?.text,
 		)
 	if (same) return { text }
-	const moved =
-		ordered.find((block) => !read.some((other) => other.text.startsWith(block.text))) ??
-		ordered.find((block, index) => read[index]?.text !== block.text)
-	return moved === undefined ? { text } : { moved }
+	const at = ordered.findIndex((block) => !read.some((other) => other.text.startsWith(block.text)))
+	const index =
+		at === -1 ? ordered.findIndex((block, place) => read[place]?.text !== block.text) : at
+	const moved = ordered[index]
+	return moved === undefined ? { text } : { moved, after: ordered[index - 1] }
 }
 
 /** The blocks one top-level token gives: an item per list item of a `- ` list, else one text block. */

@@ -327,7 +327,7 @@ describe('foldChangelog', () => {
 			text: `${HEAD}\n## [Unreleased]\n\n${OLD_RELEASE}`,
 			fragments: [changed('changes/c.md', '    <!--\n\n- **Breaking:** z')],
 			refusal:
-				'section Changed: putting its breaking items first changes how `<!--` reads; fence that block or indent it less',
+				'section Changed: joining its blocks (breaking items first) changes how `<!--` reads; fence that block or indent it less (changes/c.md)',
 		},
 		{
 			label: "a fragment's indented script tag after another fragment's breaking item",
@@ -337,7 +337,20 @@ describe('foldChangelog', () => {
 				changed('changes/b.md', '    <script>'),
 			],
 			refusal:
-				'section Changed: putting its breaking items first changes how `<script>` reads; fence that block or indent it less',
+				'section Changed: joining its blocks (breaking items first) changes how `<script>` reads; fence that block or indent it less (changes/b.md, after changes/a.md)',
+		},
+		{
+			label: 'two fragments joining an item and an indented comment, nothing breaking',
+			text: `${HEAD}\n## [Unreleased]\n\n${OLD_RELEASE}`,
+			fragments: [
+				{ file: 'changes/a.md', sections: [{ section: 'Added' as const, text: '- a' }] },
+				{
+					file: 'changes/b.md',
+					sections: [{ section: 'Added' as const, text: '    <!-- shown -->' }],
+				},
+			],
+			refusal:
+				'section Added: joining its blocks (breaking items first) changes how `<!-- shown -->` reads; fence that block or indent it less (changes/b.md, after changes/a.md)',
 		},
 		{
 			label:
@@ -345,7 +358,7 @@ describe('foldChangelog', () => {
 			text: `${HEAD}\n## [Unreleased]\n\n### Changed\n\n    <!--\n\n- **Breaking:** z\n\n${OLD_RELEASE}`,
 			fragments: [],
 			refusal:
-				'the Unreleased part of CHANGELOG.md: section Changed: putting its breaking items first changes how `<!--` reads; fence that block or indent it less',
+				'the Unreleased part of CHANGELOG.md: section Changed: joining its blocks (breaking items first) changes how `<!--` reads; fence that block or indent it less',
 		},
 	])('$label → refused, nothing folded', ({ text, fragments, refusal }) => {
 		expect(foldChangelog({ text, version: '0.8.0', date: '2026-11-16', fragments })).toEqual({

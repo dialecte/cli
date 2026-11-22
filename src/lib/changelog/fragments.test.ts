@@ -261,7 +261,7 @@ describe('readFragments: a no-entry note', { timeout: SCRATCH_REPOSITORY_TIMEOUT
 			expect(readFragments({ root }).problems).toEqual([
 				{
 					file: 'changes/lot.md',
-					problem: `section Added: putting its breaking items first changes how \`${block.trim()}\` reads; fence that block or indent it less`,
+					problem: `section Added: joining its blocks (breaking items first) changes how \`${block.trim()}\` reads; fence that block or indent it less`,
 				},
 			])
 		},

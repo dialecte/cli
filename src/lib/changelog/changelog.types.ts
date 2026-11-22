@@ -33,13 +33,28 @@ export type FoldResult = { text: string } | { refusal: string }
 /** How `readSections` treats what a fragment refuses: a repeated section, text before the first heading. */
 export type SectionsMode = 'fragment' | 'unreleased'
 
+/**
+ * A section's blocks joined with its breaking items first: the joined text, or the first block the join reads otherwise
+ * and the block placed before it.
+ */
+export type BreakingFirst =
+	| { text: string }
+	| { moved: SectionBlock; after: SectionBlock | undefined }
+
+/**
+ * A section of the release with its blocks joined breaking first (or the block the join reads otherwise), and where each
+ * block comes from: a fragment's file, or the Unreleased part.
+ */
+export type OrderedSection = {
+	section: ChangelogSection
+	ordered: BreakingFirst
+	sources: ReadonlyMap<SectionBlock, string>
+}
+
+/** A section entry of a release with where it comes from: a fragment's file, or the Unreleased part. */
+export type SourcedEntry = SectionEntry & { source: string }
+
 /** The sections of a text, and the text before the first heading (`unreleased` mode only; empty otherwise). */
-/** A section's blocks with its breaking items first: the joined text, or the first block the reorder reads otherwise. */
-export type BreakingFirst = { text: string } | { moved: SectionBlock }
-
-/** A section of the release with its blocks ordered breaking first (or the block the order reads otherwise). */
-export type OrderedSection = { section: ChangelogSection; ordered: BreakingFirst }
-
 export type SectionsRead = { sections: SectionEntry[]; leading: string } | { problem: string }
 
 /** A part of a changelog: the Unreleased part or a version's section, from its heading line to its end (excluded). */
