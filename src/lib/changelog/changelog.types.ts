@@ -105,8 +105,11 @@ export type SectionBlock = {
 	multiBlock: boolean
 }
 
-/** A block opened in a text that runs to its end: a code fence, or an HTML block of a kind only its close ends. */
-export type UnclosedBlock = 'fence' | 'html'
+/**
+ * A block opened in a text that runs to its end: a code fence, an HTML block of a kind only its close ends (or a raw-text
+ * element left open in any block), or a nesting deeper than the reader reads.
+ */
+export type UnclosedBlock = 'fence' | 'html' | 'nesting'
 
 /**
  * A text read as CommonMark blocks: its lines (split as the parser splits them), the parser's block tokens (unclosed
@@ -118,6 +121,8 @@ export type MarkdownBlocks = {
 	tokens: readonly MarkdownToken[]
 	unclosedComment: number | undefined
 	unclosedBlock: UnclosedBlock | undefined
+	/** How many nesting levels the reader reads before it stops. */
+	maxNesting: number
 }
 
 /** A parser block token as the readers use it: its type, nesting level, markup, line range and content. */

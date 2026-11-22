@@ -64,6 +64,23 @@ describe('readChangelogParts', () => {
 			],
 		},
 		{
+			label: 'a version heading indented by one space → a version part, as CommonMark reads it',
+			text: '## [Unreleased]\n\n ## [0.1.0] - 2026-01-01\n\n### Added\n\n- x\n',
+			parts: [
+				{ kind: 'unreleased', heading: 0, end: 2 },
+				{ kind: 'version', version: '0.1.0', heading: 2, end: 8 },
+			],
+		},
+		{
+			label:
+				'a link reference definition among the Unreleased entries → no part ends there, the entries after it stay in it',
+			text: '## [Unreleased]\n\n- a [x].\n\n[x]: https://e.example\n\n- **Breaking:** b.\n\n## [0.1.0]\n',
+			parts: [
+				{ kind: 'unreleased', heading: 0, end: 8 },
+				{ kind: 'version', version: '0.1.0', heading: 8, end: 10 },
+			],
+		},
+		{
 			label: 'a comment that never closes → it hides nothing: the version heading after it is read',
 			text: '## [1.0.0]\n<!--\n## [0.1.0]\n',
 			parts: [
@@ -105,5 +122,20 @@ describe('readChangelogParts', () => {
 		},
 	])('$label', ({ text, parts }) => {
 		expect(readChangelogParts({ text }).parts).toEqual(parts)
+	})
+
+	it.each([
+		{
+			label: 'a link block at the end of the changelog',
+			text: '## [1.0.0]\n\n- a\n\n[1.0.0]: https://e.example/1.0.0\n',
+			linkLine: 4,
+		},
+		{
+			label: 'a link reference definition among entries, no link block at the end',
+			text: '## [1.0.0]\n\n- a [x].\n\n[x]: https://e.example\n\n- b.\n',
+			linkLine: undefined,
+		},
+	])('$label → the link block starts at line $linkLine', ({ text, linkLine }) => {
+		expect(readChangelogParts({ text }).linkLine).toBe(linkLine)
 	})
 })

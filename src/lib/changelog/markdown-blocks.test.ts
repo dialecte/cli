@@ -48,6 +48,26 @@ describe('readMarkdownBlocks', () => {
 		{ label: 'a processing instruction never closed', text: '<?php\nx\n', kind: 'html' },
 		{ label: 'a declaration never closed', text: '<!DOCTYPE x\ny\n', kind: 'html' },
 		{ label: 'a CDATA section never closed', text: '<![CDATA[ x\ny\n', kind: 'html' },
+		{
+			label: 'a script element opened under an item',
+			text: '- a\n\n  <script>\n- b\n',
+			kind: 'html',
+		},
+		{
+			label: 'a style element opened under an item',
+			text: '- a\n\n  <style>\n- b\n',
+			kind: 'html',
+		},
+		{
+			label: 'a textarea element opened under an item',
+			text: '- a\n\n  <textarea>\n- b\n',
+			kind: 'html',
+		},
+		{
+			label: 'items nested deeper than the reader reads',
+			text: Array.from({ length: 25 }, (_, depth) => `${'  '.repeat(depth)}- l${depth}`).join('\n'),
+			kind: 'nesting',
+		},
 	])('$label → an unclosed $kind block', ({ text, kind }) => {
 		expect(readMarkdownBlocks({ text }).unclosedBlock).toBe(kind)
 	})
@@ -60,6 +80,7 @@ describe('readMarkdownBlocks', () => {
 		{ label: 'a fence left open inside an item (its item closes it)', text: '- a\n  ```\n  x\n' },
 		{ label: 'indented code at the end', text: 'a\n\n    code\n' },
 		{ label: 'a list item at the end', text: '- a' },
+		{ label: 'a script element closed under an item', text: '- a\n\n  <script>x</script>\n- b\n' },
 	])('$label → no unclosed block', ({ text }) => {
 		expect(readMarkdownBlocks({ text }).unclosedBlock).toBeUndefined()
 	})

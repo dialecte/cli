@@ -67,6 +67,8 @@ function unclosedProblemOf(params: { blocks: MarkdownBlocks }): string | undefin
 	if (blocks.unclosedComment !== undefined) return FRAGMENT_PROBLEMS.unclosedComment
 	if (blocks.unclosedBlock === 'fence') return FRAGMENT_PROBLEMS.unclosedFence
 	if (blocks.unclosedBlock === 'html') return FRAGMENT_PROBLEMS.unclosedHtml
+	if (blocks.unclosedBlock === 'nesting')
+		return FRAGMENT_PROBLEMS.tooDeep.replace('{levels}', String(blocks.maxNesting))
 	return undefined
 }
 

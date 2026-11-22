@@ -105,6 +105,16 @@ describe('readFragments', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 			problem: 'an HTML block opens and never closes',
 		},
 		{
+			label: 'a script element opened under an item',
+			text: '### Changed\n\n- a\n\n  <script>\n- **Breaking:** b\n',
+			problem: 'an HTML block opens and never closes',
+		},
+		{
+			label: 'items nested deeper than the markdown reader reads',
+			text: `### Changed\n\n${Array.from({ length: 25 }, (_, depth) => `${'  '.repeat(depth)}- l${depth}`).join('\n')}\n`,
+			problem: 'it nests deeper than the 20 levels the markdown reader reads',
+		},
+		{
 			label: 'a heading of only ###',
 			text: '###\n\n- x.\n',
 			problem: 'heading "### " is no section: Added, Changed, Deprecated, Removed, Fixed, Security',

@@ -1,19 +1,23 @@
+/**
+ * The one reader of markdown block structure for the changelog modules: a CommonMark parser's block tokens, read with
+ * their line ranges so every block is sliced from the author's own lines and the parser's output is never written.
+ */
 import {
 	COMMENT_CLOSE,
 	COMMENT_OPEN,
 	COMMENT_SELF_CLOSING_PATTERN,
 	COMMENT_START_PATTERN,
 	LINE_BREAK_PATTERN,
-	MARKDOWN_PARSER,
+	MARKDOWN_PRESET,
 	NEUTRALISED_COMMENT_OPEN,
+	RAW_TEXT_OPEN_PATTERN,
 	SENTINEL_HEADING,
 } from './changelog.constants.ts'
 
-/**
- * The one reader of markdown block structure for the changelog modules: a CommonMark parser's block tokens, read with
- * their line ranges so every block is sliced from the author's own lines and the parser's output is never written.
- */
+import markdownIt from 'markdown-it'
+
 import type { MarkdownBlocks, MarkdownToken, UnclosedBlock } from './changelog.types.ts'
+import type { MarkdownIt } from 'markdown-it'
 
 /**
  * The CommonMark blocks of `text`: its lines (split as the parser splits them), the block tokens of a parse copy where
@@ -26,21 +30,43 @@ import type { MarkdownBlocks, MarkdownToken, UnclosedBlock } from './changelog.t
  * @internal
  */
 export function readMarkdownBlocks(params: { text: string }): MarkdownBlocks {
+	const parser = createParser()
 	const lines = params.text.split(LINE_BREAK_PATTERN)
-	const original = tokensOf({ lines })
-	const neutral = neutralised({ lines, tokens: original })
+	const original = tokensOf({ parser, lines })
+	const neutral = neutralised({ parser, lines, tokens: original })
 	return {
 		lines,
 		tokens: neutral.tokens,
 		unclosedComment: original.find(holdsUnclosedComment)?.map?.[0],
-		unclosedBlock: unclosedBlockOf({ lines: neutral.lines }),
+		unclosedBlock:
+			unclosedBlockOf({ parser, lines: neutral.lines }) ??
+			(neutral.tokens.some(holdsOpenRawText) ? 'html' : undefined),
+		maxNesting: parser.options.maxNesting ?? 0,
 	}
 }
 
+/** The parser: CommonMark's block rules with html blocks on; only its `parse` is used. */
+function createParser(): MarkdownIt {
+	return markdownIt(MARKDOWN_PRESET)
+}
+
+/** An HTML block, at any level, holding a raw-text element (`<script>`, `<style>`, `<textarea>`) never closed in it. */
+function holdsOpenRawText(token: MarkdownToken): boolean {
+	if (token.type !== 'html_block') return false
+	return [...token.content.matchAll(RAW_TEXT_OPEN_PATTERN)].some(
+		(opened) =>
+			!token.content
+				.slice(opened.index)
+				.toLowerCase()
+				.includes(`</${(opened[1] ?? '').toLowerCase()}`),
+	)
+}
+
 /** The block tokens of `lines` joined with line feeds, as the readers use them. */
-function tokensOf(params: { lines: readonly string[] }): MarkdownToken[] {
-	return MARKDOWN_PARSER.parse(params.lines.join('\n'), {}).map(
-		function tokenOf(token): MarkdownToken {
+function tokensOf(params: { parser: MarkdownIt; lines: readonly string[] }): MarkdownToken[] {
+	return params.parser
+		.parse(params.lines.join('\n'), {})
+		.map(function tokenOf(token): MarkdownToken {
 			return {
 				type: token.type,
 				level: token.level,
@@ -49,8 +75,7 @@ function tokensOf(params: { lines: readonly string[] }): MarkdownToken[] {
 				map: token.map === null ? null : [token.map[0], token.map[1]],
 				content: token.content,
 			}
-		},
-	)
+		})
 }
 
 /** An HTML block whose last `<!--` has no `-->` after it (`<!-->` and `<!--->` close themselves). */
@@ -79,7 +104,11 @@ function isOpenCommentBlock(token: MarkdownToken): boolean {
  * The parse copy's lines and tokens: each open comment block's first `<!--` gets a backslash, then the copy is parsed
  * again, until none is left (one round per opener).
  */
-function neutralised(params: { lines: readonly string[]; tokens: MarkdownToken[] }): {
+function neutralised(params: {
+	parser: MarkdownIt
+	lines: readonly string[]
+	tokens: MarkdownToken[]
+}): {
 	lines: string[]
 	tokens: MarkdownToken[]
 } {
@@ -92,7 +121,7 @@ function neutralised(params: { lines: readonly string[]; tokens: MarkdownToken[]
 	) {
 		const at = open.map?.[0] ?? 0
 		lines[at] = (lines[at] ?? '').replace(COMMENT_OPEN, NEUTRALISED_COMMENT_OPEN)
-		tokens = tokensOf({ lines })
+		tokens = tokensOf({ parser: params.parser, lines })
 	}
 	return { lines, tokens }
 }
@@ -100,11 +129,15 @@ function neutralised(params: { lines: readonly string[]; tokens: MarkdownToken[]
 // dialecte-allow duplicate-read: CommonMark blocks a parser leaves open, not the skills' generated-block markers
 /**
  * The kind of a block that runs to the end of `lines`: they are parsed with a line break, an empty line and a sentinel
- * heading appended; when the sentinel is no top-level heading, the last top-level block swallowed it.
+ * heading appended; when the sentinel is no top-level heading, the last top-level block swallowed it, or the text
+ * nests deeper than the parser reads.
  */
-function unclosedBlockOf(params: { lines: readonly string[] }): UnclosedBlock | undefined {
+function unclosedBlockOf(params: {
+	parser: MarkdownIt
+	lines: readonly string[]
+}): UnclosedBlock | undefined {
 	const body = params.lines.at(-1) === '' ? params.lines.slice(0, -1) : [...params.lines]
-	const tokens = tokensOf({ lines: [...body, '', SENTINEL_HEADING] })
+	const tokens = tokensOf({ parser: params.parser, lines: [...body, '', SENTINEL_HEADING] })
 	const sentinel = body.length + 1
 	const read = tokens.some(
 		(token) => token.type === 'heading_open' && token.level === 0 && token.map?.[0] === sentinel,
@@ -113,5 +146,7 @@ function unclosedBlockOf(params: { lines: readonly string[] }): UnclosedBlock | 
 	const last = tokens
 		.filter((token) => token.level === 0 && token.nesting !== -1 && token.map)
 		.at(-1)
-	return last?.type === 'fence' ? 'fence' : 'html'
+	// a fence or an HTML block swallowed the sentinel; anything else stopped at the parser's nesting limit
+	if (last?.type === 'fence') return 'fence'
+	return last?.type === 'html_block' ? 'html' : 'nesting'
 }

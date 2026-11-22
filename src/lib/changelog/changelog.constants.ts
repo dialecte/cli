@@ -1,5 +1,4 @@
 /** Changelog fragments (`changes/<name>.md`) and the release fold into `CHANGELOG.md`. */
-import MarkdownIt from 'markdown-it'
 
 /** The folder each lot writes its changelog fragment in, at the package root. */
 export const FRAGMENTS_FOLDER = 'changes'
@@ -60,15 +59,6 @@ export const CHANGELOG_SECTIONS = [
 /** The heading the entries of the next release stand under, as a release writes it. */
 export const UNRELEASED_HEADING = '## [Unreleased]'
 
-/** The Unreleased heading as changelogs write it: `## [Unreleased]`, `## Unreleased`, `## UNRELEASED`. */
-export const UNRELEASED_HEADING_PATTERN = /^## \[?unreleased\]?\s*$/i
-
-/** Any version heading: `## [<version>]`, with its date or not. */
-export const VERSION_HEADING_PATTERN = /^## \[/
-
-/** A version heading's bracketed token: `0.13.2` in `## [0.13.2] - 2026-11-10`, `60` in `## [60]`. */
-export const VERSION_KEY_PATTERN = /^## \[([^\]]+)\]/
-
 /** A link reference definition (`[0.7.0]: https://...`): the block at a changelog's end. */
 export const LINK_REFERENCE_PATTERN = /^\[[^\]]+\]:\s/
 
@@ -89,6 +79,7 @@ export const FRAGMENT_PROBLEMS = {
 	unclosedComment: 'an HTML comment opens and never closes',
 	unclosedFence: 'a code fence opens and never closes',
 	unclosedHtml: 'an HTML block opens and never closes',
+	tooDeep: 'it nests deeper than the {levels} levels the markdown reader reads',
 } as const
 
 /** Why a release fold is refused; `{version}` filled. */
@@ -158,8 +149,17 @@ export const SECTION_HEADING_MARKUP = '###'
 /** The bullet marker of the only list a release cuts into items. */
 export const MOVABLE_BULLET_MARKUP = '-'
 
-/** The block tokens whose lines are code or HTML: no link reference line inside them ends a part. */
-export const OPAQUE_BLOCK_TYPES: readonly string[] = ['fence', 'code_block', 'html_block']
+/** An Unreleased heading's text, as changelogs write it: `[Unreleased]`, `Unreleased`, `UNRELEASED`. */
+export const UNRELEASED_TITLE_PATTERN = /^\[?unreleased\]?$/i
 
-/** The markdown parser the changelog readers share: CommonMark's block rules, html blocks on; only `parse` is used. */
-export const MARKDOWN_PARSER = new MarkdownIt('commonmark')
+/** A version heading's text opens with a bracketed token: `[0.13.2] - 2026-11-10`, `[60]`. */
+export const VERSION_TITLE_PATTERN = /^\[/
+
+/** A version heading's bracketed token: `0.13.2` in `[0.13.2] - 2026-11-10`. */
+export const VERSION_TITLE_KEY_PATTERN = /^\[([^\]]+)\]/
+
+/** The CommonMark preset the changelog readers parse with: its block rules, html blocks on. */
+export const MARKDOWN_PRESET = 'commonmark'
+
+/** An HTML element whose raw text runs until its own close: `<script>`, `<style>`, `<textarea>`. */
+export const RAW_TEXT_OPEN_PATTERN = /<(script|style|textarea)\b/gi

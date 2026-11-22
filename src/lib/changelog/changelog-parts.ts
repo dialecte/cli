@@ -1,11 +1,10 @@
 /** One reader of a changelog's parts: the Unreleased part and each version's section, as CommonMark reads its headings. */
 import {
 	LINK_REFERENCE_PATTERN,
-	OPAQUE_BLOCK_TYPES,
-	UNRELEASED_HEADING_PATTERN,
+	UNRELEASED_TITLE_PATTERN,
 	VERSION_HEADING_MARKUP,
-	VERSION_HEADING_PATTERN,
-	VERSION_KEY_PATTERN,
+	VERSION_TITLE_KEY_PATTERN,
+	VERSION_TITLE_PATTERN,
 } from './changelog.constants.ts'
 import { readMarkdownBlocks } from './markdown-blocks.ts'
 
@@ -19,7 +18,8 @@ import type {
 /**
  * The lines of `text` (split as CommonMark splits them) and its parts in file order. The first Unreleased heading (any
  * casing, bracketed or not) opens the Unreleased part; any later `## [` heading (a version heading, or a second
- * bracketed Unreleased heading) ends the current part and opens its own; a link reference line ends the current part.
+ * bracketed Unreleased heading) ends the current part and opens its own; the link block at the end of the text ends the
+ * last part (a link reference definition among entries ends nothing).
  * Headings are CommonMark's top-level ATX headings: one inside a fence, an HTML block, a list or a quote is text. An
  * HTML comment that never closes hides nothing (`readMarkdownBlocks`). A version heading's part is keyed by its bracketed token.
  *
@@ -42,45 +42,45 @@ export function readChangelogParts(params: { text: string }): ChangelogParts {
 }
 
 /**
- * Where a part ends and what it opens: each top-level level-2 ATX heading whose line is an Unreleased or `## [` heading
- * (the first Unreleased heading opens that part), and each link reference line no fence, code or HTML block holds.
+ * Where a part ends and what it opens: each top-level level-2 ATX heading whose text is an Unreleased title or opens
+ * with a bracketed token (the first Unreleased heading opens that part), and the link block at the end of the text.
  */
 function boundariesOf(params: { blocks: MarkdownBlocks }): PartBoundary[] {
-	const { lines, tokens } = params.blocks
-	const headings = new Set(
-		tokens
-			.filter(
-				(token) =>
-					token.type === 'heading_open' &&
-					token.level === 0 &&
-					token.markup === VERSION_HEADING_MARKUP,
-			)
-			.map((token) => token.map?.[0]),
-	)
-	const opaque = tokens.flatMap(({ type, map }) =>
-		OPAQUE_BLOCK_TYPES.includes(type) && map ? [map] : [],
-	)
+	const { tokens } = params.blocks
 	const boundaries: PartBoundary[] = []
-	for (const [index, line] of lines.entries()) {
-		if (headings.has(index)) {
-			const unreleased = UNRELEASED_HEADING_PATTERN.test(line)
-			const unreleasedOpen = boundaries.some((boundary) => boundary.opens === 'unreleased')
-			if (unreleased && !unreleasedOpen) boundaries.push({ index, opens: 'unreleased' })
-			else if (VERSION_HEADING_PATTERN.test(line))
-				boundaries.push({ index, opens: openedBy({ line }) })
-		} else if (
-			!opaque.some(([from, to]) => index >= from && index < to) &&
-			LINK_REFERENCE_PATTERN.test(line)
-		)
-			boundaries.push({ index, opens: 'nothing' })
+	for (const [at, token] of tokens.entries()) {
+		const index = token.map?.[0]
+		if (token.type !== 'heading_open' || token.level !== 0 || index === undefined) continue
+		if (token.markup !== VERSION_HEADING_MARKUP) continue
+		const title = (tokens[at + 1]?.content ?? '').trim()
+		const unreleased = UNRELEASED_TITLE_PATTERN.test(title)
+		const unreleasedOpen = boundaries.some((boundary) => boundary.opens === 'unreleased')
+		if (unreleased && !unreleasedOpen) boundaries.push({ index, opens: 'unreleased' })
+		else if (VERSION_TITLE_PATTERN.test(title))
+			boundaries.push({ index, opens: openedBy({ title }) })
 	}
-	return boundaries
+	const link = linkBlockLineOf(params)
+	return link === undefined ? boundaries : [...boundaries, { index: link, opens: 'nothing' }]
 }
 
-/** What a `## [` line opens: a version's section keyed by its token, or (a second Unreleased heading) the Unreleased kind. */
-function openedBy(params: { line: string }): PartBoundary['opens'] {
-	const version = VERSION_KEY_PATTERN.exec(params.line)?.[1]
-	return version === undefined || UNRELEASED_HEADING_PATTERN.test(params.line)
+/**
+ * The first line of the link block at the end of the text: the tail of lines no top-level block covers (a link
+ * reference definition is consumed by the parser), when its first non-blank line is a link reference definition.
+ */
+function linkBlockLineOf(params: { blocks: MarkdownBlocks }): number | undefined {
+	const { lines, tokens } = params.blocks
+	const covered = tokens.reduce(
+		(end, token) => (token.level === 0 && token.map ? Math.max(end, token.map[1]) : end),
+		0,
+	)
+	const first = lines.findIndex((line, index) => index >= covered && line.trim() !== '')
+	return first !== -1 && LINK_REFERENCE_PATTERN.test(lines[first] ?? '') ? first : undefined
+}
+
+/** What a `## [` heading opens: a version's section keyed by its token, or (a second Unreleased heading) the Unreleased kind. */
+function openedBy(params: { title: string }): PartBoundary['opens'] {
+	const version = VERSION_TITLE_KEY_PATTERN.exec(params.title)?.[1]
+	return version === undefined || UNRELEASED_TITLE_PATTERN.test(params.title)
 		? 'unreleased'
 		: { version }
 }
