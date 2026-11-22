@@ -15,7 +15,8 @@ import type {
  * `tip` and than `mergeBase`, or lacks it while `mergeBase` (or a two-way call) holds it. A version `tip` lacks is
  * new and not judged. A heading `checked` holds more times than `tip` is a duplicate; the k-th copy of a version is
  * compared with the k-th copy of the others. Lines compare with trailing spaces and a section's trailing blank lines
- * dropped, and without its link reference definitions (each with the blank lines before it): they render nothing.
+ * dropped, and a run of blank and link reference definition lines holding a definition read as one blank line: a
+ * definition renders nothing.
  *
  * @intent tell which released changelog sections a change altered
  * @internal
@@ -72,21 +73,28 @@ function versionSectionsOf(params: { read: ChangelogParts }): VersionSection[] {
 }
 
 /**
- * A section's compared lines from `from` to `to` (excluded), each with its file index: every link reference definition
- * line dropped with the blank lines directly before it (a definition renders nothing), then trailing spaces trimmed and
- * trailing blank lines dropped.
+ * A section's compared lines from `from` to `to` (excluded), each with its file index and its trailing spaces trimmed:
+ * a run of blank and link reference definition lines that holds a definition reads as one blank line (a definition
+ * renders nothing, but the blank line it brings ends a paragraph or an item), and the section's trailing blank lines are
+ * dropped.
  */
 function comparedLines(params: { read: ChangelogParts; from: number; to: number }): SectionLine[] {
 	const { read } = params
 	const kept: SectionLine[] = []
+	let run: SectionLine[] = []
+	let runHoldsDefinition = false
 	for (let index = params.from; index < params.to; index += 1) {
-		if (read.definitionLines.has(index)) {
-			while (kept.at(-1)?.text === '') kept.pop()
+		const text = (read.lines[index] ?? '').trimEnd()
+		const definition = read.definitionLines.has(index)
+		if (definition || text === '') {
+			run = [...run, { index, text: '' }]
+			runHoldsDefinition ||= definition
 			continue
 		}
-		kept.push({ index, text: (read.lines[index] ?? '').trimEnd() })
+		kept.push(...(runHoldsDefinition ? run.slice(0, 1) : run), { index, text })
+		run = []
+		runHoldsDefinition = false
 	}
-	while (kept.at(-1)?.text === '') kept.pop()
 	return kept
 }
 

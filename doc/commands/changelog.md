@@ -16,12 +16,12 @@ changelog - Changelog fragments (changes/<lot>.md): check them, or fold them int
     only in a release (rules: changelog-edit)
   check - every fragment readable (a known heading, no loose text, no empty or repeated section, no
           HTML comment, code fence or HTML block that never closes, and in each block or item a
-          release moves no raw HTML but whole comments and balanced bare tags of an inert element;
-          read as CommonMark reads it), the Unreleased part of CHANGELOG.md, then its released
-          sections: none altered against the base branch and where the change left it (rules:
-          released-changelog); --base <revision> judges against that commit alone, the one the
-          change goes onto (the CI check step hands the merge queue's base, or a pull request merge
-          ref's first parent)
+          release moves no raw HTML but whole comments and balanced bare tags of an inert element,
+          nor a block that moving the breaking items first would read otherwise; read as CommonMark
+          reads it), the Unreleased part of CHANGELOG.md, then its released sections: none altered
+          against the base branch and where the change left it (rules: released-changelog); --base
+          <revision> judges against that commit alone, the one the change goes onto (the CI check
+          step hands the merge queue's base, or a pull request merge ref's first parent)
   release - writes ## [<x.y.z>] - <date> (default today, local) under an emptied ## [Unreleased]
             (written above the first version when missing): the Unreleased summary and entries
             first, then each fragment in file name order, section by section, each section's
@@ -61,7 +61,10 @@ that reordering blocks never changes what a raw-HTML render hides: each block or
 `<s>`, `<em>`, `<strong>`, `<small>`, `<mark>`, `<del>`, `<ins>`, `<sub>`, `<sup>`, `<code>`, `<kbd>`, `<samp>`,
 `<var>`, `<details>`, `<summary>`, `<br>` and `<wbr>`, each closed inside it; a tag inside a comment is text. Anything
 else is refused, naming the piece: write a placeholder such as `<version>` in backticks, and use markdown links and
-images. HTML already in a released section or above the Unreleased part is not read. Fragments and the changelog are read as CommonMark reads them (markdown-it): a section heading is
+images. HTML already in a released section or above the Unreleased part is not read. A section keeps every line's
+indentation (only blank lines around it are dropped), and a section whose breaking items cannot move first without
+changing how a block reads (indented code or HTML placed after an item joins that item) is refused, naming the block:
+fence it, or indent it less. Fragments and the changelog are read as CommonMark reads them (markdown-it): a section heading is
 a top-level `###` heading, a version heading a top-level `##` one. The release runs
 `dialecte changelog release <x.y.z> [--date YYYY-MM-DD]`: the new version's section is written under an emptied
 `## [Unreleased]` (written above the first version when the changelog has none; `## UNRELEASED` is read too), the
@@ -75,11 +78,12 @@ reference definition, is kept in place). A breaking item rises above a sub-headi
 as above any other block. Blocks are joined as oxfmt leaves them: a blank line after an item holding a second paragraph and around any block that is no bullet item, one
 line feed between one-line items. The fragments are deleted (`changes/.gitkeep` keeps the folder).
 Code fences and a link block at the end of the changelog are kept as they are. The released-changelog rule compares
-a released section without its link reference definitions, wherever they stand, each with the blank lines before it:
-a definition renders nothing, and the first definition of a label (the Unreleased part stands above every released
-section) already decides a link's target. So adding a definition beside the others, even before text that follows them,
-alters no released section; editing that text does. Splitting a loose list with a definition between two items is
-spacing only and not reported. In the commit hook the rule reads the
+a released section with each run of blank and link reference definition lines that holds a definition read as one
+blank line: a definition renders nothing, and the first definition of a label (the Unreleased part stands above every
+released section) already decides a link's target, but the blank line it brings ends a paragraph or an item. So adding
+a definition beside the others, even before text that follows them, alters no released section; editing that text
+does, and so does a definition that splits a paragraph or turns a line into indented code. Splitting a loose list with
+a definition between two items is spacing only and not reported. In the commit hook the rule reads the
 version from the tree the commit records. `dialecte rules` refuses a change that edits
 `CHANGELOG.md` without bumping the package version (`changelog-edit`, an error); a package without `changes/` is not
 judged. `dialecte contrib`'s `changelog` row (after `rules`) fails a change that edits `README.md` or the command map

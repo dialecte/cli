@@ -320,4 +320,53 @@ describe('foldChangelog', () => {
 	])('$label → refused naming the open HTML, nothing folded', ({ text, version, refusal }) => {
 		expect(foldChangelog({ text, version, date: '2026-11-16', fragments: [] })).toEqual({ refusal })
 	})
+
+	it.each([
+		{
+			label: 'a fragment opening with an indented comment opener before a breaking item',
+			text: `${HEAD}\n## [Unreleased]\n\n${OLD_RELEASE}`,
+			fragments: [changed('changes/c.md', '    <!--\n\n- **Breaking:** z')],
+			refusal:
+				'section Changed: putting its breaking items first changes how `<!--` reads; fence that block or indent it less',
+		},
+		{
+			label: "a fragment's indented script tag after another fragment's breaking item",
+			text: `${HEAD}\n## [Unreleased]\n\n${OLD_RELEASE}`,
+			fragments: [
+				changed('changes/a.md', '- **Breaking:** z'),
+				changed('changes/b.md', '    <script>'),
+			],
+			refusal:
+				'section Changed: putting its breaking items first changes how `<script>` reads; fence that block or indent it less',
+		},
+		{
+			label:
+				'the Unreleased part opening a section with an indented comment opener before a breaking item',
+			text: `${HEAD}\n## [Unreleased]\n\n### Changed\n\n    <!--\n\n- **Breaking:** z\n\n${OLD_RELEASE}`,
+			fragments: [],
+			refusal:
+				'the Unreleased part of CHANGELOG.md: section Changed: putting its breaking items first changes how `<!--` reads; fence that block or indent it less',
+		},
+	])('$label → refused, nothing folded', ({ text, fragments, refusal }) => {
+		expect(foldChangelog({ text, version: '0.8.0', date: '2026-11-16', fragments })).toEqual({
+			refusal,
+		})
+	})
+
+	it.each([
+		{
+			label: 'an Unreleased summary opening with indented code',
+			text: `${HEAD}\n## [Unreleased]\n\n    <!-- note\n\n### Changed\n\n- a.\n\n${OLD_RELEASE}`,
+			folded: `${HEAD}\n## [Unreleased]\n\n## [0.8.0] - 2026-11-16\n\n    <!-- note\n\n### Changed\n\n- a.\n\n${OLD_RELEASE}`,
+		},
+		{
+			label: 'a section opening with indented code and no breaking item',
+			text: `${HEAD}\n## [Unreleased]\n\n### Changed\n\n    code line\n\n- a.\n\n${OLD_RELEASE}`,
+			folded: `${HEAD}\n## [Unreleased]\n\n## [0.8.0] - 2026-11-16\n\n### Changed\n\n    code line\n\n- a.\n\n${OLD_RELEASE}`,
+		},
+	])('$label → its indentation kept', ({ text, folded }) => {
+		expect(foldChangelog({ text, version: '0.8.0', date: '2026-11-16', fragments: [] })).toEqual({
+			text: folded,
+		})
+	})
 })

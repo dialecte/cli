@@ -30,7 +30,7 @@ import type {
  * @internal
  */
 export function readChangelogParts(params: { text: string }): ChangelogParts {
-	const blocks = readMarkdownBlocks({ text: params.text })
+	const blocks = readMarkdownBlocks({ text: params.text, scanHtml: false })
 	const { lines } = blocks
 	const boundaries = boundariesOf({ blocks })
 	const parts = boundaries.flatMap(function partOf(boundary, position): ChangelogPart[] {

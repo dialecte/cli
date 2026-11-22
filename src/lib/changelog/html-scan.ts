@@ -1,5 +1,6 @@
 /** Whether a block or item's raw HTML is inert: whole comments and balanced bare tags of the inert elements only. */
 import {
+	ASCII_CAPITAL_PATTERN,
 	BARE_TAG_PATTERN,
 	COMMENT_BANG_CLOSE,
 	COMMENT_CLOSE,
@@ -81,13 +82,17 @@ function constructOf(params: { rest: string }): string {
 
 /** `text` with only its ASCII capitals lowered: a name never matches through a non-ASCII case fold. */
 function asciiLowerCase(params: { text: string }): string {
-	return params.text.replace(/[A-Z]/g, (capital) => String.fromCharCode(capital.charCodeAt(0) + 32))
+	return params.text.replace(ASCII_CAPITAL_PATTERN, (capital) =>
+		String.fromCharCode(capital.charCodeAt(0) + 32),
+	)
 }
 
+/** Whether `name` (lowered) is an inert void element: never closed, `/>` allowed. */
 function isVoid(params: { name: string }): boolean {
 	return INERT_VOID_HTML_ELEMENTS.some((name) => name === params.name)
 }
 
+/** Whether `name` (lowered) is an inert element with a close: its tags must balance in their block or item. */
 function isInert(params: { name: string }): boolean {
 	return INERT_HTML_ELEMENTS.some((name) => name === params.name)
 }

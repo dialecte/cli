@@ -236,4 +236,34 @@ describe('readFragments: a no-entry note', { timeout: SCRATCH_REPOSITORY_TIMEOUT
 			problems: [],
 		})
 	})
+
+	it('a section opening with indented code → its indentation kept', () => {
+		const root = createScratchRepository({
+			'changes/lot.md': '### Added\n\n    code line\n\n- a.\n',
+		})
+
+		expect(readFragments({ root }).fragments).toEqual([
+			{ file: 'changes/lot.md', sections: [{ section: 'Added', text: '    code line\n\n- a.' }] },
+		])
+	})
+
+	it.each([
+		{ label: 'an indented comment opener', block: '    <!--' },
+		{ label: 'an indented script tag', block: '    <script>' },
+		{ label: 'an indented title tag', block: '    <title>' },
+	])(
+		'$label before a breaking item → a problem: moving the item first would change how it reads',
+		({ block }) => {
+			const root = createScratchRepository({
+				'changes/lot.md': `### Added\n\n${block}\n\n- **Breaking:** z\n`,
+			})
+
+			expect(readFragments({ root }).problems).toEqual([
+				{
+					file: 'changes/lot.md',
+					problem: `section Added: putting its breaking items first changes how \`${block.trim()}\` reads; fence that block or indent it less`,
+				},
+			])
+		},
+	)
 })

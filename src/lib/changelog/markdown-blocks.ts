@@ -28,12 +28,12 @@ import type { MarkdownIt } from 'markdown-it'
  * end of the text (an unclosed fence, an HTML block only its own close ends, or a nesting deeper than the parser reads).
  * With none of these, a block or item (what a release moves: each item of a top-level `- ` list, every other top-level
  * block) holding raw HTML other than whole comments and balanced bare inert tags is `open-html`, `openHtml` the
- * refused piece of the first such unit in text order.
+ * refused piece of the first such unit in text order. `scanHtml: false` (a reader that never refuses) skips that scan.
  *
  * @intent read a changelog text's block structure as CommonMark does
  * @internal
  */
-export function readMarkdownBlocks(params: { text: string }): MarkdownBlocks {
+export function readMarkdownBlocks(params: { text: string; scanHtml?: boolean }): MarkdownBlocks {
 	const parser = createParser()
 	const lines = params.text.split(LINE_BREAK_PATTERN)
 	const original = tokensOf({ parser, lines })
@@ -41,7 +41,7 @@ export function readMarkdownBlocks(params: { text: string }): MarkdownBlocks {
 	const unclosedComment = original.find(holdsUnclosedComment)?.map?.[0]
 	const unclosedBlock = unclosedBlockOf({ parser, lines: neutral.lines })
 	const openHtml =
-		unclosedComment === undefined && unclosedBlock === undefined
+		params.scanHtml !== false && unclosedComment === undefined && unclosedBlock === undefined
 			? firstRefusedHtml({ tokens: original })
 			: undefined
 	return {
@@ -128,7 +128,6 @@ function holdsUnclosedComment(token: MarkdownToken): boolean {
 	)
 }
 
-// dialecte-allow duplicate-read: a markdown token predicate, unrelated to review findings
 /** A comment block that starts with `<!--` and holds no `-->`: the one the parse copy neutralises. */
 function isOpenCommentBlock(token: MarkdownToken): boolean {
 	return (
@@ -165,7 +164,6 @@ function neutralised(params: {
 	return { lines, tokens }
 }
 
-// dialecte-allow duplicate-read: CommonMark blocks a parser leaves open, not the skills' generated-block markers
 /**
  * The kind of a block that runs to the end of `lines`: they are parsed with a line break, an empty line and a sentinel
  * heading appended; when the sentinel is no top-level heading, the last top-level block swallowed it, or the text

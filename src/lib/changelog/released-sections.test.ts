@@ -384,3 +384,40 @@ describe('releasedSectionChanges: link reference definitions', () => {
 		expect(releasedSectionChanges({ checked, tip })).toEqual(changes)
 	})
 })
+
+describe('releasedSectionChanges: a definition that changes how its neighbours read', () => {
+	it.each([
+		{
+			label: 'a definition that turns a continuation line into indented code',
+			tip: '- a\n\nNote\n    <!-- secret -->\n',
+			checked: '- a\n\nNote\n\n[d]: u\n    <!-- secret -->\n',
+		},
+		{
+			label: 'a definition removed, indented code becoming a continuation line',
+			tip: '- a\n\nNote\n\n[d]: u\n    <!-- secret -->\n',
+			checked: '- a\n\nNote\n    <!-- secret -->\n',
+		},
+		{
+			label: 'a definition that ends an item before an indented line',
+			tip: '- a\n    <script>\n- b\n',
+			checked: '- a\n\n[d]: u\n    <script>\n- b\n',
+		},
+		{
+			label: 'a definition that splits one paragraph in two',
+			tip: 'p1\np2\n',
+			checked: 'p1\n\n[d]: u\np2\n',
+		},
+		{
+			label: 'an item continued by a line a definition cuts off',
+			tip: '- a\nBreaking: x\n',
+			checked: '- a\n\n[d]: u\nBreaking: x\n',
+		},
+	])('$label → the section changed', ({ tip, checked }) => {
+		const changes = releasedSectionChanges({
+			checked: `## [1.0.0]\n\n${checked}`,
+			tip: `## [1.0.0]\n\n${tip}`,
+		})
+
+		expect(changes.map((change) => `${change.kind} ${change.version}`)).toEqual(['changed 1.0.0'])
+	})
+})

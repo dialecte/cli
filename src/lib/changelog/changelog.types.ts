@@ -34,6 +34,12 @@ export type FoldResult = { text: string } | { refusal: string }
 export type SectionsMode = 'fragment' | 'unreleased'
 
 /** The sections of a text, and the text before the first heading (`unreleased` mode only; empty otherwise). */
+/** A section's blocks with its breaking items first: the joined text, or the first block the reorder reads otherwise. */
+export type BreakingFirst = { text: string } | { moved: SectionBlock }
+
+/** A section of the release with its blocks ordered breaking first (or the block the order reads otherwise). */
+export type OrderedSection = { section: ChangelogSection; ordered: BreakingFirst }
+
 export type SectionsRead = { sections: SectionEntry[]; leading: string } | { problem: string }
 
 /** A part of a changelog: the Unreleased part or a version's section, from its heading line to its end (excluded). */

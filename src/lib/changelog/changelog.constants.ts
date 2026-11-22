@@ -108,6 +108,8 @@ export const FRAGMENT_PROBLEMS = {
 	unclosedFence: 'a code fence opens and never closes',
 	unclosedHtml: 'an HTML block opens and never closes',
 	tooDeep: 'it nests deeper than the {levels} levels the markdown reader reads',
+	reordered:
+		'section {section}: putting its breaking items first changes how `{piece}` reads; fence that block or indent it less',
 	openHtml: `HTML \`{piece}\` is not a whole comment or a balanced bare tag of its block or item (${[...INERT_HTML_ELEMENTS, ...INERT_VOID_HTML_ELEMENTS].map((name) => `<${name}>`).join(', ')}); put code in backticks`,
 } as const
 
@@ -195,6 +197,12 @@ export const BARE_TAG_PATTERN = /^<(\/?)([A-Za-z][A-Za-z0-9]*)[\t\n\f\r ]*(\/?)>
 
 /** A comment end a browser reads that a whole comment never holds. */
 export const COMMENT_BANG_CLOSE = '--!>'
+
+/** A run of white space a shown piece collapses to one space. */
+export const WHITE_SPACE_RUN_PATTERN = /\s+/g
+
+/** An ASCII capital letter: the only case a tag name folds. */
+export const ASCII_CAPITAL_PATTERN = /[A-Z]/g
 
 /** The longest refused HTML piece a problem shows, the cut's `…` counted. */
 export const SHOWN_HTML_LENGTH = 60

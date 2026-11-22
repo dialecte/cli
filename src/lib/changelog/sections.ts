@@ -4,11 +4,14 @@ import {
 	FRAGMENT_PROBLEMS,
 	SECTION_HEADING_MARKUP,
 	SHOWN_HTML_LENGTH,
+	WHITE_SPACE_RUN_PATTERN,
 } from './changelog.constants.ts'
 import { readMarkdownBlocks } from './markdown-blocks.ts'
+import { breakingFirst, sectionItemsOf } from './section-items.ts'
 
 import type {
 	ChangelogSection,
+	SectionBlock,
 	SectionEntry,
 	MarkdownBlocks,
 	SectionsMode,
@@ -50,7 +53,7 @@ export function readSections(params: { text: string; mode: SectionsMode }): Sect
 	}
 	const sections = opened.map((open) => ({
 		section: open.section,
-		text: open.lines.join('\n').trim(),
+		text: withoutBlankEdges({ lines: open.lines }),
 	}))
 	const empty = sections.find((entry) => entry.text === '')
 	if (empty) return { problem: FRAGMENT_PROBLEMS.emptySection.replace('{section}', empty.section) }
@@ -59,7 +62,10 @@ export function readSections(params: { text: string; mode: SectionsMode }): Sect
 	)
 	if (repeated && params.mode === 'fragment')
 		return { problem: FRAGMENT_PROBLEMS.repeatedSection.replace('{section}', repeated.section) }
-	return { sections: mergedSections({ sections }), leading: leading.join('\n').trim() }
+	const merged = mergedSections({ sections })
+	const reordered = reorderProblemOf({ sections: merged })
+	if (reordered !== undefined) return { problem: reordered }
+	return { sections: merged, leading: withoutBlankEdges({ lines: leading }) }
 }
 
 /** Why a text is refused before its sections are read: something opened in it never closes; undefined otherwise. */
@@ -77,9 +83,52 @@ function unclosedProblemOf(params: { blocks: MarkdownBlocks }): string | undefin
 	return undefined
 }
 
+/**
+ * The problem of a section whose breaking items cannot move first without changing how a block reads, naming that
+ * block's first line and the section; undefined when every section reorders cleanly.
+ *
+ * @intent tell which changelog section a breaking-first release would change the reading of
+ * @internal
+ */
+export function reorderProblemOf(params: {
+	sections: readonly SectionEntry[]
+}): string | undefined {
+	for (const entry of params.sections) {
+		const ordered = breakingFirst({ blocks: sectionItemsOf({ text: entry.text }) })
+		if ('moved' in ordered)
+			return reorderedProblem({ section: entry.section, moved: ordered.moved })
+	}
+	return undefined
+}
+
+/**
+ * The problem naming a section whose breaking-first order changes how `moved` reads, by its first line.
+ *
+ * @intent word the refusal of a release that would change how a changelog block reads
+ * @internal
+ */
+export function reorderedProblem(params: {
+	section: ChangelogSection
+	moved: SectionBlock
+}): string {
+	const piece = shownPiece({ piece: params.moved.text.split('\n')[0] ?? '' })
+	return FRAGMENT_PROBLEMS.reordered
+		.replace('{section}', params.section)
+		.replace('{piece}', () => piece)
+}
+
+/** The lines joined, with the blank lines at both ends dropped and every other line's indentation kept. */
+function withoutBlankEdges(params: { lines: readonly string[] }): string {
+	const first = params.lines.findIndex((line) => line.trim() !== '')
+	if (first === -1) return ''
+	let end = params.lines.length
+	while (params.lines[end - 1]?.trim() === '') end -= 1
+	return params.lines.slice(first, end).join('\n')
+}
+
 /** A refused HTML piece on one line: white space runs collapsed, cut with `…` past the shown length. */
 function shownPiece(params: { piece: string }): string {
-	const line = params.piece.replace(/\s+/g, ' ').trim()
+	const line = params.piece.replace(WHITE_SPACE_RUN_PATTERN, ' ').trim()
 	return line.length > SHOWN_HTML_LENGTH ? `${line.slice(0, SHOWN_HTML_LENGTH - 1)}…` : line
 }
 
