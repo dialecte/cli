@@ -13,13 +13,19 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
-import { cloneOwnerOf, whyKeepClone } from '../cleanup/clone-decision.ts'
+import {
+	cloneKeptOf,
+	cloneMarkerOf,
+	cloneOwnerOf,
+	isLink,
+	ownerLookupsOf,
+	whyKeepClone,
+} from '../cleanup/clone-decision.ts'
 import { removableIgnored } from '../cleanup/removable-ignored.ts'
 import { isPresent, realPathOf, realPathThroughAncestors } from '../file-system.ts'
 import { findBaseBranchRef } from '../gate/gate-base.ts'
 import { isAncestorCommit, readCommitOrNone, readGit } from '../git.ts'
 import { handoverLockPath } from '../handover/handover-lock.ts'
-import { readStoreEntries } from '../handover/handover-store-read.ts'
 import {
 	HOOK_TEMPORARY_FOLDER_PREFIX,
 	REHEARSAL_FOLDER_PREFIX,
@@ -27,7 +33,6 @@ import {
 import { handoverState } from '../handover/list-handovers.ts'
 import { REHEARSAL_RUN_UNKNOWN } from '../handover/live-handover-run.constants.ts'
 import { readHandoverFolder } from '../handover/read-handover-folder.ts'
-import { markedHandoverOf, rehearsalMarkerPath } from '../handover/rehearsal-marker.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { isContainedIn } from '../landing/contained.ts'
 import { lostWork, lostWorkText, noOwnCommitReason } from '../landing/lost-work.ts'
@@ -42,8 +47,7 @@ import { readScratchMarker } from '../scratch/read-scratch-marker.ts'
 import { WORKSPACE_SCRATCH_FOLDER } from '../scratch/scratch.constants.ts'
 import { shellQuote } from '../shell-quote.ts'
 import { lotItemOf, readLotItems } from '../store/lot-items.ts'
-import { keptByDecisionOf } from '../store/lot-keep.ts'
-import { gitFolderAbove, locateStore } from '../store/store-folder.ts'
+import { gitFolderAbove } from '../store/store-folder.ts'
 import { COMMIT_PLAN_FOLDER, WORKTREES_FOLDER } from '../workspace.constants.ts'
 import { listWorktrees } from './add-worktree.ts'
 import { checkNodeModules } from './check-node-modules.ts'
@@ -86,7 +90,7 @@ import {
 	WORKTREE_STATUS_ARGUMENTS,
 } from './worktree.constants.ts'
 
-import type { CloneKeep, OwnerReads } from '../cleanup/clone-decision.types.ts'
+import type { CloneKeep } from '../cleanup/clone-decision.types.ts'
 import type { HandoverFolder, StoreEntry } from '../handover/handover.types.ts'
 import type { RunEntry } from '../mutation/mutation.types.ts'
 import type { LotItem, LotItems } from '../store/lot-items.types.ts'
@@ -164,17 +168,17 @@ export function planPrune(params: {
 	)
 	const now = params.now ?? new Date()
 	const clones = rehearsalClonesIn(scratchRoots)
-	let owners: OwnerReads | undefined
-	/** The clones' owner reads, read once for the whole plan and only when a clone is decided. */
-	function ownersOnce(): OwnerReads {
-		owners ??= ownerReadsOf({ workspace: params.workspace, clones, read: lotItems })
+	let owners: Pick<PruneCloneReads, 'owners' | 'markers'> | undefined
+	/** The clones' markers and owner reads, read once for the whole plan and only when a clone is decided. */
+	function ownersOnce(): Pick<PruneCloneReads, 'owners' | 'markers'> {
+		owners ??= cloneOwnerReadsOf({ workspace: params.workspace, clones, read: lotItems })
 		return owners
 	}
 	const rehearsals = clones.map((clone) =>
 		planRehearsalClone({
 			clone,
 			worktreesFolder,
-			reads: () => ({ processes: processesOnce(), links, owners: ownersOnce() }),
+			reads: () => ({ processes: processesOnce(), links, ...ownersOnce() }),
 			readStartTime: params.readStartTime,
 		}),
 	)
@@ -733,15 +737,6 @@ function isReachedThroughLink(params: { path: string; root: string }): boolean {
 	return false
 }
 
-/** The path itself is a symbolic link (dangling or not). */
-function isLink(path: string): boolean {
-	try {
-		return lstatSync(path).isSymbolicLink()
-	} catch {
-		return false
-	}
-}
-
 /** A folder of its own: not `_commit-plan` itself, nor one holding other folders (more hand-overs, notes). */
 function isRemovableHandoverFolder(folder: string): boolean {
 	if (basename(folder) === COMMIT_PLAN_FOLDER) return false
@@ -805,7 +800,6 @@ function planRehearsalClone(params: {
 	}
 }
 
-// dialecte-allow duplicate-read: prune's move-time call of the shared clone decision; decideClone is the feature's
 /**
  * A rehearsal clone `prune --yes` is about to move, decided again on `reads` (taken after the confirmation, once per
  * execution) right before its move: the planned owner's keep read again on its folder (gone since the plan keeps). The
@@ -855,11 +849,10 @@ export function readPruneCloneReads(params: {
 		links: linkRootsOf({ workspace: params.workspace, scratchRoots: params.scratchRoots }).flatMap(
 			(folder) => findLinks(folder),
 		),
-		owners: ownerReadsOf({ workspace: params.workspace, clones: params.clones, read: new Map() }),
+		...cloneOwnerReadsOf({ workspace: params.workspace, clones: params.clones, read: new Map() }),
 	}
 }
 
-// dialecte-allow duplicate-read: prune's one call of the shared clone decision (cloneOwnerOf, whyKeepClone), for plan and move
 /**
  * One clone decided: kept with prune's text, or let go with the folder of the lot that owns it. The owner's keep is the
  * one read with it, or, given `ownerAtPlan`, the one read again on that folder now.
@@ -872,16 +865,16 @@ function decideRehearsalClone(params: {
 }): { kept: string } | { owner: string | undefined } {
 	const { clone } = params
 	const reads = params.reads()
-	// a clone that is a link is never read through
-	const owner = isLink(clone) ? undefined : cloneOwnerOf({ clone, reads: reads.owners })
+	const owner = cloneOwnerOf({
+		clone,
+		lookups: reads.owners,
+		marker: reads.markers.get(clone) ?? cloneMarkerOf(clone),
+	})
 	const known = owner !== undefined && 'lot' in owner ? owner : undefined
 	const keep = whyKeepClone({
 		clone,
 		owner,
-		kept:
-			params.ownerAtPlan === undefined
-				? known?.kept
-				: keptByDecisionOf({ lotFolder: params.ownerAtPlan }),
+		kept: cloneKeptOf({ owner, ownerAtPlan: params.ownerAtPlan }),
 		processes: reads.processes,
 		links: reads.links,
 		readStartTime: params.readStartTime,
@@ -927,48 +920,61 @@ function pruneCloneText(params: { keep: CloneKeep; clone: string }): string {
 }
 
 /**
- * The clones' owner reads: the lots and the registry entries of every main checkout of the workspace, and of the main
- * checkouts of each workspace a clone's marker names a `_commit-plan` hand-over in (scratch roots are machine-wide);
- * a store already read (`read`) is not read again. Files only.
+ * The clones' markers (each read once; a clone that is a link names none, never read through) and their owner reads,
+ * indexed once: the lots and the registry entries of every main checkout of the workspace, and of the main checkouts
+ * of each workspace a marker names a `_commit-plan` hand-over in (scratch roots are machine-wide), each workspace
+ * listed once; a store already read (`read`) is not read again. Files only.
  */
-function ownerReadsOf(params: {
+function cloneOwnerReadsOf(params: {
 	workspace: string
 	clones: readonly string[]
 	read: ReadonlyMap<string, LotItems>
-}): OwnerReads {
+}): Pick<PruneCloneReads, 'owners' | 'markers'> {
+	const markers = new Map(
+		params.clones.map((clone) => [
+			clone,
+			isLink(clone) ? { handover: undefined } : cloneMarkerOf(clone),
+		]),
+	)
+	const workspaces = new Set(
+		[...markers.values()].flatMap((marker) => {
+			const workspace = 'handover' in marker ? handoverWorkspaceOf(marker.handover) : undefined
+			return workspace === undefined ? [] : [realPathOf(workspace)]
+		}),
+	)
 	// one repository spelled two ways (the workspace through a link, a marker's real path) is read once
 	const byRealPath = new Map<string, string>()
 	for (const main of [
 		...listMainCheckouts(params.workspace),
-		...params.clones.flatMap((clone) => handoverWorkspaceMainsOf(clone)),
+		...[...workspaces].flatMap((workspace) => mainCheckoutsQuietlyOf(workspace)),
 	])
 		if (!byRealPath.has(realPathOf(main))) byRealPath.set(realPathOf(main), main)
-	const mains = [...byRealPath.values()]
+	const items = [...byRealPath.values()].map(
+		(main) => params.read.get(main) ?? readLotItems({ repository: main }),
+	)
 	return {
-		lots: mains.flatMap(
-			(main) => (params.read.get(main) ?? readLotItems({ repository: main })).lots,
-		),
-		entries: mains.flatMap(function entriesOf(main) {
-			const location = locateStore({ from: main })
-			return location === undefined ? [] : readStoreEntries(location.registry)
+		markers,
+		owners: ownerLookupsOf({
+			lots: items.flatMap((one) => one.lots),
+			entries: items.flatMap((one) => one.entries),
 		}),
 	}
 }
 
-/**
- * The main checkouts of the workspace the clone's marker hand-over sits in (the parent of its `_commit-plan`); none
- * when it names none, sits in no `_commit-plan`, or that workspace cannot be read.
- */
-function handoverWorkspaceMainsOf(clone: string): string[] {
+/** The workspace a hand-over folder sits in: the parent of its `_commit-plan`; undefined when it is in none. */
+function handoverWorkspaceOf(handover: string | undefined): string | undefined {
+	if (handover === undefined) return undefined
+	const segments = resolve(handover).split(sep)
+	const at = segments.lastIndexOf(COMMIT_PLAN_FOLDER)
+	return at <= 0 ? undefined : segments.slice(0, at).join(sep) || sep
+}
+
+/** The main checkouts of a workspace; none when it cannot be read. */
+function mainCheckoutsQuietlyOf(workspace: string): string[] {
 	try {
-		const handover = isLink(clone) ? undefined : markedHandoverOf(rehearsalMarkerPath(clone))
-		if (handover === undefined) return []
-		const segments = resolve(handover).split(sep)
-		const at = segments.lastIndexOf(COMMIT_PLAN_FOLDER)
-		if (at <= 0) return []
-		return listMainCheckouts(segments.slice(0, at).join(sep) || sep)
+		return listMainCheckouts(workspace)
 	} catch {
-		// a clone or a workspace that cannot be read: its owner is read as unread, or found in the reads
+		// a workspace gone or not readable: its lots are read on the spot when a marker names one
 		return []
 	}
 }
@@ -1269,15 +1275,16 @@ function readReclaimContext(params: {
 	links: readonly FolderLink[]
 }): ReclaimContext {
 	const { repository } = params
-	const location = locateStore({ from: repository })
 	const mainLock = readPackageLockText({ worktree: repository })
+	// the store and its registry read once: the lots' holds and the hand-overs
+	const lotItems = readLotItems({ repository })
 	return {
 		...params,
 		mainLockKey: mainLock === undefined ? undefined : computeLockKey({ text: mainLock }),
 		listed: listWorktrees(repository),
 		// a failed lot keeps its worktree (the safer side), as prune's keep rule does
-		lotItems: readLotItems({ repository }),
-		handovers: location === undefined ? [] : readStoreEntries(location.registry),
+		lotItems,
+		handovers: lotItems.entries,
 		runs: readOwnedRuns(repository),
 	}
 }

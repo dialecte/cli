@@ -47,25 +47,28 @@ worktree - A worktree ready to work in; prune what a merge left
           (its rehearsal still runs: pid <pid>), its marker cannot tell (no rehearsal marker, or
           why), the processes are not known, a process works in it (a process works in it: pid
           <pid>), or a link reaches it; a pid running with another start time is dead; a lot folder
-          gone or moved aside releases its clones; --yes decides each clone again right before its
-          move, on the processes, links and lots read after the confirmation: ✗ <clone> kept: <why>,
-          or ✗ <clone>: gone since the plan, nothing moved, exit 1; --yes runs them after a
-          confirmation on a terminal; committed hand-over folders and finished rehearsal clones go
-          to the trash like the other items (the workspace's .worktrees/_trash for a clone in its
-          own .worktrees/_scratch, else the scratch root's dialecte-trash): the plan shows the move
-          (mkdir -p <trash> && mv <folder> <trash>/), --yes makes it; a move that cannot be made is
-          a ✗ line, nothing deleted; the pool (.worktrees/_pool-<repository>-<n>) and the trash
-          (.worktrees/_trash/) are counted, never touched
+          gone or moved aside releases its clones; --json prints the plan, a clone let go naming
+          owner (the folder of the lot that owned it at the plan, whose keep --yes reads again);
+          --yes decides each clone again right before its move, on the processes, links and lots
+          read after the confirmation: ✗ <clone> kept: <why>, or ✗ <clone>: gone since the plan,
+          nothing moved, exit 1; --yes runs them after a confirmation on a terminal; committed
+          hand-over folders and finished rehearsal clones go to the trash like the other items (the
+          workspace's .worktrees/_trash for a clone in its own .worktrees/_scratch, else the scratch
+          root's dialecte-trash): the plan shows the move (mkdir -p <trash> && mv <folder>
+          <trash>/), --yes makes it; a move that cannot be made is a ✗ line, nothing deleted; the
+          pool (.worktrees/_pool-<repository>-<n>) and the trash (.worktrees/_trash/) are counted,
+          never touched
   prune --reclaim - every worktree idle for --older-than days (default 2: no write to its index,
-    HEAD or reflog since), not the main checkout, not locked, held by no lot, by its worktree or its
-    root .dialecte/lot link: open (a failed lot, or one whose identity does not read, keeps), or
-    kept on purpose (its review throwaways are reclaimed as an open lot's) nor open hand-over,
-    worked in by no process, reached by no link: its node_modules parked in the pool when its lock
-    key is the main checkout's and it installs that lock, else sent to .worktrees/_trash/, its code
-    never touched, a -round-<n> review throwaway's too; a node_modules that is a link is never
-    moved; every rule checked again just before each move; one line per worktree, the total
-    (worktrees, files, size) last; --dry-run moves nothing; --dry-run or --older-than without
-    --reclaim, or an --older-than that is no positive whole number, exit 2
+    HEAD or reflog since), not the main checkout, not locked, held by no lot (an open, failed,
+    damaged or kept on purpose lot naming it, or the lot its root .dialecte/lot link names, a lot
+    whose identity does not read included; a lot's review throwaways are reclaimed like any idle
+    worktree), named by no open hand-over, worked in by no process, reached by no link: its
+    node_modules parked in the pool when its lock key is the main checkout's and it installs that
+    lock, else sent to .worktrees/_trash/, its code never touched, a -round-<n> review throwaway's
+    too; a node_modules that is a link is never moved; every rule checked again just before each
+    move; one line per worktree, the total (worktrees, files, size) last; --dry-run moves nothing;
+    --dry-run or --older-than without --reclaim, or an --older-than that is no positive whole
+    number, exit 2
 
 exit codes:
   0  add: the worktree exists, whatever the links and the lockfile say

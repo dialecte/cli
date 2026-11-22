@@ -26,6 +26,19 @@ export type OwnerReads = {
 	entries: readonly StoreEntry[]
 }
 
+/**
+ * The owner reads indexed once (`ownerLookupsOf`): each lot by its folder as the store names it, the lots by their own
+ * worktree's real path and branch, and the registry entries.
+ */
+export type OwnerLookups = {
+	byLotFolder: ReadonlyMap<string, LotRecord>
+	byWorktreeBranch: ReadonlyMap<string, readonly LotRecord[]>
+	entries: readonly StoreEntry[]
+}
+
+/** A clone's marker read once: the hand-over folder it names (none: undefined), or why the clone could not be read. */
+export type CloneMarker = { handover: string | undefined } | { unread: string }
+
 /** The facts one clone decision reads: the clone, its owner, the owner's keep, the processes, the links. */
 export type CloneFacts = {
 	clone: string

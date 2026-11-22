@@ -1,4 +1,4 @@
-import type { OwnerReads } from '../cleanup/clone-decision.types.ts'
+import type { CloneMarker, OwnerLookups } from '../cleanup/clone-decision.types.ts'
 import type { HandoverFolder, StoreEntry } from '../handover/handover.types.ts'
 import type { RunEntry } from '../mutation/mutation.types.ts'
 import type { LotItems } from '../store/lot-items.types.ts'
@@ -150,8 +150,10 @@ export type PruneCloneReads = {
 	processes: readonly ProcessFolder[] | string
 	/** The links around the workspace and its scratch roots. */
 	links: readonly FolderLink[]
-	/** The lots and registry entries a clone's owner is read from. */
-	owners: OwnerReads
+	/** The lots and registry entries a clone's owner is read from, indexed once (`ownerLookupsOf`). */
+	owners: OwnerLookups
+	/** Each clone's marker, read once (`cloneMarkerOf`); a clone that is a link names none. */
+	markers: ReadonlyMap<string, CloneMarker>
 }
 
 /** A hand-over `worktree prune` read, with the common git folder of its repository (undefined: in none). */

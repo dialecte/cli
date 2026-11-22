@@ -8,6 +8,7 @@
 import { basename, dirname } from 'node:path'
 
 import { actLotPrune } from '../lib/cleanup/act-lot-prune.ts'
+import { ownerLookupsOf } from '../lib/cleanup/clone-decision.ts'
 import { readLotPruneFacts } from '../lib/cleanup/lot-prune-facts.ts'
 import { planLotPrune } from '../lib/cleanup/plan-lot-prune.ts'
 import { readLinkScanSet } from '../lib/cleanup/read-link-scan-set.ts'
@@ -180,10 +181,10 @@ function closeClones(params: {
 	function readsNow(): CloneReads {
 		const processes = readProcesses(listProcesses)
 		return {
-			ownerReads: {
+			owners: ownerLookupsOf({
 				lots: mains.flatMap((main) => readLotItems({ repository: main }).lots),
 				entries: registries.flatMap((registry) => readStoreEntries(registry)),
-			},
+			}),
 			featureLots,
 			links: linksOf({ workspace, mains, scratchRoots: params.scratchRoots }),
 			processes,

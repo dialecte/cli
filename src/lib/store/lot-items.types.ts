@@ -1,3 +1,5 @@
+import type { StoreEntry } from '../handover/handover.types.ts'
+
 /** One store lot as the holds reader read it: its folder, worktree and branch (from its identity or entry), state, keep. */
 export type LotRecord = {
 	name: string
@@ -23,6 +25,8 @@ export type LotItem = {
 /** Every store lot of a repository: its records, and its items by worktree, branch and lot folder (real paths). */
 export type LotItems = {
 	store: string | undefined
+	/** The registry's entries, read once with the lots. */
+	entries: readonly StoreEntry[]
 	lots: readonly LotRecord[]
 	byWorktree: ReadonlyMap<string, LotItem>
 	byBranch: ReadonlyMap<string, LotItem>

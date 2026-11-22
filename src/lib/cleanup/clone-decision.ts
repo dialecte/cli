@@ -22,47 +22,102 @@ import type { LotRecord } from '../store/lot-items.types.ts'
 import type {
 	CloneFacts,
 	CloneKeep,
+	CloneMarker,
 	CloneOwner,
 	CloneOwnerRead,
+	OwnerLookups,
 	OwnerReads,
 } from './clone-decision.types.ts'
+
+/**
+ * The owner reads indexed once, for every clone a plan or an execution decides: each lot by its store folder, the lots
+ * by their own worktree (real path) and branch.
+ *
+ * @intent read a clone's owner with one lookup per clone
+ * @internal
+ */
+export function ownerLookupsOf(reads: OwnerReads): OwnerLookups {
+	const byLotFolder = new Map<string, LotRecord>()
+	const byWorktreeBranch = new Map<string, LotRecord[]>()
+	for (const lot of reads.lots) {
+		const child = storeChildOf({ path: lot.lotFolder })?.child
+		if (child !== undefined && !byLotFolder.has(child)) byLotFolder.set(child, lot)
+		if (lot.worktree === undefined || lot.branch === undefined) continue
+		const key = worktreeBranchKey({ worktree: lot.worktree, branch: lot.branch })
+		byWorktreeBranch.set(key, [...(byWorktreeBranch.get(key) ?? []), lot])
+	}
+	return { byLotFolder, byWorktreeBranch, entries: reads.entries }
+}
+
+/**
+ * A clone's marker read once: the hand-over folder it names, read raw (no marker, one that does not parse or names
+ * none: undefined), or why the clone or its git folder could not be read.
+ *
+ * @intent read a rehearsal clone's marker once for every rule that needs it
+ * @internal
+ */
+export function cloneMarkerOf(clone: string): CloneMarker {
+	try {
+		return { handover: markedHandoverOf(rehearsalMarkerPath(clone)) }
+	} catch (error) {
+		return { unread: (error as Error).message.trim() }
+	}
+}
 
 /**
  * The lot a rehearsal clone belongs to, from its marker and the registries read once; undefined for none. The marker's
  * hand-over is a store lot folder present now (its lot, read on the spot when it is not among the reads; one gone or
  * moved aside owns nothing), or a hand-over folder a done registry entry names for exactly one lot's own worktree and
- * branch (two or more: not single). A clone or a marker that cannot be read answers why.
+ * branch (two or more: not single). A clone or a marker that cannot be read answers why. `lookups` and `marker` are
+ * the reads indexed (`ownerLookupsOf`, else `reads` indexed here) and the marker read by the caller (read here when
+ * not given).
  *
  * @intent read a clone's owning lot the same way for every remover
  * @internal
  */
-export function cloneOwnerOf(params: { clone: string; reads: OwnerReads }): CloneOwnerRead {
-	const { reads } = params
-	let handover: string | undefined
-	try {
-		handover = markedHandoverOf(rehearsalMarkerPath(params.clone))
-	} catch (error) {
-		return { unread: (error as Error).message.trim() }
-	}
+export function cloneOwnerOf(
+	params: { clone: string; marker?: CloneMarker } & (
+		| { reads: OwnerReads }
+		| { lookups: OwnerLookups }
+	),
+): CloneOwnerRead {
+	const marker = params.marker ?? cloneMarkerOf(params.clone)
+	if ('unread' in marker) return marker
+	const { handover } = marker
 	if (handover === undefined) return undefined
+	const lookups = 'lookups' in params ? params.lookups : ownerLookupsOf(params.reads)
 	const named = storeChildOf({ path: handover })
 	if (named !== undefined) {
 		// a lot folder gone or moved aside releases its clones (KEEP 3.7)
 		if (!isPresent(named.child)) return undefined
-		const record = reads.lots.find(
-			(lot) => storeChildOf({ path: lot.lotFolder })?.child === named.child,
-		)
+		const record = lookups.byLotFolder.get(named.child)
 		return record === undefined ? ownerReadNow(named.child) : ownerOfRecord(record)
 	}
-	const entry = entryOfFolder({ entries: reads.entries, folder: handover })
+	const entry = entryOfFolder({ entries: lookups.entries, folder: handover })
 	if (entry === undefined || !OWNING_ENTRY_STATES.includes(entry.state)) return undefined
-	const worktree = keyOf(entry.worktree)
-	const owners = reads.lots.filter(
-		(lot) =>
-			lot.branch === entry.branch && lot.worktree !== undefined && keyOf(lot.worktree) === worktree,
-	)
+	const owners =
+		lookups.byWorktreeBranch.get(
+			worktreeBranchKey({ worktree: entry.worktree, branch: entry.branch }),
+		) ?? []
 	if (owners.length > 1) return { notSingle: owners.map((lot) => lot.name).join(', ') }
 	return owners.length === 0 ? undefined : ownerOfRecord(owners[0])
+}
+
+/**
+ * The keep of a clone's owning lot: the one read with it at the plan; at the move (`ownerAtPlan`, the folder of the lot
+ * that owned it at the plan), the one read again on that folder now, whatever the owner read answers then (a folder
+ * gone since the plan keeps). Undefined when not kept.
+ *
+ * @intent read a clone owner's keep the same way at the plan and at the move for every remover
+ * @internal
+ */
+export function cloneKeptOf(params: {
+	owner: CloneOwnerRead
+	ownerAtPlan: string | undefined
+}): string | undefined {
+	const { owner } = params
+	if (params.ownerAtPlan !== undefined) return keptByDecisionOf({ lotFolder: params.ownerAtPlan })
+	return owner !== undefined && 'lot' in owner ? owner.kept : undefined
 }
 
 // dialecte-allow duplicate-read: whyKeep and whyKeepWorktree decide a worktree; this one is the rehearsal clone's own rules
@@ -129,13 +184,18 @@ function ownerReadNow(lotFolder: string): CloneOwner {
 	}
 }
 
-/** The one key of a worktree path: its real path through its existing ancestors. */
-function keyOf(path: string): string {
-	return realPathThroughAncestors(resolve(path))
+/** The one key of a lot's own worktree and branch: the worktree's real path through its existing ancestors. */
+function worktreeBranchKey(params: { worktree: string; branch: string }): string {
+	return `${realPathThroughAncestors(resolve(params.worktree))}\n${params.branch}`
 }
 
-/** The path itself is a symbolic link (dangling or not). */
-function isLink(path: string): boolean {
+/**
+ * The path itself is a symbolic link (dangling or not): a clone that is one is never read through.
+ *
+ * @intent tell a link from the folder it points to, for every remover
+ * @internal
+ */
+export function isLink(path: string): boolean {
 	try {
 		return lstatSync(path).isSymbolicLink()
 	} catch {

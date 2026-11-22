@@ -5,25 +5,28 @@
  * named for `worktree prune`, and never moved. The move decides again first and writes `removing` / `removed` lines.
  */
 import { randomUUID } from 'node:crypto'
-import { existsSync, lstatSync, readdirSync } from 'node:fs'
+import { existsSync, readdirSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 
 import { writeRemoved, writeRemoving } from '../events/cards-log.ts'
 import { realPathOf } from '../file-system.ts'
-import { REHEARSAL_FOLDER_PREFIX, REMOVAL_ID_PREFIX } from '../handover/handover.constants.ts'
-import { markedHandoverOf, rehearsalMarkerPath } from '../handover/rehearsal-marker.ts'
+import {
+	REHEARSAL_FOLDER_PREFIX,
+	REHEARSAL_MARKER_FILE,
+	REMOVAL_ID_PREFIX,
+} from '../handover/handover.constants.ts'
+import { rehearsalMarkerPath } from '../handover/rehearsal-marker.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
-import { keptByDecisionOf } from '../store/lot-keep.ts'
 import { WORKTREES_FOLDER } from '../workspace.constants.ts'
 import { scratchTrashOf } from '../worktree/prune-worktrees.ts'
 import { trashFolder } from '../worktree/trash.ts'
 import { cardsLogFileOf } from './act-lot-prune.ts'
-import { cloneOwnerOf, whyKeepClone } from './clone-decision.ts'
+import { cloneKeptOf, cloneMarkerOf, cloneOwnerOf, isLink, whyKeepClone } from './clone-decision.ts'
 import { CLONE_KEEP_TEXTS } from './rehearsal-clones.constants.ts'
 
 import type { RemovalBy } from '../events/cards-log.types.ts'
 import type { BackgroundSpawner } from '../worktree/worktree.types.ts'
-import type { CloneKeep, CloneOwner } from './clone-decision.types.ts'
+import type { CloneKeep, CloneMarker, CloneOwner } from './clone-decision.types.ts'
 import type { CloneReads, FeatureClone, MovedClone } from './rehearsal-clones.types.ts'
 
 /**
@@ -48,10 +51,10 @@ export function readFeatureClones(
 }
 
 /**
- * The clone decided by the shared clone decision (`cloneOwnerOf`, `whyKeepClone`): a clone of a lot of the feature goes
- * when no rule keeps it; a clone of no lot of the feature is kept, named for `worktree prune`, unless a rule that needs
- * no owner speaks first (a link, an owner not read or not single). At the move (`plannedOwner`), the planned owner's
- * keep is read again on its folder whatever the owner read answers then: gone since the plan keeps.
+ * The clone decided by the shared clone decision (`cloneOwnerOf`, `cloneKeptOf`, `whyKeepClone`): a clone of a lot of
+ * the feature goes when no rule keeps it; a clone of no lot of the feature is kept, named for `worktree prune`, unless a
+ * rule that needs no owner speaks first (a link, an owner not read or not single). At the move (`plannedOwner`), the
+ * planned owner's keep is read again on its folder: gone since the plan keeps.
  */
 function decideClone(
 	params: CloneReads & { clone: string; plannedOwner?: CloneOwner },
@@ -61,59 +64,65 @@ function decideClone(
 		root: dirname(clone),
 		worktreesFolder: join(workspace, WORKTREES_FOLDER),
 	})
-	const read = cloneOwnerOf({ clone, reads: params.ownerReads })
+	const marker = cloneMarkerOf(clone)
+	const read = cloneOwnerOf({ clone, lookups: params.owners, marker })
 	const owner =
 		read !== undefined && 'lot' in read && params.featureLots.has(realPathOf(read.lotFolder))
 			? read
 			: undefined
-	const kept =
-		params.plannedOwner === undefined
-			? owner?.kept
-			: keptByDecisionOf({ lotFolder: params.plannedOwner.lotFolder })
-	function keptWith(why: string): FeatureClone {
-		return { clone, trash, owner, decision: { kept: why } }
-	}
 	const facts = {
 		clone,
 		owner: read,
-		kept,
+		kept: cloneKeptOf({ owner, ownerAtPlan: params.plannedOwner?.lotFolder }),
 		processes: params.processes,
 		links: params.links,
 		readStartTime: params.readStartTime,
 	}
-	if (owner === undefined && kept === undefined) {
+	function keptWith(why: string): FeatureClone {
+		return { clone, trash, owner, decision: { kept: why } }
+	}
+	if (owner === undefined && facts.kept === undefined) {
 		// a clone of no lot of the feature: only the rules that need no owner speak first
 		const early =
 			isLink(clone) || (read !== undefined && !('lot' in read)) ? whyKeepClone(facts) : undefined
 		return keptWith(
 			early === undefined
-				? otherCloneText({ clone, workspace })
+				? otherCloneText({ clone, marker, workspace })
 				: cloneKeepText({ keep: early, workspace }),
 		)
 	}
 	const keep = whyKeepClone(facts)
 	if (keep !== undefined) return keptWith(cloneKeepText({ keep, workspace }))
-	if (owner === undefined) return keptWith(otherCloneText({ clone, workspace }))
+	if (owner === undefined) return keptWith(otherCloneText({ clone, marker, workspace }))
 	return { clone, trash, owner, decision: { go: true } }
 }
 
 /** A clone of no lot of the feature: the hand-over its marker names, or why it names none; for `worktree prune`. */
-function otherCloneText(params: { clone: string; workspace: string }): string {
-	const { workspace } = params
-	let markerPath: string
-	let handover: string | undefined
-	try {
-		markerPath = rehearsalMarkerPath(params.clone)
-		handover = markedHandoverOf(markerPath)
-	} catch (error) {
+function otherCloneText(params: { clone: string; marker: CloneMarker; workspace: string }): string {
+	const { marker, workspace } = params
+	if ('unread' in marker)
 		return fillMessage({
 			template: CLONE_KEEP_TEXTS.unreadable,
-			values: { reason: (error as Error).message.trim(), workspace },
+			values: { reason: marker.unread, workspace },
 		})
+	return marker.handover === undefined
+		? fillMessage({
+				template: CLONE_KEEP_TEXTS.noHandover,
+				values: { why: markerPathOf(params.clone), workspace },
+			})
+		: fillMessage({
+				template: CLONE_KEEP_TEXTS.otherHandover,
+				values: { handover: marker.handover, workspace },
+			})
+}
+
+/** Where the clone's marker is looked for, named in a keep; the clone's own when its folder cannot be listed. */
+function markerPathOf(clone: string): string {
+	try {
+		return rehearsalMarkerPath(clone)
+	} catch {
+		return join(clone, '.git', REHEARSAL_MARKER_FILE)
 	}
-	return handover === undefined
-		? fillMessage({ template: CLONE_KEEP_TEXTS.noHandover, values: { why: markerPath, workspace } })
-		: fillMessage({ template: CLONE_KEEP_TEXTS.otherHandover, values: { handover, workspace } })
 }
 
 /** The feature's text of a clone decision's keep: each but the link's names `worktree prune`. */
@@ -252,14 +261,5 @@ function startQuietly(params: {
 		params.spawner(params.command)
 	} catch {
 		// the clone waits in the trash its removed line names
-	}
-}
-
-/** The path itself is a symbolic link (dangling or not). */
-function isLink(path: string): boolean {
-	try {
-		return lstatSync(path).isSymbolicLink()
-	} catch {
-		return false
 	}
 }

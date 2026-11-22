@@ -43,6 +43,7 @@ export function readLotItems(params: { repository: string }): LotItems {
 	if (location === undefined)
 		return {
 			store: undefined,
+			entries: [],
 			lots: [],
 			byWorktree: new Map(),
 			byBranch: new Map(),
@@ -60,6 +61,7 @@ export function readLotItems(params: { repository: string }): LotItems {
 	const ranked = read.map((one) => ({ ...one, rank: rankOf(one) }))
 	return {
 		store,
+		entries,
 		lots: read.map((one) => one.record),
 		byWorktree: winnersBy({
 			ranked,
