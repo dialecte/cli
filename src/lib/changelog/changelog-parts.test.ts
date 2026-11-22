@@ -39,6 +39,31 @@ describe('readChangelogParts', () => {
 			],
 		},
 		{
+			label: 'two comments that never close, then a version heading → the comments hide nothing',
+			text: '<!-- a\n<!-- b\n\n## [1.0.0]\n',
+			parts: [{ kind: 'version', version: '1.0.0', heading: 3, end: 5 }],
+		},
+		{
+			label:
+				'a released changelog holding a comment opener indented by one space that never closes → it hides no later version',
+			text: '# Changelog\n\n## [Unreleased]\n\n## [0.2.0] - 2026-11-22\n\n### Changed\n\n- **Breaking:** hidden\n -->\n- a\n\n <!--\n\n- b\n\n## [0.1.0] - 2026-01-01\n\n### Added\n\n- x\n',
+			parts: [
+				{ kind: 'unreleased', heading: 2, end: 4 },
+				{ kind: 'version', version: '0.2.0', heading: 4, end: 16 },
+				{ kind: 'version', version: '0.1.0', heading: 16, end: 22 },
+			],
+		},
+		{
+			label:
+				'a released changelog holding a column-0 comment that never closes → it hides no later version',
+			text: '# Changelog\n\n## [Unreleased]\n\n## [0.2.0] - 2026-11-22\n\n### Changed\n\n- **Breaking:** hidden?\n- a\n\n<!-- todo\n\n- b\n\n## [0.1.0] - 2026-01-01\n\n### Added\n\n- x\n',
+			parts: [
+				{ kind: 'unreleased', heading: 2, end: 4 },
+				{ kind: 'version', version: '0.2.0', heading: 4, end: 15 },
+				{ kind: 'version', version: '0.1.0', heading: 15, end: 21 },
+			],
+		},
+		{
 			label: 'a comment that never closes → it hides nothing: the version heading after it is read',
 			text: '## [1.0.0]\n<!--\n## [0.1.0]\n',
 			parts: [

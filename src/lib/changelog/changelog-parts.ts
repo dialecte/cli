@@ -1,34 +1,35 @@
-/** One reader of a changelog's parts: the Unreleased part and each version's section, outside code fences and HTML comments. */
+/** One reader of a changelog's parts: the Unreleased part and each version's section, as CommonMark reads its headings. */
 import {
-	CODE_FENCE_PATTERN,
-	CRLF_PATTERN,
-	BULLET_ITEM_PATTERN,
-	COMMENT_STATE,
-	HTML_COMMENT_CLOSE,
-	HTML_COMMENT_CLOSE_FROM,
-	HTML_COMMENT_OPEN_PATTERN,
-	ITEM_COMMENT_STATE,
-	ITEM_CONTENT_OFFSET,
 	LINK_REFERENCE_PATTERN,
+	OPAQUE_BLOCK_TYPES,
 	UNRELEASED_HEADING_PATTERN,
+	VERSION_HEADING_MARKUP,
 	VERSION_HEADING_PATTERN,
 	VERSION_KEY_PATTERN,
 } from './changelog.constants.ts'
+import { readMarkdownBlocks } from './markdown-blocks.ts'
 
-import type { ChangelogPart, ChangelogParts, PartBoundary } from './changelog.types.ts'
+import type {
+	ChangelogPart,
+	ChangelogParts,
+	MarkdownBlocks,
+	PartBoundary,
+} from './changelog.types.ts'
 
 /**
- * The lines of `text` (CRLF read as LF) and its parts in file order. The first Unreleased heading (any casing,
- * bracketed or not) opens the Unreleased part; any later `## [` line (a version heading, or a second bracketed
- * Unreleased heading) ends the current part and opens its own; a link reference line ends the current part. A
- * heading inside a code fence or an HTML comment is text. A version heading's part is keyed by its bracketed token.
+ * The lines of `text` (split as CommonMark splits them) and its parts in file order. The first Unreleased heading (any
+ * casing, bracketed or not) opens the Unreleased part; any later `## [` heading (a version heading, or a second
+ * bracketed Unreleased heading) ends the current part and opens its own; a link reference line ends the current part.
+ * Headings are CommonMark's top-level ATX headings: one inside a fence, an HTML block, a list or a quote is text. An
+ * HTML comment that never closes hides nothing (`readMarkdownBlocks`). A version heading's part is keyed by its bracketed token.
  *
  * @intent read a changelog's parts once for the release fold and the released-section check
  * @internal
  */
 export function readChangelogParts(params: { text: string }): ChangelogParts {
-	const lines = params.text.replace(CRLF_PATTERN, '\n').split('\n')
-	const boundaries = boundariesOf({ lines })
+	const blocks = readMarkdownBlocks({ text: params.text })
+	const { lines } = blocks
+	const boundaries = boundariesOf({ blocks })
 	const parts = boundaries.flatMap(function partOf(boundary, position): ChangelogPart[] {
 		const end = boundaries[position + 1]?.index ?? lines.length
 		if (boundary.opens === 'nothing') return []
@@ -41,130 +42,37 @@ export function readChangelogParts(params: { text: string }): ChangelogParts {
 }
 
 /**
- * For each line, whether it is outside a code fence and an HTML comment (a heading there is a heading): the line
- * opening one is outside, the lines up to and including its close are not. A fence closes on its own character, at
- * least as long; a comment on `-->`, or, opened inside a bullet item (`commentOpenedIn`), when its item ends. A comment
- * that never closes hides nothing: its opening line is read as text.
- *
- * @intent tell a changelog heading from text inside a code fence or an HTML comment
- * @internal
+ * Where a part ends and what it opens: each top-level level-2 ATX heading whose line is an Unreleased or `## [` heading
+ * (the first Unreleased heading opens that part), and each link reference line no fence, code or HTML block holds.
  */
-export function lineKinds(params: { lines: readonly string[] }): boolean[] {
-	const unclosed = new Set<number>()
-	for (;;) {
-		const read = readLineKinds({ lines: params.lines, unclosed })
-		if (read.openComment === undefined) return read.kinds
-		unclosed.add(read.openComment)
-	}
-}
-
-/**
- * Where an HTML comment opener line puts its comment: inside the open bullet item when the line is indented to the
- * item's content (`item`), else a block of its own (`top`); undefined for a line that opens no comment. The one rule
- * the line reader and the section blocks share.
- *
- * @intent tell an item's own comment from a comment block of its own
- * @internal
- */
-export function commentOpenedIn(params: {
-	text: string
-	inItem: boolean
-}): 'item' | 'top' | undefined {
-	const opener = HTML_COMMENT_OPEN_PATTERN.exec(params.text)
-	if (opener === null) return undefined
-	return params.inItem && indentOf(params.text) >= ITEM_CONTENT_OFFSET ? 'item' : 'top'
-}
-
-/** Whether a non-blank line ends the bullet item it follows: indented less than the item's content. */
-function endsItem(line: string): boolean {
-	return line.trim() !== '' && indentOf(line) < ITEM_CONTENT_OFFSET
-}
-
-function indentOf(line: string): number {
-	return line.length - line.trimStart().length
-}
-
-// dialecte-allow duplicate-read: lineKinds' one pass, rerun by it until no comment is left open
-/**
- * The line kinds, the comment openings in `unclosed` read as text; `openComment` the line of a comment still open at
- * the end, if any. A bullet item is open from its `- ` line until a line after a blank one, or a comment opener,
- * stands below its content.
- */
-function readLineKinds(params: { lines: readonly string[]; unclosed: ReadonlySet<number> }): {
-	kinds: boolean[]
-	openComment: number | undefined
-} {
-	let open: string | undefined
-	let openComment: number | undefined
-	let inItem = false
-	let afterBlank = false
-	const kinds = params.lines.map(function outsideFenceOrComment(line, index) {
-		// an item's comment ends with its item: the line that ends the item is read as any line outside
-		if (open === ITEM_COMMENT_STATE && endsItem(line)) open = undefined
-		const outside = open === undefined
-		if (open === COMMENT_STATE || open === ITEM_COMMENT_STATE) {
-			if (line.includes(HTML_COMMENT_CLOSE)) open = undefined
-			return outside
-		}
-		const opensIn =
-			outside && !params.unclosed.has(index) ? commentOpenedIn({ text: line, inItem }) : undefined
-		if (outside) {
-			if (BULLET_ITEM_PATTERN.test(line)) inItem = true
-			else if ((afterBlank || opensIn === 'top') && endsItem(line)) inItem = false
-			afterBlank = line.trim() === ''
-		}
-		if (opensIn !== undefined) {
-			// the close may follow on the opening line itself: <!-->, <!---> and <!-- x --> close there
-			const from = indentOf(line) + HTML_COMMENT_CLOSE_FROM
-			if (!line.includes(HTML_COMMENT_CLOSE, from)) {
-				open = opensIn === 'item' ? ITEM_COMMENT_STATE : COMMENT_STATE
-				openComment = index
-			}
-			return outside
-		}
-		const marker = CODE_FENCE_PATTERN.exec(line)?.[1]
-		if (marker === undefined) return outside
-		if (open === undefined) open = marker
-		else if (closesFence({ line, marker, open })) open = undefined
-		return outside
-	})
-	return {
-		kinds,
-		openComment: open === COMMENT_STATE || open === ITEM_COMMENT_STATE ? openComment : undefined,
-	}
-}
-
-/**
- * The line of the first HTML comment block in `lines` that never closes (outside a fence); undefined when every one
- * closes.
- *
- * @intent tell a changelog text whose comment would hide what follows it
- * @internal
- */
-export function unclosedCommentLine(params: { lines: readonly string[] }): number | undefined {
-	return readLineKinds({ lines: params.lines, unclosed: new Set() }).openComment
-}
-
-/**
- * Whether a fence line closes the fence `open` started: the same character, at least as long, nothing after it.
- */
-function closesFence(params: { line: string; marker: string; open: string }): boolean {
-	const { line, marker, open } = params
-	return marker[0] === open[0] && marker.length >= open.length && line.trim() === marker
-}
-
-/** Every line outside a fence or a comment where a part ends, and what it opens; the first Unreleased heading opens that part. */
-function boundariesOf(params: { lines: readonly string[] }): PartBoundary[] {
-	const outside = lineKinds(params)
+function boundariesOf(params: { blocks: MarkdownBlocks }): PartBoundary[] {
+	const { lines, tokens } = params.blocks
+	const headings = new Set(
+		tokens
+			.filter(
+				(token) =>
+					token.type === 'heading_open' &&
+					token.level === 0 &&
+					token.markup === VERSION_HEADING_MARKUP,
+			)
+			.map((token) => token.map?.[0]),
+	)
+	const opaque = tokens.flatMap(({ type, map }) =>
+		OPAQUE_BLOCK_TYPES.includes(type) && map ? [map] : [],
+	)
 	const boundaries: PartBoundary[] = []
-	for (const [index, line] of params.lines.entries()) {
-		if (!outside[index]) continue
-		const unreleased = UNRELEASED_HEADING_PATTERN.test(line)
-		const unreleasedOpen = boundaries.some((boundary) => boundary.opens === 'unreleased')
-		if (unreleased && !unreleasedOpen) boundaries.push({ index, opens: 'unreleased' })
-		else if (VERSION_HEADING_PATTERN.test(line))
-			boundaries.push({ index, opens: openedBy({ line }) })
-		else if (LINK_REFERENCE_PATTERN.test(line)) boundaries.push({ index, opens: 'nothing' })
+	for (const [index, line] of lines.entries()) {
+		if (headings.has(index)) {
+			const unreleased = UNRELEASED_HEADING_PATTERN.test(line)
+			const unreleasedOpen = boundaries.some((boundary) => boundary.opens === 'unreleased')
+			if (unreleased && !unreleasedOpen) boundaries.push({ index, opens: 'unreleased' })
+			else if (VERSION_HEADING_PATTERN.test(line))
+				boundaries.push({ index, opens: openedBy({ line }) })
+		} else if (
+			!opaque.some(([from, to]) => index >= from && index < to) &&
+			LINK_REFERENCE_PATTERN.test(line)
+		)
+			boundaries.push({ index, opens: 'nothing' })
 	}
 	return boundaries
 }

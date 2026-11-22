@@ -105,5 +105,27 @@ export type SectionBlock = {
 	multiBlock: boolean
 }
 
-/** A section block being read: its kind and its lines, each with whether it stands outside a code fence and an HTML comment. */
-export type OpenBlock = { kind: SectionBlock['kind']; lines: { text: string; outside: boolean }[] }
+/** A block opened in a text that runs to its end: a code fence, or an HTML block of a kind only its close ends. */
+export type UnclosedBlock = 'fence' | 'html'
+
+/**
+ * A text read as CommonMark blocks: its lines (split as the parser splits them), the parser's block tokens (unclosed
+ * comment openers neutralised, so they hide nothing), the line of the first HTML block holding an unclosed comment,
+ * and the kind of a block that runs to the end of the text.
+ */
+export type MarkdownBlocks = {
+	lines: string[]
+	tokens: readonly MarkdownToken[]
+	unclosedComment: number | undefined
+	unclosedBlock: UnclosedBlock | undefined
+}
+
+/** A parser block token as the readers use it: its type, nesting level, markup, line range and content. */
+export type MarkdownToken = {
+	type: string
+	level: number
+	nesting: number
+	markup: string
+	map: [number, number] | null
+	content: string
+}

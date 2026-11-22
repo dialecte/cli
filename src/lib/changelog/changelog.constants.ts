@@ -1,4 +1,5 @@
 /** Changelog fragments (`changes/<name>.md`) and the release fold into `CHANGELOG.md`. */
+import MarkdownIt from 'markdown-it'
 
 /** The folder each lot writes its changelog fragment in, at the package root. */
 export const FRAGMENTS_FOLDER = 'changes'
@@ -56,9 +57,6 @@ export const CHANGELOG_SECTIONS = [
 	'Security',
 ] as const
 
-/** A section heading line: `### <name>`. */
-export const SECTION_HEADING_PATTERN = /^### (.+?)\s*$/
-
 /** The heading the entries of the next release stand under, as a release writes it. */
 export const UNRELEASED_HEADING = '## [Unreleased]'
 
@@ -73,9 +71,6 @@ export const VERSION_KEY_PATTERN = /^## \[([^\]]+)\]/
 
 /** A link reference definition (`[0.7.0]: https://...`): the block at a changelog's end. */
 export const LINK_REFERENCE_PATTERN = /^\[[^\]]+\]:\s/
-
-/** A code fence line: headings inside a fence are text. */
-export const CODE_FENCE_PATTERN = /^\s*(`{3,}|~{3,})/
 
 /** A version a release names: `x.y.z`, a pre-release suffix allowed. */
 export const RELEASE_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/
@@ -92,6 +87,8 @@ export const FRAGMENT_PROBLEMS = {
 	repeatedSection: 'section {section} appears twice',
 	emptyNote: 'a no-entry note holds no reason',
 	unclosedComment: 'an HTML comment opens and never closes',
+	unclosedFence: 'a code fence opens and never closes',
+	unclosedHtml: 'an HTML block opens and never closes',
 } as const
 
 /** Why a release fold is refused; `{version}` filled. */
@@ -128,32 +125,41 @@ export const NO_BLOB = 'none'
 /** Between the notes of one changelog row (the released sections', the fragment's). */
 export const CHANGELOG_NOTE_SEPARATOR = '; '
 
-/** A CRLF line end: a changelog is read with LF line ends. */
-export const CRLF_PATTERN = /\r\n/g
-
-/** A top-level bullet item's first line: the only list item a release moves. */
-export const BULLET_ITEM_PATTERN = /^- /
-
 /** A bullet item opening with a breaking marker: a bold `Breaking` (any case), or the plain `Breaking:` form. */
 export const BREAKING_ITEM_PATTERN = /^- (?:\*\*Breaking\b|Breaking(?: \([^)]*\))?:)/i
 
-/** A line opening an HTML comment block (CommonMark: at most three spaces before it); up to its close, one block. */
-export const HTML_COMMENT_OPEN_PATTERN = /^ {0,3}<!--/
+/** The line ends a markdown parser splits a text on: CRLF, a lone CR, LF. */
+export const LINE_BREAK_PATTERN = /\r\n?|\n/
 
-/** The open state of a top-level comment in the line reader, apart from a fence's marker. */
-export const COMMENT_STATE = 'comment'
+/** An HTML comment's opener. */
+export const COMMENT_OPEN = '<!--'
 
-/** The open state of a comment inside a bullet item: it ends with its item, as CommonMark ends a block with its container. */
-export const ITEM_COMMENT_STATE = 'item comment'
+/** An HTML comment's close. */
+export const COMMENT_CLOSE = '-->'
 
-/** Where a `- ` item's content starts: a line indented this far or more continues the item. */
-export const ITEM_CONTENT_OFFSET = 2
+/** A comment that closes on its own opener: `<!-->` and `<!--->`. */
+export const COMMENT_SELF_CLOSING_PATTERN = /^<!---?>/
 
-/** What closes an HTML comment. */
-export const HTML_COMMENT_CLOSE = '-->'
+/** An HTML block that starts with a comment opener. */
+export const COMMENT_START_PATTERN = /^\s*<!--/
 
-/** Where the close is looked for on the opening line, past the opener's `<!`: `<!-->` already closes the comment. */
-export const HTML_COMMENT_CLOSE_FROM = 2
+/** A comment opener read as text in the parse copy: a backslash escapes it. */
+export const NEUTRALISED_COMMENT_OPEN = '\\<!--'
 
-/** A column-0 line that ends a list item instead of continuing it lazily: a fence, an ATX heading, a quote, a rule. */
-export const ITEM_INTERRUPT_PATTERN = /^(?:```|~~~|#{1,6}(?:\s|$)|>|(?:-{3,}|\*{3,}|_{3,})\s*$)/
+/** The heading appended to a parse copy to find a block that runs to the end of the text. */
+export const SENTINEL_HEADING = '# end of text'
+
+/** A version heading's markup as the parser reports it: a level-2 ATX heading. */
+export const VERSION_HEADING_MARKUP = '##'
+
+/** A section heading's markup as the parser reports it: a level-3 ATX heading. */
+export const SECTION_HEADING_MARKUP = '###'
+
+/** The bullet marker of the only list a release cuts into items. */
+export const MOVABLE_BULLET_MARKUP = '-'
+
+/** The block tokens whose lines are code or HTML: no link reference line inside them ends a part. */
+export const OPAQUE_BLOCK_TYPES: readonly string[] = ['fence', 'code_block', 'html_block']
+
+/** The markdown parser the changelog readers share: CommonMark's block rules, html blocks on; only `parse` is used. */
+export const MARKDOWN_PARSER = new MarkdownIt('commonmark')

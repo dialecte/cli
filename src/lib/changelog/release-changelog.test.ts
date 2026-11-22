@@ -202,6 +202,17 @@ describe('foldChangelog', () => {
 		},
 		{
 			label:
+				'a fence ending the list, then an indented comment hiding a breaking bullet → nothing lifted, the comment kept whole',
+			unreleased: '',
+			added: '',
+			fragments: [
+				changed('changes/a.md', '- a.\n```\nf\n```\n  <!--\n- **Breaking:** cm-hidden\n  -->'),
+				changed('changes/b.md', '- b.'),
+			],
+			section: '- a.\n\n```\nf\n```\n\n  <!--\n- **Breaking:** cm-hidden\n  -->\n\n- b.',
+		},
+		{
+			label:
 				'a four-backtick fence holding a three-backtick fence and a section heading → kept as text of its section',
 			unreleased: '### Changed\n\n- x:\n\n````md\n```\n### Fixed\n```\n````\n\n',
 			added: '',
@@ -281,6 +292,18 @@ describe('foldChangelog', () => {
 			text: `${HEAD}\n## [Unreleased]\n\n### Changed\n\n- a.\n<!--\n- hidden.\n\n${OLD_RELEASE}`,
 			version: '0.8.0',
 			refusal: 'the Unreleased part of CHANGELOG.md: an HTML comment opens and never closes',
+		},
+		{
+			label: 'the Unreleased part holding a code fence that never closes',
+			text: `${HEAD}\n## [Unreleased]\n\n### Changed\n\n- a.\n\n\`\`\`\nx\n\n${OLD_RELEASE}`,
+			version: '0.8.0',
+			refusal: 'the Unreleased part of CHANGELOG.md: a code fence opens and never closes',
+		},
+		{
+			label: 'the Unreleased part holding a pre block that never closes',
+			text: `${HEAD}\n## [Unreleased]\n\n### Changed\n\n- a.\n\n<pre>\nx\n\n${OLD_RELEASE}`,
+			version: '0.8.0',
+			refusal: 'the Unreleased part of CHANGELOG.md: an HTML block opens and never closes',
 		},
 	])('$label → refused, nothing folded', ({ text, version, refusal }) => {
 		expect(foldChangelog({ text, version, date: '2026-11-16', fragments: [] })).toEqual({ refusal })

@@ -1,47 +1,32 @@
-/** The top-level blocks of a changelog section's text: its bullet items and its other blocks. */
-import { commentOpenedIn, lineKinds } from './changelog-parts.ts'
-import {
-	BREAKING_ITEM_PATTERN,
-	BULLET_ITEM_PATTERN,
-	ITEM_INTERRUPT_PATTERN,
-} from './changelog.constants.ts'
+/** The top-level blocks of a changelog section's text, as CommonMark reads them: its `- ` items and its other blocks. */
+import { BREAKING_ITEM_PATTERN, MOVABLE_BULLET_MARKUP } from './changelog.constants.ts'
+import { readMarkdownBlocks } from './markdown-blocks.ts'
 
-import type { OpenBlock, SectionBlock } from './changelog.types.ts'
+import type { MarkdownToken, SectionBlock } from './changelog.types.ts'
 
 /**
- * The top-level blocks of one section's `text`, in the order written. A column-0 `- ` line outside a fence opens an
- * item; an indented or blank line continues the block it follows; a column-0 line right after an item line continues
- * it lazily, unless it is a fence, a heading, a quote or a rule; any other column-0 line after a blank line opens a
- * text block. A list of another kind is never cut into items; a fence or an HTML comment block is one block, nothing
- * inside it opening another; a comment indented to an item's content is that item's own.
+ * The top-level blocks of one section's `text`, in the order written, read from CommonMark's block tokens and sliced
+ * from the author's own lines. A `- ` bullet list gives one `item` per list item; every other top-level block (a
+ * paragraph, a heading, a fence, indented code, an HTML block, a rule, a quote, an ordered list, a `*` or `+` list) is
+ * one `text` block, never cut. Each run of non-blank lines no block covers (a link reference definition) is a `text`
+ * block in place: no text is dropped. An item is multi-block when a blank line stands before one of its direct child
+ * blocks after the first; it is breaking when its first line opens with a breaking marker.
  *
  * @intent cut a changelog section into the blocks a release orders and joins
  * @internal
  */
 export function sectionItemsOf(params: { text: string }): SectionBlock[] {
-	const lines = params.text.split('\n')
-	const outside = lineKinds({ lines })
-	const blocks: OpenBlock[] = []
-	let afterBlank = false
-	for (const [index, text] of lines.entries()) {
-		const line = { text, outside: outside[index] ?? true }
-		const current = blocks.at(-1)
-		// a comment block of its own opens a text block; an item's own comment continues its item (one rule with
-		// lineKinds, which keeps every line up to its close inside it)
-		const opensIn = commentOpenedIn({ text, inItem: current?.kind === 'item' })
-		const opens = !line.outside
-			? undefined
-			: opensIn === 'top'
-				? 'text'
-				: opensIn === 'item'
-					? undefined
-					: openedKind({ text, current, afterBlank })
-		if (opens !== undefined) blocks.push({ kind: opens, lines: [line] })
-		else if (current) current.lines.push(line)
-		else if (text.trim() !== '') blocks.push({ kind: 'text', lines: [line] })
-		afterBlank = line.outside && text.trim() === ''
+	const { lines, tokens } = readMarkdownBlocks({ text: params.text })
+	const blocks: SectionBlock[] = []
+	let covered = 0
+	for (const [index, token] of tokens.entries()) {
+		if (token.level !== 0 || token.nesting === -1 || !token.map) continue
+		blocks.push(...uncoveredBlocks({ lines, from: covered, to: token.map[0] }))
+		blocks.push(...blocksOfToken({ lines, tokens, index }))
+		covered = token.map[1]
 	}
-	return blocks.map(closedBlock)
+	blocks.push(...uncoveredBlocks({ lines, from: covered, to: lines.length }))
+	return blocks
 }
 
 /**
@@ -62,28 +47,73 @@ export function joinBlocks(params: { blocks: readonly SectionBlock[] }): string 
 		.join('')
 }
 
-/** The kind of block a line outside a fence opens, or undefined when it continues the current one. */
-function openedKind(params: {
-	text: string
-	current: OpenBlock | undefined
-	afterBlank: boolean
-}): SectionBlock['kind'] | undefined {
-	const { text, current, afterBlank } = params
-	if (BULLET_ITEM_PATTERN.test(text)) return 'item'
-	if (text.trim() === '' || /^\s/.test(text)) return undefined
-	if (current === undefined || afterBlank) return 'text'
-	return current.kind === 'item' && ITEM_INTERRUPT_PATTERN.test(text) ? 'text' : undefined
+/** The blocks one top-level token gives: an item per list item of a `- ` list, else one text block. */
+function blocksOfToken(params: {
+	lines: readonly string[]
+	tokens: readonly MarkdownToken[]
+	index: number
+}): SectionBlock[] {
+	const { lines, tokens, index } = params
+	const token = tokens[index]
+	if (!token?.map) return []
+	if (token.type !== 'bullet_list_open' || token.markup !== MOVABLE_BULLET_MARKUP)
+		return [textBlock({ lines, from: token.map[0], to: token.map[1] })]
+	const items: SectionBlock[] = []
+	for (let at = index + 1; at < tokens.length; at += 1) {
+		const item = tokens[at]
+		if (item === undefined || (item.type === 'bullet_list_close' && item.level === 0)) break
+		if (item.type !== 'list_item_open' || item.level !== 1 || !item.map) continue
+		const text = sliceOf({ lines, from: item.map[0], to: item.map[1] })
+		items.push({
+			kind: 'item',
+			text,
+			breaking: BREAKING_ITEM_PATTERN.test(text.split('\n')[0] ?? ''),
+			multiBlock: isMultiBlock({ lines, tokens, itemAt: at }),
+		})
+	}
+	return items
 }
 
-/** A block read: its text without trailing blank lines, whether it holds a blank line outside a fence, a marker. */
-function closedBlock(block: OpenBlock): SectionBlock {
-	const lines = [...block.lines]
-	while (lines.length > 0 && lines.at(-1)?.text.trim() === '') lines.pop()
-	const [first] = lines
-	return {
-		kind: block.kind,
-		text: lines.map((line) => line.text).join('\n'),
-		breaking: block.kind === 'item' && BREAKING_ITEM_PATTERN.test(first?.text ?? ''),
-		multiBlock: lines.some((line) => line.outside && line.text.trim() === ''),
+/** Whether a blank line stands before a direct child block of the item at `itemAt`, the first child aside. */
+function isMultiBlock(params: {
+	lines: readonly string[]
+	tokens: readonly MarkdownToken[]
+	itemAt: number
+}): boolean {
+	const { lines, tokens, itemAt } = params
+	const starts: number[] = []
+	for (let at = itemAt + 1; at < tokens.length; at += 1) {
+		const child = tokens[at]
+		if (child === undefined || (child.type === 'list_item_close' && child.level === 1)) break
+		if (child.level === 2 && child.nesting !== -1 && child.map) starts.push(child.map[0])
 	}
+	return starts.slice(1).some((start) => lines[start - 1]?.trim() === '')
+}
+
+/** One text block per run of non-blank lines from `from` to `to` (excluded): the lines no block token covers. */
+function uncoveredBlocks(params: {
+	lines: readonly string[]
+	from: number
+	to: number
+}): SectionBlock[] {
+	const blocks: SectionBlock[] = []
+	let start = params.from
+	for (let at = params.from; at <= params.to; at += 1) {
+		if (at < params.to && params.lines[at]?.trim() !== '') continue
+		if (at > start) blocks.push(textBlock({ lines: params.lines, from: start, to: at }))
+		start = at + 1
+	}
+	return blocks
+}
+
+/** A text block of the lines from `from` to `to` (excluded). */
+function textBlock(params: { lines: readonly string[]; from: number; to: number }): SectionBlock {
+	return { kind: 'text', text: sliceOf(params), breaking: false, multiBlock: false }
+}
+
+/** The lines from `from` to `to` (excluded), joined, without trailing blank lines. */
+function sliceOf(params: { lines: readonly string[]; from: number; to: number }): string {
+	let to = params.to
+	while (to > params.from && params.lines[to - 1]?.trim() === '') to -= 1
+	return params.lines.slice(params.from, to).join('\n')
 }

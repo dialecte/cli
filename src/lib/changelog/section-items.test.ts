@@ -239,4 +239,183 @@ describe('sectionItemsOf', () => {
 	])('an item opening with $label → breaking $breaking', ({ line, breaking }) => {
 		expect(sectionItemsOf({ text: line })).toEqual([item({ text: line, breaking })])
 	})
+
+	it.each([
+		{
+			label: 'a fence ends the list, then an indented comment hiding a bullet → CommonMark blocks',
+			text: '- a.\n```\nf\n```\n  <!--\n- **Breaking:** cm-hidden\n  -->',
+			blocks: [
+				item({ text: '- a.' }),
+				text({ text: '```\nf\n```' }),
+				text({ text: '  <!--\n- **Breaking:** cm-hidden\n  -->' }),
+			],
+		},
+		{
+			label: 'a quote ends the list, then an indented comment hiding a bullet → CommonMark blocks',
+			text: '- a.\n> q\n  <!--\n- **Breaking:** cm-hidden\n  -->',
+			blocks: [
+				item({ text: '- a.' }),
+				text({ text: '> q' }),
+				text({ text: '  <!--\n- **Breaking:** cm-hidden\n  -->' }),
+			],
+		},
+		{
+			label: 'a rule ends the list, then an indented comment hiding a bullet → CommonMark blocks',
+			text: '- a.\n***\n  <!--\n- **Breaking:** cm-hidden\n  -->',
+			blocks: [
+				item({ text: '- a.' }),
+				text({ text: '***' }),
+				text({ text: '  <!--\n- **Breaking:** cm-hidden\n  -->' }),
+			],
+		},
+		{
+			label:
+				'a heading ends the list, then an indented comment hiding a bullet → CommonMark blocks',
+			text: '- a\n# H\n  <!--\n- **Breaking:** cm-hidden\n  -->',
+			blocks: [
+				item({ text: '- a' }),
+				text({ text: '# H' }),
+				text({ text: '  <!--\n- **Breaking:** cm-hidden\n  -->' }),
+			],
+		},
+		{
+			label: 'a 1. list ends the bullets, then a comment indented short of it → CommonMark blocks',
+			text: '- a\n1. x\n  <!--\n- **Breaking:** cm-hidden\n  -->',
+			blocks: [
+				item({ text: '- a' }),
+				text({ text: '1. x' }),
+				text({ text: '  <!--\n- **Breaking:** cm-hidden\n  -->' }),
+			],
+		},
+		{
+			label: 'a 10. list ends the bullets, then a comment indented short of it → CommonMark blocks',
+			text: '- a\n10. x\n   <!--\n- **Breaking:** cm-hidden\n   -->',
+			blocks: [
+				item({ text: '- a' }),
+				text({ text: '10. x' }),
+				text({ text: '   <!--\n- **Breaking:** cm-hidden\n   -->' }),
+			],
+		},
+		{
+			label: 'a comment under a breaking item, then its note → CommonMark blocks',
+			text: '- c.\n- **Breaking:** a.\n\n  <!-- x -->\n  Migrate with foo.\n- d.',
+			blocks: [
+				item({ text: '- c.' }),
+				item({
+					text: '- **Breaking:** a.\n\n  <!-- x -->\n  Migrate with foo.',
+					breaking: true,
+					multiBlock: true,
+				}),
+				item({ text: '- d.' }),
+			],
+		},
+		{
+			label:
+				'a comment indented by one space after an item → a block of its own → CommonMark blocks',
+			text: '- a\n\n <!--\n- **Breaking:** hidden\n -->',
+			blocks: [item({ text: '- a' }), text({ text: ' <!--\n- **Breaking:** hidden\n -->' })],
+		},
+		{
+			label: '<!--> indented by one space → closed on its line → CommonMark blocks',
+			text: '- a\n\n <!-->\n- **Breaking:** v',
+			blocks: [
+				item({ text: '- a' }),
+				text({ text: ' <!-->' }),
+				item({ text: '- **Breaking:** v', breaking: true }),
+			],
+		},
+		{
+			label: "<!----> under an item → the item's own, closed → CommonMark blocks",
+			text: '- a\n\n  <!---->\n- **Breaking:** v',
+			blocks: [
+				item({ text: '- a\n\n  <!---->', multiBlock: true }),
+				item({ text: '- **Breaking:** v', breaking: true }),
+			],
+		},
+		{
+			label: "a comment closed on the line after an item line → the item's own → CommonMark blocks",
+			text: '- a\n  <!-- x -->\n- **Breaking:** v',
+			blocks: [
+				item({ text: '- a\n  <!-- x -->' }),
+				item({ text: '- **Breaking:** v', breaking: true }),
+			],
+		},
+		{
+			label: "a comment in a nested item → the outer item's text → CommonMark blocks",
+			text: '- **Breaking:** a.\n  - sub\n\n    <!-- sub note -->\n    sub text\n- c.',
+			blocks: [
+				item({
+					text: '- **Breaking:** a.\n  - sub\n\n    <!-- sub note -->\n    sub text',
+					breaking: true,
+				}),
+				item({ text: '- c.' }),
+			],
+		},
+		{
+			label: 'a comment and a note under a plain item, a breaking item after → CommonMark blocks',
+			text: '- c.\n\n  <!-- note -->\n  More c.\n- **Breaking:** b.',
+			blocks: [
+				item({ text: '- c.\n\n  <!-- note -->\n  More c.', multiBlock: true }),
+				item({ text: '- **Breaking:** b.', breaking: true }),
+			],
+		},
+		{
+			label:
+				'a comment indented by one space, then a paragraph → two blocks of their own → CommonMark blocks',
+			text: '- a.\n\n <!-- x -->\n More.\n- **Breaking:** b.',
+			blocks: [
+				item({ text: '- a.' }),
+				text({ text: ' <!-- x -->' }),
+				text({ text: ' More.' }),
+				item({ text: '- **Breaking:** b.', breaking: true }),
+			],
+		},
+		{
+			label: "an item's comment holding a blank line → the item's own → CommonMark blocks",
+			text: '- a.\n\n  <!--\n\n  still hidden\n  -->\n- **Breaking:** b.',
+			blocks: [
+				item({ text: '- a.\n\n  <!--\n\n  still hidden\n  -->', multiBlock: true }),
+				item({ text: '- **Breaking:** b.', breaking: true }),
+			],
+		},
+		{
+			label: 'a * list holding a closed comment → one text block → CommonMark blocks',
+			text: '* a\n\n  <!-- x -->\n- **Breaking:** b.',
+			blocks: [
+				text({ text: '* a\n\n  <!-- x -->' }),
+				item({ text: '- **Breaking:** b.', breaking: true }),
+			],
+		},
+		{
+			label: 'a 1. list holding a closed comment → one text block → CommonMark blocks',
+			text: '1. a\n\n   <!-- x -->\n- **Breaking:** b.',
+			blocks: [
+				text({ text: '1. a\n\n   <!-- x -->' }),
+				item({ text: '- **Breaking:** b.', breaking: true }),
+			],
+		},
+		{
+			label:
+				"a nested list with a blank line before the item's second child → multi-block → CommonMark blocks",
+			text: '- a\n  - s\n\n  more\n- b',
+			blocks: [item({ text: '- a\n  - s\n\n  more', multiBlock: true }), item({ text: '- b' })],
+		},
+		{
+			label:
+				'a link reference definition with its title on the next line → one text block, kept → CommonMark blocks',
+			text: 'Text.\n\n[foo]: https://x.test\n  "Title"\n\n- a.',
+			blocks: [
+				text({ text: 'Text.' }),
+				text({ text: '[foo]: https://x.test\n  "Title"' }),
+				item({ text: '- a.' }),
+			],
+		},
+		{
+			label: 'lone carriage returns → lines split as CommonMark splits them → CommonMark blocks',
+			text: '- a.\r- b.',
+			blocks: [item({ text: '- a.' }), item({ text: '- b.' })],
+		},
+	])('$label', ({ text: section, blocks }) => {
+		expect(sectionItemsOf({ text: section })).toEqual(blocks)
+	})
 })
