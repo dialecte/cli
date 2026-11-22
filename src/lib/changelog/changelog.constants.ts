@@ -68,7 +68,35 @@ export const RELEASE_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/
 /** A release date: `YYYY-MM-DD`. */
 export const RELEASE_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 
-/** What is wrong with a fragment; `{heading}` and `{section}` filled. */
+/**
+ * The elements a changelog block or item may hold as bare tags (no attribute): text-level elements that act on nothing
+ * outside themselves, and `details` / `summary`, whose hidden part stays inside them.
+ */
+export const INERT_HTML_ELEMENTS = [
+	'b',
+	'i',
+	'u',
+	's',
+	'em',
+	'strong',
+	'small',
+	'mark',
+	'del',
+	'ins',
+	'sub',
+	'sup',
+	'code',
+	'kbd',
+	'samp',
+	'var',
+	'details',
+	'summary',
+] as const
+
+/** The void elements a changelog block or item may hold: no close, `<br/>` allowed. */
+export const INERT_VOID_HTML_ELEMENTS = ['br', 'wbr'] as const
+
+/** What is wrong with a fragment; `{heading}`, `{section}`, `{levels}` and `{piece}` filled. */
 export const FRAGMENT_PROBLEMS = {
 	unknownHeading: `heading "### {heading}" is no section: ${CHANGELOG_SECTIONS.join(', ')}`,
 	looseText: 'text before the first section heading',
@@ -80,13 +108,20 @@ export const FRAGMENT_PROBLEMS = {
 	unclosedFence: 'a code fence opens and never closes',
 	unclosedHtml: 'an HTML block opens and never closes',
 	tooDeep: 'it nests deeper than the {levels} levels the markdown reader reads',
+	reordered:
+		'section {section}: joining its blocks (breaking items first) changes how `{piece}` reads; fence that block or indent it less',
+	openHtml: `HTML \`{piece}\` is not a whole comment or a balanced bare tag of its block or item (${[...INERT_HTML_ELEMENTS, ...INERT_VOID_HTML_ELEMENTS].map((name) => `<${name}>`).join(', ')}); put code in backticks`,
 } as const
 
-/** Why a release fold is refused; `{version}` filled. */
+/** Where an Unreleased entry of a release comes from, as a refusal names it. */
+export const UNRELEASED_SOURCE = `the Unreleased part of ${CHANGELOG_FILE}`
+
+/** Why a release fold is refused; `{version}`, `{problem}` and `{sources}` filled. */
 export const FOLD_REFUSALS = {
 	released: `${CHANGELOG_FILE} already holds version {version}`,
 	nothing: 'nothing to release: no fragment and no Unreleased entry',
 	unreleased: 'the Unreleased part of CHANGELOG.md: {problem}',
+	reorderedFrom: '{problem} ({sources})',
 	noChangelog: `no ${CHANGELOG_FILE} in the package`,
 	leftover:
 		'{file} could not be deleted ({reason}): delete it before the next release, its entries are released',
@@ -161,5 +196,17 @@ export const VERSION_TITLE_KEY_PATTERN = /^\[([^\]]+)\]/
 /** The CommonMark preset the changelog readers parse with: its block rules, html blocks on. */
 export const MARKDOWN_PRESET = 'commonmark'
 
-/** An HTML element whose raw text runs until its own close: `<script>`, `<style>`, `<textarea>`. */
-export const RAW_TEXT_OPEN_PATTERN = /<(script|style|textarea)(?=[\s/>])/gi
+/** The bare tag a changelog block may hold: `<name>`, `</name>` or a void's `<name/>`, white space before `>`. */
+export const BARE_TAG_PATTERN = /^<(\/?)([A-Za-z][A-Za-z0-9]*)[\t\n\f\r ]*(\/?)>/
+
+/** A comment end a browser reads that a whole comment never holds. */
+export const COMMENT_BANG_CLOSE = '--!>'
+
+/** A run of white space a shown piece collapses to one space. */
+export const WHITE_SPACE_RUN_PATTERN = /\s+/g
+
+/** An ASCII capital letter: the only case a tag name folds. */
+export const ASCII_CAPITAL_PATTERN = /[A-Z]/g
+
+/** The longest refused HTML piece a problem shows, the cut's `…` counted. */
+export const SHOWN_HTML_LENGTH = 60

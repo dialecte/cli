@@ -1,13 +1,20 @@
 /** The release fold: the Unreleased entries and the fragments become the new version's section of the changelog. */
 import { readChangelogParts } from './changelog-parts.ts'
-import { CHANGELOG_SECTIONS, FOLD_REFUSALS, UNRELEASED_HEADING } from './changelog.constants.ts'
-import { joinBlocks, sectionItemsOf } from './section-items.ts'
-import { readSections } from './sections.ts'
+import {
+	CHANGELOG_SECTIONS,
+	FOLD_REFUSALS,
+	UNRELEASED_HEADING,
+	UNRELEASED_SOURCE,
+} from './changelog.constants.ts'
+import { breakingFirst, sectionItemsOf } from './section-items.ts'
+import { readSections, reorderedProblem } from './sections.ts'
 
 import type {
 	ChangelogParts,
 	FoldResult,
 	Fragment,
+	OrderedSection,
+	SourcedEntry,
 	SectionEntry,
 	SectionsRead,
 } from './changelog.types.ts'
@@ -38,15 +45,24 @@ export function foldChangelog(params: {
 	if ('problem' in unreleased)
 		return { refusal: FOLD_REFUSALS.unreleased.replace('{problem}', unreleased.problem) }
 	const entries = [
-		...unreleased.sections,
-		...params.fragments.flatMap((fragment) => fragment.sections),
+		...unreleased.sections.map((entry) => ({ ...entry, source: UNRELEASED_SOURCE })),
+		...params.fragments.flatMap((fragment) =>
+			fragment.sections.map((entry) => ({ ...entry, source: fragment.file })),
+		),
 	]
 	if (entries.length === 0 && unreleased.leading === '') return { refusal: FOLD_REFUSALS.nothing }
+	const sections = orderedSections({ entries })
+	const refused = sections
+		.map((entry) => reorderRefusalOf({ entry }))
+		.find((refusal) => refusal !== undefined)
+	if (refused !== undefined) return { refusal: refused }
 	const release = [
 		`## [${params.version}] - ${params.date}`,
 		'',
 		...(unreleased.leading === '' ? [] : [unreleased.leading, '']),
-		...renderSections({ entries }),
+		...sections.flatMap((entry) =>
+			'text' in entry.ordered ? [`### ${entry.section}`, '', entry.ordered.text, ''] : [],
+		),
 	]
 	const before = trimTrailingBlank({ lines: lines.slice(0, part.heading) })
 	return {
@@ -99,22 +115,37 @@ function readUnreleased(params: { lines: readonly string[] }): SectionsRead {
 }
 
 /**
- * Each section that holds entries, in the changelog's order: its heading, a blank line, its blocks (the breaking items
- * first, every other block after them, each group in the order written) joined as a formatter leaves them, a blank
- * line.
+ * Each section that holds entries, in the changelog's order, with its blocks (each entry read on its own) ordered
+ * breaking first, or the block that order would read otherwise.
  */
-function renderSections(params: { entries: readonly SectionEntry[] }): string[] {
-	return CHANGELOG_SECTIONS.flatMap(function sectionLines(section) {
-		const blocks = params.entries
+function orderedSections(params: { entries: readonly SourcedEntry[] }): OrderedSection[] {
+	return CHANGELOG_SECTIONS.flatMap(function orderedSection(section): OrderedSection[] {
+		const sourced = params.entries
 			.filter((entry) => entry.section === section)
-			.flatMap((entry) => sectionItemsOf({ text: entry.text }))
-		if (blocks.length === 0) return []
-		const ordered = [
-			...blocks.filter((block) => block.breaking),
-			...blocks.filter((block) => !block.breaking),
-		]
-		return [`### ${section}`, '', joinBlocks({ blocks: ordered }), '']
+			.flatMap((entry) =>
+				sectionItemsOf({ text: entry.text }).map((block) => [block, entry.source] as const),
+			)
+		if (sourced.length === 0) return []
+		const blocks = sourced.map(([block]) => block)
+		return [{ section, ordered: breakingFirst({ blocks }), sources: new Map(sourced) }]
 	})
+}
+
+/**
+ * The refusal of a section whose joined blocks read otherwise, naming the file the block comes from and, when another,
+ * the file of the block it joins; undefined when the section joins cleanly.
+ */
+function reorderRefusalOf(params: { entry: OrderedSection }): string | undefined {
+	const { entry } = params
+	const { ordered, sources } = entry
+	if (!('moved' in ordered)) return undefined
+	const from = sources.get(ordered.moved) ?? ''
+	const after = ordered.after === undefined ? undefined : sources.get(ordered.after)
+	return FOLD_REFUSALS.reorderedFrom
+		.replace('{problem}', () => reorderedProblem({ section: entry.section, moved: ordered.moved }))
+		.replace('{sources}', () =>
+			after === undefined || after === from ? from : `${from}, after ${after}`,
+		)
 }
 
 function trimTrailingBlank(params: { lines: readonly string[] }): string[] {

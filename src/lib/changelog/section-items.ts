@@ -1,8 +1,8 @@
 /** The top-level blocks of a changelog section's text, as CommonMark reads them: its `- ` items and its other blocks. */
-import { BREAKING_ITEM_PATTERN, MOVABLE_BULLET_MARKUP } from './changelog.constants.ts'
-import { readMarkdownBlocks } from './markdown-blocks.ts'
+import { BREAKING_ITEM_PATTERN } from './changelog.constants.ts'
+import { isMovableList, readMarkdownBlocks } from './markdown-blocks.ts'
 
-import type { MarkdownToken, SectionBlock } from './changelog.types.ts'
+import type { BreakingFirst, MarkdownToken, SectionBlock } from './changelog.types.ts'
 
 /**
  * The top-level blocks of one section's `text`, in the order written, read from CommonMark's block tokens and sliced
@@ -16,7 +16,7 @@ import type { MarkdownToken, SectionBlock } from './changelog.types.ts'
  * @internal
  */
 export function sectionItemsOf(params: { text: string }): SectionBlock[] {
-	const { lines, tokens } = readMarkdownBlocks({ text: params.text })
+	const { lines, tokens } = readMarkdownBlocks({ text: params.text, scanHtml: false })
 	const blocks: SectionBlock[] = []
 	let covered = 0
 	for (const [index, token] of tokens.entries()) {
@@ -47,6 +47,35 @@ export function joinBlocks(params: { blocks: readonly SectionBlock[] }): string 
 		.join('')
 }
 
+/**
+ * A section's blocks with its breaking items first, every other block after them, each group in the order written,
+ * joined as a formatter leaves them; or, when the joined text reads otherwise (a block indented enough to join the item
+ * placed before it), the first block the joined text does not hold as one of its blocks or the start of one, and the
+ * block placed before it.
+ *
+ * @intent order a changelog section's blocks breaking first without changing how any block reads
+ * @internal
+ */
+export function breakingFirst(params: { blocks: readonly SectionBlock[] }): BreakingFirst {
+	const ordered = [
+		...params.blocks.filter((block) => block.breaking),
+		...params.blocks.filter((block) => !block.breaking),
+	]
+	const text = joinBlocks({ blocks: ordered })
+	const read = sectionItemsOf({ text })
+	const same =
+		read.length === ordered.length &&
+		read.every(
+			(block, index) => block.kind === ordered[index]?.kind && block.text === ordered[index]?.text,
+		)
+	if (same) return { text }
+	const at = ordered.findIndex((block) => !read.some((other) => other.text.startsWith(block.text)))
+	const index =
+		at === -1 ? ordered.findIndex((block, place) => read[place]?.text !== block.text) : at
+	const moved = ordered[index]
+	return moved === undefined ? { text } : { moved, after: ordered[index - 1] }
+}
+
 /** The blocks one top-level token gives: an item per list item of a `- ` list, else one text block. */
 function blocksOfToken(params: {
 	lines: readonly string[]
@@ -56,8 +85,7 @@ function blocksOfToken(params: {
 	const { lines, tokens, index } = params
 	const token = tokens[index]
 	if (!token?.map) return []
-	if (token.type !== 'bullet_list_open' || token.markup !== MOVABLE_BULLET_MARKUP)
-		return [textBlock({ lines, from: token.map[0], to: token.map[1] })]
+	if (!isMovableList({ token })) return [textBlock({ lines, from: token.map[0], to: token.map[1] })]
 	const items: SectionBlock[] = []
 	for (let at = index + 1; at < tokens.length; at += 1) {
 		const item = tokens[at]

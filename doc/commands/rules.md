@@ -46,12 +46,13 @@ rules - Code-rules self-check of the changed files (syntax tree, not greps)
   changelog-edit (an error), in a package keeping a changes/ folder: CHANGELOG.md edited without the
     package version bumped; write the entry in changes/<lot>.md (dialecte changelog)
   released-changelog (an error, no opt-out), on CHANGELOG.md in every package: a released ##
-    [<version>] section the change altered - lines added, removed or reordered, the section removed,
-    or its heading repeated - judged against the base branch and where the change left it (a section
-    main corrected after the branch point, or a release the branch predates, is no finding); the
-    release base a rehearsal hands its hooks (DIALECTE_RELEASE_BASE, to the scoped rules step alone)
-    replaces the base branch; no base branch: one line, not judged (--json:
-    releasedChangelogNotJudged)
+    [<version>] section the change altered - lines added, removed or reordered (a run of blank and
+    link reference definition lines holding a definition compares as one blank line: a definition
+    renders nothing), the section removed, or its heading repeated - judged against the base branch
+    and where the change left it (a section main corrected after the branch point, or a release the
+    branch predates, is no finding); the release base a rehearsal hands its hooks
+    (DIALECTE_RELEASE_BASE, to the scoped rules step alone) replaces the base branch; no base
+    branch: one line, not judged (--json: releasedChangelogNotJudged)
   --base <ref>: the files changed from the merge-base of <ref> and HEAD to the worktree are judged
     (deletions left out; uncommitted ones in), that merge-base the base of the softening as a gate
     base would be; files given with it, or a ref naming no commit, exit 2

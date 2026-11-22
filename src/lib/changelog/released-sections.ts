@@ -5,6 +5,7 @@ import type {
 	ChangelogParts,
 	ReleasedSectionChange,
 	ReleasedSectionTexts,
+	SectionLine,
 	VersionSection,
 } from './changelog.types.ts'
 
@@ -14,7 +15,8 @@ import type {
  * `tip` and than `mergeBase`, or lacks it while `mergeBase` (or a two-way call) holds it. A version `tip` lacks is
  * new and not judged. A heading `checked` holds more times than `tip` is a duplicate; the k-th copy of a version is
  * compared with the k-th copy of the others. Lines compare with trailing spaces and a section's trailing blank lines
- * dropped.
+ * dropped, and a run of blank and link reference definition lines holding a definition read as one blank line: a
+ * definition renders nothing.
  *
  * @intent tell which released changelog sections a change altered
  * @internal
@@ -64,17 +66,36 @@ function versionSectionsOf(params: { read: ChangelogParts }): VersionSection[] {
 				version: part.version,
 				copy,
 				heading: part.heading,
-				lines: normalisedLines({ lines: read.lines.slice(part.heading, part.end) }),
+				lines: comparedLines({ read, from: part.heading, to: part.end }),
 			},
 		]
 	})
 }
 
-/** A section's lines with trailing spaces trimmed and its trailing blank lines dropped. */
-function normalisedLines(params: { lines: readonly string[] }): string[] {
-	const trimmed = params.lines.map((line) => line.trimEnd())
-	const end = trimmed.reduce((last, line, index) => (line === '' ? last : index + 1), 0)
-	return trimmed.slice(0, end)
+/**
+ * A section's compared lines from `from` to `to` (excluded), each with its file index and its trailing spaces trimmed:
+ * a run of blank and link reference definition lines that holds a definition reads as one blank line (a definition
+ * renders nothing, but the blank line it brings ends a paragraph or an item), and the section's trailing blank lines are
+ * dropped.
+ */
+function comparedLines(params: { read: ChangelogParts; from: number; to: number }): SectionLine[] {
+	const { read } = params
+	const kept: SectionLine[] = []
+	let run: SectionLine[] = []
+	let runHoldsDefinition = false
+	for (let index = params.from; index < params.to; index += 1) {
+		const text = (read.lines[index] ?? '').trimEnd()
+		const definition = read.definitionLines.has(index)
+		if (definition || text === '') {
+			run = [...run, { index, text: '' }]
+			runHoldsDefinition ||= definition
+			continue
+		}
+		kept.push(...(runHoldsDefinition ? run.slice(0, 1) : run), { index, text })
+		run = []
+		runHoldsDefinition = false
+	}
+	return kept
 }
 
 /** The copy of the same version and rank in `sections`. */
@@ -88,9 +109,14 @@ function copyOf(params: {
 }
 
 /** Whether two sections hold the same lines in the same order. */
-function sameLines(params: { left: readonly string[]; right: readonly string[] }): boolean {
+function sameLines(params: {
+	left: readonly SectionLine[]
+	right: readonly SectionLine[]
+}): boolean {
 	const { left, right } = params
-	return left.length === right.length && left.every((line, index) => line === right[index])
+	return (
+		left.length === right.length && left.every((line, index) => line.text === right[index]?.text)
+	)
 }
 
 /**
@@ -99,14 +125,16 @@ function sameLines(params: { left: readonly string[]; right: readonly string[] }
  */
 function changeOf(params: { own: VersionSection; tip: VersionSection }): ReleasedSectionChange {
 	const { own, tip } = params
-	const added = unmatchedCount({ lines: own.lines, against: tip.lines })
-	const removed = unmatchedCount({ lines: tip.lines, against: own.lines })
-	const differing = own.lines.findIndex((line, index) => line !== tip.lines[index])
-	const offset = differing === -1 ? own.lines.length : differing
+	const ownTexts = own.lines.map((line) => line.text)
+	const tipTexts = tip.lines.map((line) => line.text)
+	const added = unmatchedCount({ lines: ownTexts, against: tipTexts })
+	const removed = unmatchedCount({ lines: tipTexts, against: ownTexts })
+	const differing = ownTexts.findIndex((line, index) => line !== tipTexts[index])
+	const at = differing === -1 ? undefined : own.lines[differing]
 	return {
 		kind: 'changed',
 		version: own.version,
-		line: own.heading + offset + 1,
+		line: at === undefined ? (own.lines.at(-1)?.index ?? own.heading) + 2 : at.index + 1,
 		added,
 		removed,
 		reordered: added === 0 && removed === 0,

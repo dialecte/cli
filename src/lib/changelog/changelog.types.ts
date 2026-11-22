@@ -33,6 +33,27 @@ export type FoldResult = { text: string } | { refusal: string }
 /** How `readSections` treats what a fragment refuses: a repeated section, text before the first heading. */
 export type SectionsMode = 'fragment' | 'unreleased'
 
+/**
+ * A section's blocks joined with its breaking items first: the joined text, or the first block the join reads otherwise
+ * and the block placed before it.
+ */
+export type BreakingFirst =
+	| { text: string }
+	| { moved: SectionBlock; after: SectionBlock | undefined }
+
+/**
+ * A section of the release with its blocks joined breaking first (or the block the join reads otherwise), and where each
+ * block comes from: a fragment's file, or the Unreleased part.
+ */
+export type OrderedSection = {
+	section: ChangelogSection
+	ordered: BreakingFirst
+	sources: ReadonlyMap<SectionBlock, string>
+}
+
+/** A section entry of a release with where it comes from: a fragment's file, or the Unreleased part. */
+export type SourcedEntry = SectionEntry & { source: string }
+
 /** The sections of a text, and the text before the first heading (`unreleased` mode only; empty otherwise). */
 export type SectionsRead = { sections: SectionEntry[]; leading: string } | { problem: string }
 
@@ -52,6 +73,8 @@ export type ChangelogParts = {
 	lines: string[]
 	parts: ChangelogPart[]
 	linkLine: number | undefined
+	/** The top-level lines no block covers: consumed link reference definitions, their titles included. */
+	definitionLines: ReadonlySet<number>
 }
 
 /**
@@ -78,8 +101,16 @@ export type ReleasedSectionTexts = {
 	mergeBase?: string | undefined
 }
 
+/** A line of a section kept for comparison: its index in the file and its text, trailing spaces trimmed. */
+export type SectionLine = { index: number; text: string }
+
 /** A version's section read for comparison: its version, its copy rank (0 for the first), heading line, lines. */
-export type VersionSection = { version: string; copy: number; heading: number; lines: string[] }
+export type VersionSection = {
+	version: string
+	copy: number
+	heading: number
+	lines: readonly SectionLine[]
+}
 
 /** The base released sections are judged against: its commit and how a finding names it. */
 export type ReleaseBase = { commit: string; name: string }
@@ -106,10 +137,11 @@ export type SectionBlock = {
 }
 
 /**
- * A block opened in a text that runs to its end: a code fence, an HTML block of a kind only its close ends (or a raw-text
- * element left open in any block), or a nesting deeper than the reader reads.
+ * A block opened in a text that runs to its end: a code fence, an HTML block of a kind only its close ends, or a nesting
+ * deeper than the reader reads; or a block or item holding raw HTML other than whole comments and balanced bare inert
+ * tags (`open-html`).
  */
-export type UnclosedBlock = 'fence' | 'html' | 'nesting'
+export type UnclosedBlock = 'fence' | 'html' | 'nesting' | 'open-html'
 
 /**
  * A text read as CommonMark blocks: its lines (split as the parser splits them), the parser's block tokens (unclosed
@@ -121,11 +153,13 @@ export type MarkdownBlocks = {
 	tokens: readonly MarkdownToken[]
 	unclosedComment: number | undefined
 	unclosedBlock: UnclosedBlock | undefined
+	/** The raw HTML piece an `open-html` block names. */
+	openHtml: string | undefined
 	/** How many nesting levels the reader reads before it stops. */
 	maxNesting: number
 }
 
-/** A parser block token as the readers use it: its type, nesting level, markup, line range and content. */
+/** A parser block token as the readers use it: its type, nesting level, markup, line range, content and raw HTML. */
 export type MarkdownToken = {
 	type: string
 	level: number
@@ -133,4 +167,12 @@ export type MarkdownToken = {
 	markup: string
 	map: [number, number] | null
 	content: string
+	/** Its raw HTML pieces: an HTML block's content, an inline token's HTML tags and comments. */
+	html: readonly string[]
 }
+
+/** A bare inert tag still open in a block or item: its lowered name and its text as written. */
+export type OpenTag = { name: string; text: string }
+
+/** One raw HTML piece read: the tags open after it, or the first text refused in it. */
+export type PieceRead = { open: readonly OpenTag[] } | { refused: string }

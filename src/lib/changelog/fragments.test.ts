@@ -5,6 +5,10 @@ import { readFragments } from './fragments.ts'
 
 import { describe, expect, it } from 'vitest'
 
+/** The inert tags the open-HTML problem names, in its order. */
+const INERT_TAGS =
+	'<b>, <i>, <u>, <s>, <em>, <strong>, <small>, <mark>, <del>, <ins>, <sub>, <sup>, <code>, <kbd>, <samp>, <var>, <details>, <summary>, <br>, <wbr>'
+
 describe('readFragments', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 	it('two fragments → their sections, each entry text as written, the fragments in file name order', () => {
 		const root = createScratchRepository({
@@ -107,7 +111,37 @@ describe('readFragments', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		{
 			label: 'a script element opened under an item',
 			text: '### Changed\n\n- a\n\n  <script>\n- **Breaking:** b\n',
-			problem: 'an HTML block opens and never closes',
+			problem: `HTML \`<script>\` is not a whole comment or a balanced bare tag of its block or item (${INERT_TAGS}); put code in backticks`,
+		},
+		{
+			label: 'a script opened in one item and closed in a later one',
+			text: '### Changed\n\n- a <script>\n- **Breaking:** b\n- c </script>\n',
+			problem: `HTML \`<script>\` is not a whole comment or a balanced bare tag of its block or item (${INERT_TAGS}); put code in backticks`,
+		},
+		{
+			label: 'an image with a source',
+			text: '### Changed\n\n- a <img src="x.png"> shot\n',
+			problem: `HTML \`<img src="x.png">\` is not a whole comment or a balanced bare tag of its block or item (${INERT_TAGS}); put code in backticks`,
+		},
+		{
+			label: 'a link element of raw HTML',
+			text: '### Changed\n\n- see <a href="https://e">this</a>\n',
+			problem: `HTML \`<a href="https://e">\` is not a whole comment or a balanced bare tag of its block or item (${INERT_TAGS}); put code in backticks`,
+		},
+		{
+			label: 'a placeholder written in prose',
+			text: '### Changed\n\n- run release <version> now\n',
+			problem: `HTML \`<version>\` is not a whole comment or a balanced bare tag of its block or item (${INERT_TAGS}); put code in backticks`,
+		},
+		{
+			label: 'a refused tag over 60 characters across a line break',
+			text: '### Changed\n\n<div class="a-very-long-class-name another-long-class-name\n  third-class">\n',
+			problem: `HTML \`<div class="a-very-long-class-name another-long-class-name …\` is not a whole comment or a balanced bare tag of its block or item (${INERT_TAGS}); put code in backticks`,
+		},
+		{
+			label: 'a refused piece holding a replacement pattern',
+			text: "### Changed\n\n- a <i title='$&'>x</i>\n",
+			problem: `HTML \`<i title='$&'>\` is not a whole comment or a balanced bare tag of its block or item (${INERT_TAGS}); put code in backticks`,
 		},
 		{
 			label: 'items nested deeper than the markdown reader reads',
@@ -185,4 +219,51 @@ describe('readFragments: a no-entry note', { timeout: SCRATCH_REPOSITORY_TIMEOUT
 			{ file: 'changes/typo.none.md', problem: 'a no-entry note holds no reason' },
 		])
 	})
+
+	it('a script tag inside a comment block between items → read, the comment kept as written', () => {
+		const root = createScratchRepository({
+			'changes/lot.md': '### Changed\n\n- a\n\n<!-- <script> -->\n- **Breaking:** b\n',
+		})
+
+		expect(readFragments({ root })).toEqual({
+			fragments: [
+				{
+					file: 'changes/lot.md',
+					sections: [{ section: 'Changed', text: '- a\n\n<!-- <script> -->\n- **Breaking:** b' }],
+				},
+			],
+			notes: [],
+			problems: [],
+		})
+	})
+
+	it('a section opening with indented code → its indentation kept', () => {
+		const root = createScratchRepository({
+			'changes/lot.md': '### Added\n\n    code line\n\n- a.\n',
+		})
+
+		expect(readFragments({ root }).fragments).toEqual([
+			{ file: 'changes/lot.md', sections: [{ section: 'Added', text: '    code line\n\n- a.' }] },
+		])
+	})
+
+	it.each([
+		{ label: 'an indented comment opener', block: '    <!--' },
+		{ label: 'an indented script tag', block: '    <script>' },
+		{ label: 'an indented title tag', block: '    <title>' },
+	])(
+		'$label before a breaking item → a problem: moving the item first would change how it reads',
+		({ block }) => {
+			const root = createScratchRepository({
+				'changes/lot.md': `### Added\n\n${block}\n\n- **Breaking:** z\n`,
+			})
+
+			expect(readFragments({ root }).problems).toEqual([
+				{
+					file: 'changes/lot.md',
+					problem: `section Added: joining its blocks (breaking items first) changes how \`${block.trim()}\` reads; fence that block or indent it less`,
+				},
+			])
+		},
+	)
 })
