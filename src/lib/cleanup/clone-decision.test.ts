@@ -4,6 +4,7 @@
  * child gone, or a done registry entry naming the lot's worktree and branch.
  */
 import { chmodSync, mkdirSync, realpathSync, renameSync, symlinkSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { deadPid } from '../../../test/dead-pid.ts'
@@ -24,7 +25,8 @@ import {
 	registerHandover,
 } from '../handover/handover-store.ts'
 import { REHEARSAL_RUN_UNKNOWN } from '../handover/live-handover-run.constants.ts'
-import { cloneOwnerOf, whyKeepClone } from './clone-decision.ts'
+import { probeCaseInsensitive } from '../store/brief.ts'
+import { cloneOwnerOf, handoverWorkspaceOf, whyKeepClone } from './clone-decision.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -424,4 +426,63 @@ describe('cloneOwnerOf: the lot a clone belongs to', { timeout: STORE_CASE_TIMEO
 			cloneOwnerOf({ clone, reads: { lots: [recordOf(lot), twin], entries: entriesOf(lot) } }),
 		).toEqual({ notSingle: `${lot.name}, 0009-repo-twin` })
 	})
+})
+
+/** Whether the scratch folders sit on a case-insensitive volume (the case-folding row needs one). */
+const CASE_INSENSITIVE_SCRATCH = probeCaseInsensitive({ path: realpathSync(tmpdir()) })
+
+describe(
+	'cloneOwnerOf: a worktree gone, spelled in another case (runs on a case-insensitive volume only: there two spellings are one folder)',
+	{ timeout: STORE_CASE_TIMEOUT },
+	() => {
+		it.runIf(CASE_INSENSITIVE_SCRATCH)(
+			'a committed hand-over whose registered worktree, gone, names its missing folders in another case than the lot does → that lot',
+			() => {
+				const lot = landingLotOf()
+				const handover = addHandoverFolderOf(lot)
+				const gone = join(temporaryFolder('dialecte-gone-worktree-'), 'Gone', 'Worktree')
+				const record: LotRecord = { ...recordOf(lot), worktree: gone }
+				const entries = entriesOf(lot).map((entry) =>
+					entry.branch === lot.branch ? { ...entry, worktree: gone.toLowerCase() } : entry,
+				)
+
+				expect(
+					cloneOwnerOf({ clone: deadClone(handover), reads: { lots: [record], entries } }),
+				).toEqual(expect.objectContaining({ lot: lot.name }))
+			},
+		)
+	},
+)
+
+/** A handoverWorkspaceOf row: a hand-over path on a platform, and the workspace expected. */
+type WorkspaceRow = {
+	title: string
+	handover: string
+	platform: NodeJS.Platform
+	expected: string | undefined
+}
+
+const WORKSPACE_ROWS: WorkspaceRow[] = [
+	{
+		title:
+			'a Windows hand-over in a drive root’s _commit-plan → no workspace (a bare drive is relative)',
+		handover: 'C:\\_commit-plan\\fix',
+		platform: 'win32',
+		expected: undefined,
+	},
+	{
+		title: 'a Windows hand-over in a workspace’s _commit-plan → that workspace',
+		handover: 'C:\\work\\_commit-plan\\fix',
+		platform: 'win32',
+		expected: 'C:\\work',
+	},
+]
+
+describe('handoverWorkspaceOf: the workspace a hand-over sits in', () => {
+	for (const row of WORKSPACE_ROWS)
+		it(row.title, () => {
+			expect(handoverWorkspaceOf({ handover: row.handover, platform: row.platform })).toBe(
+				row.expected,
+			)
+		})
 })

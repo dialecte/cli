@@ -2,17 +2,18 @@
  * The one decision on a rehearsal clone, shared by `worktree prune` and `lot close --feature`: the lot it belongs
  * to, read from its marker and the registries, then why it stays, every remover's safety rules in one order.
  */
-import { lstatSync } from 'node:fs'
-import { basename, dirname, resolve } from 'node:path'
+import { basename, dirname, posix, resolve, win32 } from 'node:path'
 
-import { isPresent, realPathThroughAncestors } from '../file-system.ts'
+import { isLink, isPresent, realPathThroughAncestors } from '../file-system.ts'
 import { entryOfFolder } from '../handover/handover-store-read.ts'
 import { readRehearsalRun } from '../handover/live-handover-run.ts'
 import { markedHandoverOf, rehearsalMarkerPath } from '../handover/rehearsal-marker.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
+import { probeCaseInsensitive } from '../store/brief.ts'
 import { storeChildOf } from '../store/lot-items.ts'
 import { keptByDecisionOf } from '../store/lot-keep.ts'
 import { commonFolderOfLotFolder } from '../store/lot-records.ts'
+import { COMMIT_PLAN_FOLDER } from '../workspace.constants.ts'
 import { linkReaching } from '../worktree/folder-links.ts'
 import { processWorkingIn } from '../worktree/process-folders.ts'
 import { OWNER_NOT_SINGLE } from '../worktree/worktree.constants.ts'
@@ -188,19 +189,41 @@ function ownerReadNow(lotFolder: string): CloneOwner {
 
 /** The one key of a lot's own worktree and branch: the worktree's real path through its existing ancestors. */
 function worktreeBranchKey(params: { worktree: string; branch: string }): string {
-	return `${realPathThroughAncestors(resolve(params.worktree))}\n${params.branch}`
+	return `${spelledAsOnDisk(params.worktree)}\n${params.branch}`
 }
 
 /**
- * The path itself is a symbolic link (dangling or not): a clone that is one is never read through.
+ * A path spelled as on disk: its present part as the volume spells it, its missing folders folded to lower case when
+ * that volume is case-insensitive (two spellings of one gone folder are one key there).
+ */
+function spelledAsOnDisk(path: string): string {
+	const absolute = resolve(path)
+	let present = absolute
+	while (!isPresent(present) && dirname(present) !== present) present = dirname(present)
+	const real = realPathThroughAncestors(absolute)
+	if (present === absolute || !probeCaseInsensitive({ path: present })) return real
+	const kept = realPathThroughAncestors(present)
+	return `${kept}${real.slice(kept.length).toLowerCase()}`
+}
+
+/**
+ * The workspace a hand-over folder sits in: the parent of its `_commit-plan`; undefined when it is in none.
  *
- * @intent tell a link from the folder it points to, for every remover
+ * @intent find the workspace whose registries name a clone's hand-over
  * @internal
  */
-export function isLink(path: string): boolean {
-	try {
-		return lstatSync(path).isSymbolicLink()
-	} catch {
-		return false
-	}
+export function handoverWorkspaceOf(params: {
+	handover: string | undefined
+	/** The platform whose paths `handover` is spelled in; default this process's. */
+	platform?: NodeJS.Platform
+}): string | undefined {
+	const { handover } = params
+	if (handover === undefined) return undefined
+	const windows = (params.platform ?? process.platform) === 'win32'
+	const paths = windows ? win32 : posix
+	const segments = paths.resolve(handover).split(paths.sep)
+	const at = segments.lastIndexOf(COMMIT_PLAN_FOLDER)
+	// a bare drive (`C:`) names its current folder, not its root: no workspace
+	if (at <= (windows ? 1 : 0)) return undefined
+	return segments.slice(0, at).join(paths.sep) || paths.sep
 }

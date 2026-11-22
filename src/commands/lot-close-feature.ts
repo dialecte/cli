@@ -23,7 +23,6 @@ import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { jsonOf } from '../lib/print/print.ts'
 import { lotsOfFeature } from '../lib/store/feature-lots.ts'
 import { readLotItems } from '../lib/store/lot-items.ts'
-import { keptOfChecked } from '../lib/store/lot-keep.ts'
 import { readCheckedLotState, registryOfLotFolder } from '../lib/store/lot-records.ts'
 import { lotState } from '../lib/store/lot-state.ts'
 import { findWorkspace } from '../lib/workspace.ts'
@@ -246,7 +245,7 @@ function anyKept(output: LotCloseFeatureOutput): boolean {
 	)
 }
 
-/** A lot of the feature read from its records: its state, whether simulated, its keep. */
+/** A lot of the feature read from its records: its name, folder, state and whether simulated. */
 function readFeatureLot(lotFolder: string): FeatureLot {
 	const registry = registryOfLotFolder(lotFolder)
 	const checked = readCheckedLotState({ lotFolder, registry, entries: readStoreEntries(registry) })
@@ -255,18 +254,14 @@ function readFeatureLot(lotFolder: string): FeatureLot {
 		return {
 			name,
 			lotFolder,
-			identity: checked?.identity,
 			state: 'damaged',
 			simulated: checked?.identity?.simulated === true,
 		}
-	const kept = keptOfChecked({ name, checked })
 	return {
 		name,
 		lotFolder,
-		identity: checked.input.identity,
 		state: lotState(checked.input).state,
 		simulated: checked.input.identity.simulated,
-		...(kept !== undefined && { kept }),
 	}
 }
 

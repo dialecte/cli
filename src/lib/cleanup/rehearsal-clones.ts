@@ -9,7 +9,7 @@ import { existsSync, readdirSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 
 import { writeRemoved, writeRemoving } from '../events/cards-log.ts'
-import { realPathOf } from '../file-system.ts'
+import { isLink, realPathOf } from '../file-system.ts'
 import {
 	REHEARSAL_FOLDER_PREFIX,
 	REHEARSAL_MARKER_FILE,
@@ -21,7 +21,7 @@ import { WORKTREES_FOLDER } from '../workspace.constants.ts'
 import { scratchTrashOf } from '../worktree/prune-worktrees.ts'
 import { trashFolder } from '../worktree/trash.ts'
 import { cardsLogFileOf } from './act-lot-prune.ts'
-import { cloneKeptOf, cloneMarkerOf, cloneOwnerOf, isLink, whyKeepClone } from './clone-decision.ts'
+import { cloneKeptOf, cloneMarkerOf, cloneOwnerOf, whyKeepClone } from './clone-decision.ts'
 import { CLONE_KEEP_TEXTS } from './rehearsal-clones.constants.ts'
 
 import type { RemovalBy } from '../events/cards-log.types.ts'

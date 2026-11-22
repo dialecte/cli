@@ -11,18 +11,18 @@
  */
 import { spawnSync } from 'node:child_process'
 import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from 'node:fs'
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 
 import {
 	cloneKeptOf,
+	handoverWorkspaceOf,
 	cloneMarkerOf,
 	cloneOwnerOf,
-	isLink,
 	ownerLookupsOf,
 	whyKeepClone,
 } from '../cleanup/clone-decision.ts'
 import { removableIgnored } from '../cleanup/removable-ignored.ts'
-import { isPresent, realPathOf, realPathThroughAncestors } from '../file-system.ts'
+import { isLink, isPresent, realPathOf, realPathThroughAncestors } from '../file-system.ts'
 import { findBaseBranchRef } from '../gate/gate-base.ts'
 import { isAncestorCommit, readCommitOrNone, readGit } from '../git.ts'
 import { handoverLockPath } from '../handover/handover-lock.ts'
@@ -933,7 +933,8 @@ function cloneOwnerReadsOf(params: {
 	const markers = new Map(params.clones.map((clone) => [clone, cloneMarkerOf(clone)]))
 	const workspaces = new Set(
 		[...markers.values()].flatMap((marker) => {
-			const workspace = 'handover' in marker ? handoverWorkspaceOf(marker.handover) : undefined
+			const workspace =
+				'handover' in marker ? handoverWorkspaceOf({ handover: marker.handover }) : undefined
 			return workspace === undefined ? [] : [realPathOf(workspace)]
 		}),
 	)
@@ -961,14 +962,6 @@ function cloneOwnerReadsOf(params: {
 			entries: items.flatMap((one) => one.entries),
 		}),
 	}
-}
-
-/** The workspace a hand-over folder sits in: the parent of its `_commit-plan`; undefined when it is in none. */
-function handoverWorkspaceOf(handover: string | undefined): string | undefined {
-	if (handover === undefined) return undefined
-	const segments = resolve(handover).split(sep)
-	const at = segments.lastIndexOf(COMMIT_PLAN_FOLDER)
-	return at <= 0 ? undefined : segments.slice(0, at).join(sep) || sep
 }
 
 /**

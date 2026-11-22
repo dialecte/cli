@@ -1,5 +1,5 @@
 import type { HostAdapter } from '../lib/host/host.types.ts'
-import type { LotIdentity, LotStateName } from '../lib/store/store.types.ts'
+import type { LotStateName } from '../lib/store/store.types.ts'
 import type { BackgroundSpawner, ProcessFolder } from '../lib/worktree/worktree.types.ts'
 import type { LotPruneLotOutput } from './lot-prune.types.ts'
 
@@ -20,15 +20,12 @@ export type LotCloseFeatureParams = {
 	readStartTime?: (pid: number) => string | undefined
 }
 
-/** A lot of the feature as the close reads it first: its name, folder, identity, state, and its keep. */
+/** A lot of the feature as the close reads it first: its name, folder, state and whether simulated. */
 export type FeatureLot = {
 	name: string
 	lotFolder: string
-	identity: LotIdentity | undefined
 	state: LotStateName | 'damaged'
 	simulated: boolean
-	/** Why it is kept on purpose; absent when it is not. */
-	kept?: string
 }
 
 /**

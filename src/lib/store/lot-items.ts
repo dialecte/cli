@@ -8,7 +8,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { isPresent, realPathThroughAncestors } from '../file-system.ts'
 import { entryOfFolder, readStoreEntries } from '../handover/handover-store-read.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
-import { isCommonFolder } from './lot-folder.ts'
+import { isStoreFolder } from './lot-folder.ts'
 import { CLOSED_LOT_ITEM_REASON, LOT_RECORDS_UNREAD } from './lot-items.constants.ts'
 import { keptByDecision, keptOfChecked } from './lot-keep.ts'
 import { readCheckedLotState } from './lot-records.ts'
@@ -20,7 +20,6 @@ import {
 	LOT_KEEP_REASON,
 	LOT_LINK_SEGMENTS,
 	LOTS_KEEPING_NOTHING,
-	STORE_FOLDER,
 	TEMPORARY_FOLDER_PATTERN,
 } from './store.constants.ts'
 
@@ -114,7 +113,7 @@ export function storeChildOf(params: {
 	if (!LOT_FOLDER_NAME_PATTERN.test(name) || TEMPORARY_FOLDER_PATTERN.test(name)) return undefined
 	const store = realPathThroughAncestors(dirname(path))
 	// `lotNameOfPath` resolves the child itself (a link out of the store would leave it): the store's rule, on the parent
-	if (basename(store) !== STORE_FOLDER || !isCommonFolder(dirname(store))) return undefined
+	if (!isStoreFolder(store)) return undefined
 	return { store, child: join(store, name) }
 }
 

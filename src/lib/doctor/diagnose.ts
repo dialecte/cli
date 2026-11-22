@@ -4,9 +4,10 @@
  * ship them were installed, the local checkouts, the cli itself. Each finding is a line, ✅ or ⚠️ with the one
  * command that fixes it.
  */
-import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 
+import { isLink } from '../file-system.ts'
 import { declaredSpecOf } from '../package-json.ts'
 import { readProfile } from '../profile/profile.ts'
 import { TEXT_COLLATOR } from '../skills/api-index.constants.ts'
@@ -165,14 +166,6 @@ function skills(cwd: string): DoctorLine[] {
 function isContributor(cwd: string): boolean {
 	try {
 		return readProfile(cwd) === 'contributor'
-	} catch {
-		return false
-	}
-}
-
-function isLink(path: string): boolean {
-	try {
-		return lstatSync(path).isSymbolicLink()
 	} catch {
 		return false
 	}
