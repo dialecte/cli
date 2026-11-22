@@ -121,26 +121,29 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
                two-questions, limit, failure, slow) under wait: no worktree, no branch, no registry
                entry; it never blocks a real lot
   brief - a working or ready real lot takes a new brief whose only changes are its public text (the
-          summary, the issue, step titles and behaviours); any other change is refused naming the
-          field, nothing written; the new brief passes the start's field and public-text checks; it
-          replaces the stored brief and a brief transition records the sha256 of the old and new
-          brief, --by and --reason, the state and position kept; the same brief again answers
-          already, nothing written; a simulated lot is refused; brief.json edited any other way
-          reads as damage
+          summary, the issue, step titles and behaviours, and each lot's commit message, which
+          titles its pull request); any other change is refused naming the field, nothing written;
+          the new brief passes the start's field and public-text checks; it replaces the stored
+          brief and a brief transition records the sha256 of the old and new brief, --by and
+          --reason, the state and position kept; the same brief again answers already, nothing
+          written; a simulated lot is refused; brief.json edited any other way reads as damage
   pr - renders the lot's pull request from its records through the repository's
-       .github/pull_request_template.md: the title is the brief's first commit message, the body its
-       summary and other commit messages, step titles and behaviours, the changelog fragments the
-       lot adds, tests.json (a part of another tree reads stale), review.jsonl (findings and how
-       each closed, the verdicts by reviewer kind, never a name; a row value its writer never writes
-       refused), the risk class and effort, the overlaps it accepted (the other lot by its index,
-       and why), the issue it closes, and the author's checklist ticked from the records; a missing
-       record reads not recorded; the record text is checked first (a reference, a forbidden word, a
-       plan entry id, a link or a path outside the tree refused, naming the word and the record);
-       the open pull request (landing.json's, else the branch's newest) is edited only when its
-       title or body reads otherwise, a person's part after the kept marker kept (a body without
-       that heading holding a person's text refused, never dropped); a damaged lot refused; --print
-       prints and sends nothing; no pull request yet prints the text and names lot land; --json {
-       title, body, changeRequest, head, sent }
+       .github/pull_request_template.md: the title is the brief's first commit message (changed with
+       lot brief), the body its summary and other commit messages, step titles and behaviours, the
+       changelog fragments the lot adds, tests.json (a part of another tree reads stale),
+       review.jsonl (findings and how each closed, the verdicts by reviewer kind, never a name; a
+       row value its writer never writes refused), the risk class and effort, the overlaps it
+       accepted (the other lot by its index, and why), the issue it closes, and the author's
+       checklist ticked from the records; a missing record reads not recorded; a lot that changes
+       package.json's version is refused when its title does not name the new version (read at the
+       lot's own fork point: a lot started on an open release lot sets none), naming lot brief; the
+       record text is checked first (a reference, a forbidden word, a plan entry id, a link or a
+       path outside the tree refused, naming the word and the record); the open pull request
+       (landing.json's, else the branch's newest) is edited only when its title or body reads
+       otherwise, a person's part after the kept marker kept (a body without that heading holding a
+       person's text refused, never dropped); a damaged lot refused; --print prints and sends
+       nothing; no pull request yet prints the text and names lot land; --json { title, body,
+       changeRequest, head, sent }
   review - the private half of the lot's review, read-only (nothing written): the lot's state and
            branch, its pull request (landing.json's) with the head it is at, the head the lot landed
            and the worktree's HEAD, its checks, the brief's goal and steps (title, spec,
@@ -1135,8 +1138,12 @@ is pushed as committed, a line saying the rebase waits for a clean worktree; CI 
 with a lease, its pull request opened or reused with the title and body `lot pr` renders from the lot's records
 through `.github/pull_request_template.md`, on the rebased head before the push: the title is the lot's own message
 (the first commit lot of its brief), never the branch's last commit, so a merge of main never becomes the squash title,
-and the body is the lot's final state, never its commit bodies. A reused pull request whose title or body reads
-otherwise is edited, a person's part after the template's kept marker kept; records that do not render push nothing.
+and the body is the lot's final state, never its commit bodies. The message is changed with `dialecte lot brief`, so a
+re-versioned release lot needs no hand edit of its title. A lot that changes package.json's version (read at the lot's
+own fork point: a lot started on an open release lot sets none of its own) is refused while its title does not name
+the new version, by `lot pr`, `lot land` before anything is pushed and `lot approve` before anything is queued. A
+reused pull request whose title or body reads otherwise is edited, a person's part after the template's kept marker
+kept; records that do not render push nothing.
 The pull request is always a draft and `lot land` never queues it: CI runs on every push while the lot goes on, and
 `lot approve`, a person's step, queues it (below). An approval is for one head: a reused pull request queued or ready
 whose head to push no person approved (`approvals.jsonl`) is taken back out of the queue before the push (auto-merge

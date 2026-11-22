@@ -26,9 +26,22 @@ afterEach(function restoreEnvironment() {
  * A store lot `0001-repo-x` whose worktree holds one commit on `feat/x`, the repository pushed to a bare origin; its
  * identity names the base it was cut from as `baseRef` (`main` when left out) at main's commit.
  */
-function landableLot(params: { baseRef?: (main: string) => string } = {}) {
+function landableLot(
+	params: {
+		baseRef?: (main: string) => string
+		/** The version main holds, the one the lot's commit sets, and the lot's commit message. */
+		release?: { main: string; lot: string; message: string }
+	} = {},
+) {
 	const workspace = createBriefWorkspace()
-	writeFiles({ root: workspace.repository, files: { [TEMPLATE_PATH]: cliTemplate() } })
+	const { release } = params
+	writeFiles({
+		root: workspace.repository,
+		files: {
+			[TEMPLATE_PATH]: cliTemplate(),
+			...(release && { 'package.json': `{ "version": "${release.main}" }\n` }),
+		},
+	})
 	git({ root: workspace.repository, args: ['add', '-A'] })
 	git({ root: workspace.repository, args: ['commit', '-qm', 'chore: the template'] })
 	const origin = join(workspace.workspace, 'origin.git')
@@ -41,17 +54,26 @@ function landableLot(params: { baseRef?: (main: string) => string } = {}) {
 		args: ['worktree', 'add', '-q', '-b', 'feat/x', worktree, 'main'],
 	})
 	const main = git({ root: workspace.repository, args: ['rev-parse', 'main'] }).trim()
-	writeFiles({ root: worktree, files: { 'src/x.ts': 'export const x = 1\n' } })
-	git({ root: worktree, args: ['add', 'src/x.ts'] })
+	writeFiles({
+		root: worktree,
+		files: {
+			'src/x.ts': 'export const x = 1\n',
+			...(release && { 'package.json': `{ "version": "${release.lot}" }\n` }),
+		},
+	})
+	git({ root: worktree, args: ['add', '-A'] })
 	git({ root: worktree, args: ['commit', '-qm', 'feat(x): x answers one'] })
 	const lotFolder = writeStoreLot({
 		workspace,
 		name: '0001-repo-x',
-		scope: ['src/'],
+		scope: release ? ['src/', 'package.json'] : ['src/'],
 		branch: 'feat/x',
 		repository: workspace.repository,
 		worktree,
 		base: { ref: params.baseRef?.(main) ?? 'main', commit: main },
+		...(release && {
+			brief: { lots: [{ paths: ['src/', 'package.json'], message: release.message }] },
+		}),
 	})
 	return { workspace, lotFolder }
 }
@@ -69,6 +91,32 @@ describe('dialecte lot land', { timeout: STORE_CASE_TIMEOUT }, () => {
 			number: 7,
 		})
 		expect(result.output).toContain('dialecte lot approve 0001-repo-x --by <who> queues it')
+	})
+
+	it('a lot setting 0.9.0 whose title names 0.8.4 → refused naming lot brief, nothing pushed, no pull request opened', () => {
+		const { workspace } = landableLot({
+			release: { main: '0.8.4', lot: '0.9.0', message: 'chore(release): @scope/x 0.8.4' },
+		})
+		const { host, calls } = recordingHost()
+
+		const result = runLotLand({ cwd: workspace.repository, argv: ['0001-repo-x'], host })
+
+		expect({
+			exitCode: result.exitCode,
+			output: result.output,
+			opened: calls.filter((call) => call.startsWith('open ')),
+			pushed: git({
+				root: workspace.repository,
+				args: ['ls-remote', '--heads', 'origin', 'feat/x'],
+			}).trim(),
+		}).toEqual({
+			exitCode: 1,
+			output: expect.stringContaining(
+				'lot land: the title "chore(release): @scope/x 0.8.4" does not name 0.9.0, the version this lot sets: correct lots[0].message with dialecte lot brief 0001-repo-x',
+			),
+			opened: [],
+			pushed: '',
+		})
 	})
 
 	it('--draft → refused, exit 2, nothing asked of the host or pushed: lot land always drafts now, lot approve queues', () => {

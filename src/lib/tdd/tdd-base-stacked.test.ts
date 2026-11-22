@@ -3,7 +3,7 @@
  * measures from the parent's line, its fork point there, not from the base branch's merge-base, in the tdd step the
  * gate and the hook run.
  */
-import { rmSync } from 'node:fs'
+import { rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { writeStoreLot } from '../../../test/brief-workspace.ts'
@@ -20,8 +20,10 @@ import {
 	registerHandover,
 } from '../handover/handover-store.ts'
 import { writeLanded } from '../landing/landed-record.ts'
+import { STACK_RECORD_DAMAGED } from '../landing/lot-landing.constants.ts'
 import { readIdentity } from '../store/identity.ts'
 import { checkTddReceipts } from './check-tdd-receipts.ts'
+import { isStackedLotWorktree } from './tdd-base.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -168,4 +170,30 @@ describe('the lot base of a stacked lot', { timeout: STORE_CASE_TIMEOUT }, () =>
 			reason: expect.stringContaining(`the stack parent ${PARENT} cannot be read`),
 		})
 	})
+
+	it('a child whose stack.json is damaged → the tdd step fails naming the record, never measured as a lot not stacked', async () => {
+		const { worktree, parentFolder } = stackedChild()
+		writeFileSync(join(parentFolder, '..', childOf(worktree), 'stack.json'), '{ torn')
+
+		await expect(
+			checkTddReceipts({ root: worktree, packageJson: {}, measureLot: true }),
+		).resolves.toMatchObject({
+			status: 'failed',
+			reason: expect.stringContaining(
+				STACK_RECORD_DAMAGED.replace('{reason}', 'stack.json does not read as a stack record'),
+			),
+		})
+	})
+
+	it('a child whose stack.json is damaged → its worktree reads as stacked, so the gate measures it as a lot', () => {
+		const { worktree, parentFolder } = stackedChild()
+		writeFileSync(join(parentFolder, '..', childOf(worktree), 'stack.json'), '{ torn')
+
+		expect(isStackedLotWorktree({ root: worktree })).toBe(true)
+	})
 })
+
+/** The child's lot folder name: its worktree's folder name. */
+function childOf(worktree: string): string {
+	return worktree.split('/').at(-1) ?? 'no-child'
+}

@@ -1,7 +1,7 @@
 /** Reading `### <section>` blocks: a fragment's text, or the Unreleased part of the changelog. */
+import { lineKinds } from './changelog-parts.ts'
 import {
 	CHANGELOG_SECTIONS,
-	CODE_FENCE_PATTERN,
 	FRAGMENT_PROBLEMS,
 	SECTION_HEADING_PATTERN,
 } from './changelog.constants.ts'
@@ -14,7 +14,7 @@ import type {
 } from './changelog.types.ts'
 
 /**
- * The sections of `text` in the order written, each one's text trimmed, a heading inside a code fence being text; or
+ * The sections of `text` in the order written, each one's text trimmed, a heading inside a code fence or an HTML comment being text; or
  * the first problem: a heading that is no changelog section, an empty section, and in a fragment text before the first
  * heading or a repeated section. The Unreleased part (`unreleased`) keeps its text before the first heading (the
  * release's summary) and merges a repeated section into the first. No section at all is `sections: []`.
@@ -25,10 +25,10 @@ import type {
 export function readSections(params: { text: string; mode: SectionsMode }): SectionsRead {
 	const opened: { section: ChangelogSection; lines: string[] }[] = []
 	const leading: string[] = []
-	let fenced = false
-	for (const line of params.text.split('\n')) {
-		const heading = fenced ? undefined : SECTION_HEADING_PATTERN.exec(line)?.[1]
-		if (CODE_FENCE_PATTERN.test(line)) fenced = !fenced
+	const lines = params.text.split('\n')
+	const outside = lineKinds({ lines })
+	for (const [index, line] of lines.entries()) {
+		const heading = outside[index] ? SECTION_HEADING_PATTERN.exec(line)?.[1] : undefined
 		if (heading === undefined) {
 			const current = opened.at(-1)
 			if (current) current.lines.push(line)
@@ -61,12 +61,12 @@ function sectionNamed(params: { name: string }): ChangelogSection | undefined {
 	return CHANGELOG_SECTIONS.find((section) => section === params.name)
 }
 
-/** One entry per section, in first-seen order, a repeated section's text after the first's on its own line. */
+/** One entry per section, in first-seen order, a repeated section's text after the first's, a blank line between. */
 function mergedSections(params: { sections: readonly SectionEntry[] }): SectionEntry[] {
 	const merged: SectionEntry[] = []
 	for (const entry of params.sections) {
 		const first = merged.find((kept) => kept.section === entry.section)
-		if (first) first.text = `${first.text}\n${entry.text}`
+		if (first) first.text = `${first.text}\n\n${entry.text}`
 		else merged.push({ ...entry })
 	}
 	return merged

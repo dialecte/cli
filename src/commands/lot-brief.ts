@@ -1,7 +1,7 @@
 /**
  * `dialecte lot brief <id> --from <brief.json> --by <who> --reason <text>`: a started lot's public text rewritten - the
- * summary, the issue, step titles and behaviours, which its pull request shows - and nothing else (scope, steps' count
- * and order, specs, commit lots, branch, plan... stay as started). The new brief passes the start's field and
+ * summary, the issue, step titles and behaviours, each lot's commit message, which its pull request shows - and nothing
+ * else (scope, the steps' and lots' count and order, specs, a lot's paths, branch, plan... stay as started). The new brief passes the start's field and
  * public-text checks; it replaces the stored one whole, and a `brief` transition records the old and new hashes, who
  * and why, the lot's state and position kept.
  */
@@ -25,9 +25,8 @@ import { appendTransition } from '../lib/store/transitions.ts'
 import {
 	LOT_BRIEF_LINES,
 	LOT_BRIEF_VALUE_OPTIONS,
-	PUBLIC_BRIEF_FIELDS,
-	PUBLIC_STEP_FIELDS,
-	STEPS_FIELD,
+	PUBLIC_LIST_FIELDS,
+	PUBLIC_TEXT_FIELDS,
 } from './lot-brief.constants.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
@@ -198,57 +197,74 @@ function parsedOf(text: string): Record<string, unknown> | undefined {
 }
 
 /**
- * The first field the new brief changes that only the start sets: any top-level field but the public ones, then the
- * number of steps, then a step's field but its title and behaviours; undefined when it changes none.
+ * The first field the new brief changes that only the start sets: any top-level field but the public ones, then a
+ * public list's length, then an item's field but its public ones; undefined when it changes none.
  */
 function fixedFieldChanged(params: {
 	old: unknown
 	next: Record<string, unknown>
 }): string | undefined {
 	const old = (params.old ?? {}) as Record<string, unknown>
+	const publicKeys = [...PUBLIC_TEXT_FIELDS, ...Object.keys(PUBLIC_LIST_FIELDS)]
 	const keys = [...new Set([...Object.keys(old), ...Object.keys(params.next)])]
 	const top = keys.find(
-		(key) =>
-			!PUBLIC_BRIEF_FIELDS.includes(key) && stableJson(old[key]) !== stableJson(params.next[key]),
+		(key) => !publicKeys.includes(key) && stableJson(old[key]) !== stableJson(params.next[key]),
 	)
 	if (top !== undefined) return top
-	const oldSteps = Array.isArray(old.steps) ? old.steps : []
-	const newSteps = Array.isArray(params.next.steps) ? params.next.steps : []
-	if (oldSteps.length !== newSteps.length) return 'steps'
-	for (const [index, step] of oldSteps.entries()) {
-		const before = (step ?? {}) as Record<string, unknown>
-		const after = (newSteps[index] ?? {}) as Record<string, unknown>
-		const field = [...new Set([...Object.keys(before), ...Object.keys(after)])].find(
-			(key) =>
-				!PUBLIC_STEP_FIELDS.includes(key) && stableJson(before[key]) !== stableJson(after[key]),
-		)
-		if (field !== undefined) return `steps[${index}].${field}`
+	for (const [list, fields] of Object.entries(PUBLIC_LIST_FIELDS)) {
+		const before = itemsOf(old[list])
+		const after = itemsOf(params.next[list])
+		if (before.length !== after.length) return list
+		for (const [index, item] of before.entries()) {
+			const next = after[index] ?? {}
+			const field = [...new Set([...Object.keys(item), ...Object.keys(next)])].find(
+				(key) => !fields.includes(key) && stableJson(item[key]) !== stableJson(next[key]),
+			)
+			if (field !== undefined) return `${list}[${index}].${field}`
+		}
 	}
 	return undefined
 }
 
-/** The public fields the new brief changes, as their refusals would name them. */
+/** The public fields the new brief changes, as their refusals would name them: the text fields, then each list's. */
 function publicFieldsChanged(params: { old: unknown; next: Record<string, unknown> }): string[] {
 	const old = (params.old ?? {}) as Record<string, unknown>
-	const top = PUBLIC_BRIEF_FIELDS.filter((key) => key !== STEPS_FIELD).filter(
+	const top = PUBLIC_TEXT_FIELDS.filter(
 		(key) => stableJson(old[key]) !== stableJson(params.next[key]),
 	)
-	const oldSteps = (Array.isArray(old.steps) ? old.steps : []) as Record<string, unknown>[]
-	const newSteps = (params.next.steps ?? []) as Record<string, unknown>[]
-	const steps = oldSteps.flatMap(function stepFields(step, index) {
-		const after = newSteps[index] ?? {}
-		const title = step.title === after.title ? [] : [`steps[${index}].title`]
-		const before = Array.isArray(step.behaviours) ? (step.behaviours as unknown[]) : []
-		const now = Array.isArray(after.behaviours) ? (after.behaviours as unknown[]) : []
-		const behaviours =
-			before.length === now.length
-				? before.flatMap((text, behaviour) =>
-						text === now[behaviour] ? [] : [`steps[${index}].behaviours[${behaviour}]`],
-					)
-				: [`steps[${index}].behaviours`]
-		return [...title, ...behaviours]
+	const lists = Object.entries(PUBLIC_LIST_FIELDS).flatMap(function listFields([list, fields]) {
+		const after = itemsOf(params.next[list])
+		return itemsOf(old[list]).flatMap((item, index) =>
+			fields.flatMap((field) =>
+				fieldChanges({
+					path: `${list}[${index}].${field}`,
+					before: item[field],
+					after: after[index]?.[field],
+				}),
+			),
+		)
 	})
-	return [...top, ...steps]
+	return [...top, ...lists]
+}
+
+// dialecte-allow duplicate-read: it compares one public field's values, the callers walk the brief's fields
+/** How a public field changed: a list field per element when its length holds, else the field whole; [] unchanged. */
+function fieldChanges(params: { path: string; before: unknown; after: unknown }): string[] {
+	const { path, before, after } = params
+	if (Array.isArray(before) && Array.isArray(after) && before.length === after.length)
+		return before.flatMap((value: unknown, index) =>
+			stableJson(value) === stableJson(after[index]) ? [] : [`${path}[${index}]`],
+		)
+	return stableJson(before) === stableJson(after) ? [] : [path]
+}
+
+/** The items of a brief list, each an object (a malformed one read as empty). */
+function itemsOf(value: unknown): Record<string, unknown>[] {
+	return Array.isArray(value)
+		? value.map((item: unknown) =>
+				item !== null && typeof item === 'object' ? (item as Record<string, unknown>) : {},
+			)
+		: []
 }
 
 function refused(line: string): CommandResult {

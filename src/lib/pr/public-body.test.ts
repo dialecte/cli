@@ -151,7 +151,6 @@ describe('publicPiecesOf lists the free text of the records', () => {
 			},
 			overlaps: [{ lot: '0007-repo-other', reason: 'separate lines' }],
 			treeHash: 'a',
-			versionBumped: false,
 			release: false,
 		}
 
@@ -172,7 +171,6 @@ describe('publicPiecesOf lists the free text of the records', () => {
 			messages: ['feat(x): x'],
 			changelog: { kind: 'none', reason: 'wording only', file: 'changes/x.none.md' },
 			treeHash: 'a',
-			versionBumped: false,
 			release: false,
 		}
 
@@ -250,7 +248,6 @@ describe('publicPiecesOf lists the free cells of the review', () => {
 				],
 			},
 			treeHash: 'a',
-			versionBumped: false,
 			release: false,
 		}
 
@@ -277,7 +274,6 @@ describe('publicPiecesOf holds the quality lines', () => {
 		const sources: ChangeRequestSources = {
 			messages: ['feat(x): x'],
 			treeHash: 'a',
-			versionBumped: false,
 			release: false,
 			quality: {
 				kind: 'judged',

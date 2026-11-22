@@ -23,7 +23,6 @@ function reviewPartOf(review: ReviewRecord): string {
 			treeHash: 'a'.repeat(64),
 			review,
 			release: false,
-			versionBumped: false,
 		},
 		kept: undefined,
 	})

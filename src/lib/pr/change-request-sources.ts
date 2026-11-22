@@ -4,7 +4,7 @@
  * the pull request lands); a path it names passes only when a commit of the tree holds it. A record missing is undefined, never a guess.
  */
 import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 
 import { packageJsonOfText } from '../api/api-index-diff.ts'
 import { CHANGELOG_FILE, NO_ENTRY_EXTENSION } from '../changelog/changelog.constants.ts'
@@ -12,8 +12,11 @@ import { readSections } from '../changelog/sections.ts'
 import { lotGitDeclaredHighOf } from '../design/base-declared.ts'
 import { readContribRecord, readGateRecords } from '../gate-records/gate-records.ts'
 import { hashStateTree } from '../gate-records/state-hash.ts'
-import { readFilesAtRevision, readGit, tryReadGit } from '../git.ts'
+import { readCommitOrNone, readFilesAtRevision, readGit, tryReadGit } from '../git.ts'
 import { readLanding } from '../handover/land-record.ts'
+import { fillMessage } from '../knowledge/standard/fill-message.ts'
+import { lotBaseOf } from '../landing/lot-base.ts'
+import { readStackParent } from '../landing/read-stack-parent.ts'
 import { PACKAGE_MANIFEST_FILE } from '../package-json.constants.ts'
 import { checkBaseAwareAt } from '../quality/check-base-aware.ts'
 import { applyQualityOptOuts } from '../quality/quality-pass.ts'
@@ -39,7 +42,7 @@ import {
 	CHANGE_REQUEST_LINES,
 	TEMPLATE_PATH,
 } from './change-request.constants.ts'
-import { linesOf, templateFaultOf } from './compose-change-request.ts'
+import { linesOf, templateFaultOf, titleVersionFault } from './compose-change-request.ts'
 import { publicPiecesOf, publicRefusalOf } from './public-body.ts'
 import { recordValueFault } from './record-values.ts'
 
@@ -76,6 +79,8 @@ export function prepareChangeRequest(params: {
 	if ('refusal' in template) return template
 	const sources = readChangeRequestSources(params)
 	if ('refusal' in sources) return sources
+	const title = titleVersionFault({ sources, lot: basename(params.lotFolder) })
+	if (title !== undefined) return { refusal: title }
 	const forged = recordValueFault(sources)
 	if (forged !== undefined)
 		return {
@@ -147,21 +152,23 @@ export function readChangeRequestSources(params: {
 				reason: lots.refused.map((refusal) => refusal.detail).join('; '),
 			}),
 		}
-	const base = mergeBaseOf(params)
+	const fork = lotForkOf(params)
+	if ('refusal' in fork) return fork
+	// a lot not stacked forks at the body's merge-base: one merge-base read serves both
+	const base = fork.stacked ? mergeBaseOf(params) : fork.forkPoint
 	const changes = changedFilesOf({ worktree: params.worktree, base })
+	const version = versionFactsOf({
+		worktree: params.worktree,
+		forkPoint: fork.forkPoint,
+		base,
+		changes,
+	})
 	const treeHash = hashStateTree(
 		readGit({ root: params.worktree, args: ['rev-parse', 'HEAD^{tree}'] }).trim(),
 	)
 	const standing = riskStandingOf({ folder: params.lotFolder })
 	const tests = readTestsRecord({ folder: params.lotFolder })
-	const record = readReviewRecord({ folder: params.lotFolder })
-	const review =
-		record === undefined
-			? undefined
-			: verdictsAt({
-					record,
-					head: readGit({ root: params.worktree, args: ['rev-parse', 'HEAD'] }).trim(),
-				})
+	const review = reviewAtHead(params)
 	// the design line reads the lot's live standing: an edit or a scope change since review.jsonl was written counts
 	const design = designRowOf({
 		folder: params.lotFolder,
@@ -190,9 +197,66 @@ export function readChangeRequestSources(params: {
 		...(dependsOn !== undefined && { dependsOn }),
 		...(docsPassed !== undefined && { docsPassed }),
 		quality: bodyQualityOf({ worktree: params.worktree, base }),
-		versionBumped:
-			versionAt({ worktree: params.worktree, commit: base }) !==
-			versionAt({ worktree: params.worktree, commit: 'HEAD' }),
+		...version,
+	}
+}
+
+/** The review record's verdicts at the worktree's HEAD; undefined without a review record. */
+function reviewAtHead(params: {
+	lotFolder: string
+	worktree: string
+}): ReturnType<typeof verdictsAt> | undefined {
+	const record = readReviewRecord({ folder: params.lotFolder })
+	if (record === undefined) return undefined
+	const head = readGit({ root: params.worktree, args: ['rev-parse', 'HEAD'] }).trim()
+	return verdictsAt({ record, head })
+}
+
+/**
+ * The lot's own fork point (`lotBaseOf`: the base's merge-base, or the newest commit of an open stack parent's line the
+ * lot holds) and whether it is stacked; refused for a base that cannot be read here, a stack record or parent that
+ * cannot be read, or no fork point, never read against the base branch.
+ */
+function lotForkOf(params: {
+	lotFolder: string
+	worktree: string
+	baseRef: string
+}): { forkPoint: string; stacked: boolean } | { refusal: string } {
+	const { worktree, baseRef } = params
+	if (readCommitOrNone({ root: worktree, ref: baseRef }) === undefined)
+		return {
+			refusal: fillMessage({
+				template: CHANGE_REQUEST_LINES.unreadBase,
+				values: { base: baseRef },
+			}),
+		}
+	const parent = readStackParent({ lotFolder: params.lotFolder, root: worktree })
+	if (parent !== undefined && 'refusal' in parent) return parent
+	const lotBase = lotBaseOf({
+		root: worktree,
+		head: 'HEAD',
+		baseRef,
+		...(parent !== undefined && { parent }),
+	})
+	if ('refusal' in lotBase) return lotBase
+	return { forkPoint: lotBase.forkPoint, stacked: parent !== undefined }
+}
+
+/**
+ * The version facts of the checklist, read at the lot's own fork point: the version it sets and whether it is a release
+ * (a fragment deleted and the changelog changed). A fork point that is the body's `base` reuses its `changes`.
+ */
+function versionFactsOf(params: {
+	worktree: string
+	forkPoint: string
+	base: string
+	changes: readonly ChangedFile[]
+}): { bumpedTo?: string; release: boolean } {
+	const { worktree, forkPoint } = params
+	const changes =
+		forkPoint === params.base ? params.changes : changedFilesOf({ worktree, base: forkPoint })
+	return {
+		...bumpedToOf({ worktree, base: forkPoint }),
 		release:
 			changes.some((change) => change.status === 'D' && FRAGMENT_PATTERN.test(change.path)) &&
 			changes.some((change) => change.path === CHANGELOG_FILE),
@@ -291,7 +355,7 @@ function mergeBaseOf(params: { worktree: string; baseRef: string }): string {
 
 /** The paths the lot's commits change since `base`, each with its status letter (renames as delete and add). */
 function changedFilesOf(params: { worktree: string; base: string }): ChangedFile[] {
-	// a base git cannot resolve (a branch not fetched yet) changes nothing: the caller's own checks name it
+	// the base is a commit lotForkOf resolved; a diff git cannot read (a tree gone) changes nothing
 	const fields = (
 		tryReadGit({
 			root: params.worktree,
@@ -356,6 +420,15 @@ function docsPassedOn(params: { worktree: string; treeHash: string }): boolean |
 		: runs.length === 0
 			? undefined
 			: false
+}
+
+/** The head's version when it differs from the base's (a base reading none differs); nothing otherwise. */
+function bumpedToOf(params: { worktree: string; base: string }): { bumpedTo?: string } {
+	const head = versionAt({ worktree: params.worktree, commit: 'HEAD' })
+	if (head === undefined) return {}
+	return head === versionAt({ worktree: params.worktree, commit: params.base })
+		? {}
+		: { bumpedTo: head }
 }
 
 /** The `version` of the package.json `commit` holds; undefined without one. */

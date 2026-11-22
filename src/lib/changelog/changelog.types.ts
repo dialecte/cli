@@ -46,7 +46,7 @@ export type PartBoundary = { index: number; opens: 'unreleased' | 'nothing' | { 
 
 /**
  * A changelog read into parts: its lines (LF), its parts in file order, and its first link reference line outside a
- * code fence (undefined when none).
+ * code fence or HTML comment (undefined when none).
  */
 export type ChangelogParts = {
 	lines: string[]
@@ -92,3 +92,18 @@ export type ReleaseBaseRead = { base: ReleaseBase } | { notJudged: string }
  * merge-base's. A record keyed on them answers only while neither changed.
  */
 export type ReleaseChangelog = { tip: string; mergeBase: string }
+
+/**
+ * A top-level block of a section's text: a `- ` bullet item, or any other block (`text`: a paragraph, a list of
+ * another kind, a fence); `multiBlock` when it holds a blank line outside a fence, `breaking` for an item opening with
+ * a breaking marker.
+ */
+export type SectionBlock = {
+	kind: 'item' | 'text'
+	text: string
+	breaking: boolean
+	multiBlock: boolean
+}
+
+/** A section block being read: its kind and its lines, each with whether it stands outside a code fence and an HTML comment. */
+export type OpenBlock = { kind: SectionBlock['kind']; lines: { text: string; outside: boolean }[] }

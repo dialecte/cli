@@ -75,7 +75,7 @@ export const VERSION_KEY_PATTERN = /^## \[([^\]]+)\]/
 export const LINK_REFERENCE_PATTERN = /^\[[^\]]+\]:\s/
 
 /** A code fence line: headings inside a fence are text. */
-export const CODE_FENCE_PATTERN = /^\s*(```|~~~)/
+export const CODE_FENCE_PATTERN = /^\s*(`{3,}|~{3,})/
 
 /** A version a release names: `x.y.z`, a pre-release suffix allowed. */
 export const RELEASE_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/
@@ -129,3 +129,21 @@ export const CHANGELOG_NOTE_SEPARATOR = '; '
 
 /** A CRLF line end: a changelog is read with LF line ends. */
 export const CRLF_PATTERN = /\r\n/g
+
+/** A top-level bullet item's first line: the only list item a release moves. */
+export const BULLET_ITEM_PATTERN = /^- /
+
+/** A bullet item opening with a breaking marker: a bold `Breaking` (any case), or the plain `Breaking:` form. */
+export const BREAKING_ITEM_PATTERN = /^- (?:\*\*Breaking\b|Breaking(?: \([^)]*\))?:)/i
+
+/** A column-0 line opening an HTML comment: the comment, up to its close, is one block. */
+export const HTML_COMMENT_OPEN = '<!--'
+
+/** What closes an HTML comment. */
+export const HTML_COMMENT_CLOSE = '-->'
+
+/** Where the close is looked for on the opening line: `<!-->` already closes the comment. */
+export const HTML_COMMENT_CLOSE_FROM = 2
+
+/** A column-0 line that ends a list item instead of continuing it lazily: a fence, an ATX heading, a quote, a rule. */
+export const ITEM_INTERRUPT_PATTERN = /^(?:```|~~~|#{1,6}(?:\s|$)|>|(?:-{3,}|\*{3,}|_{3,})\s*$)/

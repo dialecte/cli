@@ -136,6 +136,9 @@ export const OUTSIDE_TREE_PATTERN = /^(?:\/|~\/|[a-z]:[\\/])|(?:^|\/)\.\.(?:\/|$
 export const TOKEN_TRIM_PATTERN = /^[`'"([{<]+|[`'")\]}>.,;:!?]+$/g
 
 export const CHANGE_REQUEST_LINES = {
+	unreadBase: 'the base {base} cannot be read here: fetch it, or name a base this repository holds',
+	titleVersion:
+		'the title "{title}" does not name {version}, the version this lot sets: correct lots[0].message with dialecte lot brief {lot} --from <brief.json> --by <who> --reason <why>',
 	noTemplateFile: "the lot's head holds no {template}: copy the cli's template into the repository",
 	worktreeGone: 'the worktree {worktree} is gone: nothing rendered',
 	noTemplate:

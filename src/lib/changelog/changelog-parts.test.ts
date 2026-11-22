@@ -20,6 +20,19 @@ describe('readChangelogParts', () => {
 			parts: [{ kind: 'version', version: '1.0.0', heading: 0, end: 6 }],
 		},
 		{
+			label: 'a version heading inside a column-0 HTML comment → text of its part',
+			text: '## [1.0.0]\n\n<!--\n## [0.1.0]\n-->\n',
+			parts: [{ kind: 'version', version: '1.0.0', heading: 0, end: 6 }],
+		},
+		{
+			label: 'a comment that never closes → it hides nothing: the version heading after it is read',
+			text: '## [1.0.0]\n<!--\n## [0.1.0]\n',
+			parts: [
+				{ kind: 'version', version: '1.0.0', heading: 0, end: 2 },
+				{ kind: 'version', version: '0.1.0', heading: 2, end: 4 },
+			],
+		},
+		{
 			label: 'an integer version heading → keyed by it',
 			text: '## [60]\n\n- a.\n',
 			parts: [{ kind: 'version', version: '60', heading: 0, end: 4 }],

@@ -3,7 +3,7 @@ export const LOT_BRIEF_LINES = {
 	rewritten: 'lot brief: {lot} rewritten ({fields}) by {by}',
 	unchanged: 'lot brief: {lot} already holds this brief: nothing written',
 	fixedField:
-		'lot brief: {field} changed: only the summary, the issue, step titles and behaviours change after the start, nothing written',
+		"lot brief: {field} changed: only the summary, the issue, step titles and behaviours, and each lot's commit message change after the start, nothing written",
 	refused: 'lot brief: {detail}: nothing written',
 	unread: 'lot brief: {path} does not read as JSON: nothing written',
 	unreadable: 'lot brief: {path} cannot be read: nothing written',
@@ -17,8 +17,14 @@ export const LOT_BRIEF_LINES = {
 /** The value options of `lot brief`. */
 export const LOT_BRIEF_VALUE_OPTIONS: readonly string[] = ['from', 'by', 'reason']
 
-/** The brief field holding the steps, whose titles and behaviours are public. */
-export const STEPS_FIELD = 'steps'
-/** The fields `lot brief` may change, at the top of the brief and in each step. */
-export const PUBLIC_BRIEF_FIELDS: readonly string[] = ['summary', 'issue', STEPS_FIELD]
-export const PUBLIC_STEP_FIELDS: readonly string[] = ['title', 'behaviours']
+/** The top-level brief fields `lot brief` may change: public text. */
+export const PUBLIC_TEXT_FIELDS: readonly string[] = ['summary', 'issue']
+
+/**
+ * The brief's lists whose items hold public text, and those fields of each item `lot brief` may change: a list's length
+ * and every other field of an item stay as started.
+ */
+export const PUBLIC_LIST_FIELDS: Readonly<Record<string, readonly string[]>> = {
+	steps: ['title', 'behaviours'],
+	lots: ['message'],
+}

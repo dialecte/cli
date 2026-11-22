@@ -52,6 +52,13 @@ function sha256(text: string): string {
 	return createHash('sha256').update(text).digest('hex')
 }
 
+type BriefLot = { paths: string[]; message: string }
+
+/** The commit lots of the lot's stored brief. */
+function lotsOf(lot: ChangeRequestLot): BriefLot[] {
+	return storedBriefOf(lot).value.lots as BriefLot[]
+}
+
 /** The brief's one step with its behaviours replaced. */
 function stepWith(behaviours: string[]): Record<string, unknown>[] {
 	return [{ ...LOT_STEP, spec: '## Step 1', behaviours }]
@@ -87,7 +94,6 @@ describe('dialecte lot brief', { timeout: STORE_CASE_TIMEOUT }, () => {
 			{ steps: [{ ...stepWith(['a -> b'])[0], spec: '## Step 2' }] },
 			'steps[0].spec',
 		],
-		['its commit message', { lots: [{ paths: ['src/'], message: 'feat(x): other' }] }, 'lots'],
 		['its branch', { branch: 'feat/y' }, 'branch'],
 	])('a change of %s → refused, the field named, nothing written', (_name, changes, field) => {
 		const lot = changeRequestLot()
@@ -98,10 +104,91 @@ describe('dialecte lot brief', { timeout: STORE_CASE_TIMEOUT }, () => {
 
 		expect(result.exitCode).toBe(1)
 		expect(result.output).toBe(
-			`lot brief: ${field} changed: only the summary, the issue, step titles and behaviours change after the start, nothing written`,
+			`lot brief: ${field} changed: only the summary, the issue, step titles and behaviours, and each lot's commit message change after the start, nothing written`,
 		)
 		expect(storedBriefOf(lot).text).toBe(before)
 		expect(readTransitions({ lotFolder: lot.lotFolder })).toHaveLength(transitions)
+	})
+
+	it.each([
+		{
+			label: "a lot's paths",
+			change: (lots: BriefLot[]) => ({ lots: [{ ...lots[0], paths: ['src/other.ts'] }] }),
+			field: 'lots[0].paths',
+		},
+		{
+			label: 'a lot added',
+			change: (lots: BriefLot[]) => ({ lots: [...lots, { ...lots[0], message: 'feat(x): more' }] }),
+			field: 'lots',
+		},
+		{
+			label: 'a lot removed',
+			change: (lots: BriefLot[]) => ({ lots: lots.slice(1) }),
+			field: 'lots',
+		},
+	])('a change of $label → refused, the field named, nothing written', ({ change, field }) => {
+		const lot = changeRequestLot()
+		const before = storedBriefOf(lot).text
+		const transitions = readTransitions({ lotFolder: lot.lotFolder }).length
+
+		const { result } = rewrite({ lot, changes: change(lotsOf(lot)) })
+
+		expect(result.exitCode).toBe(1)
+		expect(result.output).toBe(
+			`lot brief: ${field} changed: only the summary, the issue, step titles and behaviours, and each lot's commit message change after the start, nothing written`,
+		)
+		expect(storedBriefOf(lot).text).toBe(before)
+		expect(readTransitions({ lotFolder: lot.lotFolder })).toHaveLength(transitions)
+	})
+
+	it('a new commit message of a lot → the stored brief replaced, the line naming lots[0].message, a transition', () => {
+		const lot = changeRequestLot()
+		const [first] = lotsOf(lot)
+
+		const { result, text } = rewrite({
+			lot,
+			changes: { lots: [{ ...first, message: 'chore(release): @scope/x 0.9.0' }] },
+		})
+
+		expect(result.exitCode).toBe(0)
+		expect(result.output).toBe(`lot brief: ${LOT_NAME} rewritten (lots[0].message) by ${BY}`)
+		expect(storedBriefOf(lot).text).toBe(text)
+		expect(readTransitions({ lotFolder: lot.lotFolder }).at(-1)).toMatchObject({
+			cause: { kind: 'brief', by: BY, reason: REASON },
+		})
+	})
+
+	it('a commit message on two lines → refused by the field check, nothing written', () => {
+		const lot = changeRequestLot()
+		const [first] = lotsOf(lot)
+		const before = storedBriefOf(lot).text
+
+		const { result } = rewrite({
+			lot,
+			changes: { lots: [{ ...first, message: 'fix(x): one\ntwo' }] },
+		})
+
+		expect(result.exitCode).toBe(1)
+		expect(result.output).toBe(
+			'lot brief: lots[0] must be an object with a one-line message: nothing written',
+		)
+		expect(storedBriefOf(lot).text).toBe(before)
+	})
+
+	it('a rewritten commit message → the pull request title renders it', () => {
+		const lot = changeRequestLot()
+		const [first] = lotsOf(lot)
+
+		rewrite({ lot, changes: { lots: [{ ...first, message: 'fix(x): renamed' }] } })
+		const prepared = prepareChangeRequest({
+			lotFolder: lot.lotFolder,
+			worktree: lot.worktree,
+			baseRef: 'main',
+		})
+
+		expect('refusal' in prepared ? prepared.refusal : prepared.sources.messages[0]).toBe(
+			'fix(x): renamed',
+		)
 	})
 
 	it('a behaviour holding a forbidden word → refused with the start refusal, nothing written', () => {

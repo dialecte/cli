@@ -5,6 +5,8 @@
 import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
+import { writeStoreLot } from '../../../test/brief-workspace.ts'
+import { LOT_NAME } from '../../../test/lot-pr.constants.ts'
 import { changeRequestLot } from '../../../test/lot-pr.ts'
 import {
 	CROWDING_INDEX,
@@ -42,6 +44,9 @@ import { git, writeFiles } from '../../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
 import { SOURCE_INDEX_FILE } from '../api/source-functions.constants.ts'
 import { GATE_RECORD_FILE } from '../gate-records/gate-records.constants.ts'
+import { writeLanded } from '../landing/landed-record.ts'
+import { STACK_RECORD_DAMAGED } from '../landing/lot-landing.constants.ts'
+import { STACK_FILE, STACK_SCHEMA } from '../store/stack.constants.ts'
 import { prepareChangeRequest, readChangeRequestSources } from './change-request-sources.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -128,9 +133,9 @@ describe('readChangeRequestSources', { timeout: STORE_CASE_TIMEOUT }, () => {
 
 		const sources = sourcesOf(lot)
 
-		expect('refusal' in sources ? sources : [sources.release, sources.versionBumped]).toEqual([
+		expect('refusal' in sources ? sources : [sources.release, sources.bumpedTo]).toEqual([
 			true,
-			true,
+			'1.1.0',
 		])
 	})
 
@@ -142,9 +147,9 @@ describe('readChangeRequestSources', { timeout: STORE_CASE_TIMEOUT }, () => {
 
 		const sources = sourcesOf(lot)
 
-		expect('refusal' in sources ? sources : [sources.release, sources.versionBumped]).toEqual([
+		expect('refusal' in sources ? sources : [sources.release, sources.bumpedTo]).toEqual([
 			false,
-			true,
+			'1.0.1',
 		])
 	})
 
@@ -459,7 +464,7 @@ describe(
 				make: () => changeRequestLot(),
 				expected: { kind: 'not-judged', why: 'no package.json' },
 			},
-			'a base git cannot read → not judged, with why': {
+			'a base git cannot read → refused naming it, nothing judged': {
 				make: () =>
 					changeRequestLot({
 						mainFiles: {
@@ -470,7 +475,10 @@ describe(
 						lotFiles: { ...FRAGMENT, [SIZE_FILE]: SIZE_RESIGNED_SOURCE },
 					}),
 				baseRef: 'origin/nope',
-				expected: { kind: 'not-judged', why: expect.stringContaining('origin/nope') },
+				expected: {
+					refusal:
+						'the base origin/nope cannot be read here: fetch it, or name a base this repository holds',
+				},
 			},
 		}
 
@@ -559,6 +567,262 @@ describe(
 			})
 
 			expect(readFileSync(cache, 'utf8')).toBe(before)
+		})
+	},
+)
+
+const CHILD = '0002-repo-child'
+const CHILD_BRANCH = 'feat/child'
+const RELEASED_AT = '2026-11-17T21:00:00.000Z'
+
+/**
+ * A release lot (the parent: main at 0.8.4, its commit folds the fragment into the changelog and sets 0.9.0, its
+ * branch pushed) and a lot started on it (the child: its own worktree on `feat/child` cut from the parent's tip, one
+ * commit of `childFiles`, its `stack.json` naming the parent).
+ */
+function stackedOnRelease(
+	params: { childFiles?: Record<string, string>; childMessage?: string } = {},
+) {
+	const parent = changeRequestLot({
+		mainFiles: {
+			'changes/old.md': '### Added\n\n- Old.\n',
+			'CHANGELOG.md': '# Changelog\n',
+			'package.json': '{ "version": "0.8.4" }\n',
+		},
+		lotFiles: {
+			'CHANGELOG.md': '# Changelog\n\n## [0.9.0] - 2026-11-17\n\n### Added\n\n- Old.\n',
+			'package.json': '{ "version": "0.9.0" }\n',
+		},
+		lotDeletes: ['changes/old.md'],
+		brief: { lots: [{ paths: ['src/', 'changes/'], message: 'chore(release): @scope/x 0.9.0' }] },
+	})
+	const { repository } = parent.workspace
+	git({ root: parent.worktree, args: ['push', '-q', 'origin', 'feat/x'] })
+	const parentTip = git({ root: parent.worktree, args: ['rev-parse', 'HEAD'] }).trim()
+	const worktree = join(parent.workspace.workspace, '.worktrees', CHILD)
+	git({ root: repository, args: ['worktree', 'add', '-q', '-b', CHILD_BRANCH, worktree, 'feat/x'] })
+	writeFiles({
+		root: worktree,
+		files: { 'src/child.ts': 'export const child = 1\n', ...params.childFiles },
+	})
+	git({ root: worktree, args: ['add', '-A'] })
+	git({ root: worktree, args: ['commit', '-qm', 'feat(child): child answers'] })
+	const main = git({ root: repository, args: ['rev-parse', 'main'] }).trim()
+	const lotFolder = writeStoreLot({
+		workspace: parent.workspace,
+		name: CHILD,
+		scope: ['src/'],
+		branch: CHILD_BRANCH,
+		repository,
+		worktree,
+		base: { ref: 'main', commit: main },
+		brief: {
+			lots: [{ paths: ['src/'], message: params.childMessage ?? 'feat(child): child answers' }],
+		},
+	})
+	writeFileSync(
+		join(lotFolder, STACK_FILE),
+		JSON.stringify({ schema: STACK_SCHEMA, parent: LOT_NAME }),
+	)
+	return { parent, parentTip, repository, child: { lotFolder, worktree } }
+}
+
+/** The parent merged into main as one squash commit, as the host merges a pull request. */
+function squashParent(params: { repository: string }): void {
+	git({ root: params.repository, args: ['merge', '-q', '--squash', 'feat/x'] })
+	git({ root: params.repository, args: ['commit', '-qm', 'chore(release): @scope/x 0.9.0 (#5)'] })
+}
+
+/** The child's release facts against `baseRef`: `[release, bumpedTo]`, or its refusal. */
+function versionFactsOf(params: {
+	child: { lotFolder: string; worktree: string }
+	baseRef: string
+}) {
+	const sources = readChangeRequestSources({ ...params.child, baseRef: params.baseRef })
+	return 'refusal' in sources ? sources : [sources.release, sources.bumpedTo]
+}
+
+describe(
+	'the version a lot sets, read at its own fork point',
+	{ timeout: STORE_CASE_TIMEOUT },
+	() => {
+		it('a base without package.json, a head at 0.1.0 → it sets 0.1.0', () => {
+			const lot = changeRequestLot({ lotFiles: { 'package.json': '{ "version": "0.1.0" }\n' } })
+
+			const sources = sourcesOf(lot)
+
+			expect('refusal' in sources ? sources : sources.bumpedTo).toBe('0.1.0')
+		})
+
+		it.each([
+			{ label: 'a package.json with no version', main: '{ "name": "x" }\n', bumpedTo: '0.1.0' },
+			{ label: 'the same version', main: '{ "version": "0.1.0" }\n', bumpedTo: undefined },
+		])('a base holding $label, a head at 0.1.0 → it sets $bumpedTo', ({ main, bumpedTo }) => {
+			const lot = changeRequestLot({
+				mainFiles: { 'package.json': main },
+				lotFiles: { 'package.json': '{ "version": "0.1.0" }\n' },
+			})
+
+			const sources = sourcesOf(lot)
+
+			expect('refusal' in sources ? sources : sources.bumpedTo).toBe(bumpedTo)
+		})
+
+		it('a lot read against a base it shares no commit with → refused naming the base, never a base reading no version', () => {
+			const lot = changeRequestLot()
+			git({ root: lot.worktree, args: ['checkout', '-q', '--orphan', 'unrelated'] })
+			git({ root: lot.worktree, args: ['rm', '-rfq', '.'] })
+			git({ root: lot.worktree, args: ['commit', '-qm', 'chore: unrelated', '--allow-empty'] })
+			git({ root: lot.worktree, args: ['checkout', '-q', 'feat/x'] })
+
+			expect(
+				readChangeRequestSources({
+					lotFolder: lot.lotFolder,
+					worktree: lot.worktree,
+					baseRef: 'unrelated',
+				}),
+			).toEqual({ refusal: expect.stringContaining('shares no commit with unrelated') })
+		})
+
+		it('a head that drops the version the base holds → it sets none', () => {
+			const lot = changeRequestLot({
+				mainFiles: { 'package.json': '{ "version": "0.8.4" }\n' },
+				lotFiles: { 'package.json': '{ "name": "x" }\n' },
+			})
+
+			const sources = sourcesOf(lot)
+
+			expect('refusal' in sources ? sources : sources.bumpedTo).toBeUndefined()
+		})
+
+		it('a lot started on an open release lot, setting nothing itself → neither a release nor a bump', () => {
+			const { child } = stackedOnRelease()
+
+			expect(versionFactsOf({ child, baseRef: 'main' })).toEqual([false, undefined])
+		})
+
+		it('a lot started on an open release lot at 0.9.0, setting 0.9.1 itself, titled with 0.9.0 → refused naming 0.9.1', () => {
+			const { child } = stackedOnRelease({
+				childFiles: { 'package.json': '{ "version": "0.9.1" }\n' },
+				childMessage: 'chore(release): @scope/x 0.9.0',
+			})
+
+			expect(prepareChangeRequest({ ...child, baseRef: 'main' })).toEqual({
+				refusal: `the title "chore(release): @scope/x 0.9.0" does not name 0.9.1, the version this lot sets: correct lots[0].message with dialecte lot brief ${CHILD} --from <brief.json> --by <who> --reason <why>`,
+			})
+		})
+
+		it('the parent squash-merged and recorded landed, the child not rebased yet → neither a release nor a bump', () => {
+			const { parent, parentTip, repository, child } = stackedOnRelease()
+			squashParent({ repository })
+			writeLanded({
+				lotFolder: parent.lotFolder,
+				fact: { schema: 1, how: 'host', tip: parentTip, base: 'main', at: RELEASED_AT },
+			})
+
+			expect(versionFactsOf({ child, baseRef: 'main' })).toEqual([false, undefined])
+		})
+
+		it('the parent squash-merged and recorded landed, the child rebased onto main → neither a release nor a bump', () => {
+			const { parent, parentTip, repository, child } = stackedOnRelease()
+			squashParent({ repository })
+			writeLanded({
+				lotFolder: parent.lotFolder,
+				fact: { schema: 1, how: 'host', tip: parentTip, base: 'main', at: RELEASED_AT },
+			})
+			git({ root: child.worktree, args: ['rebase', '-q', '--onto', 'main', parentTip] })
+
+			expect(versionFactsOf({ child, baseRef: 'main' })).toEqual([false, undefined])
+		})
+
+		it('the parent merged into main with no landed record (git proves it), the child not rebased → neither a release nor a bump', () => {
+			const { repository, child } = stackedOnRelease()
+			git({
+				root: repository,
+				args: ['merge', '-q', '--no-ff', '-m', 'merge the release', 'feat/x'],
+			})
+
+			expect(versionFactsOf({ child, baseRef: 'main' })).toEqual([false, undefined])
+		})
+
+		it('a lot started on an open release lot, read against main and against the parent’s branch → the same facts', () => {
+			const { child } = stackedOnRelease()
+
+			expect([
+				versionFactsOf({ child, baseRef: 'main' }),
+				versionFactsOf({ child, baseRef: 'feat/x' }),
+			]).toEqual([
+				[false, undefined],
+				[false, undefined],
+			])
+		})
+
+		it('a damaged stack.json → refused naming it, never read as a lot not stacked', () => {
+			const { child } = stackedOnRelease()
+			writeFileSync(join(child.lotFolder, STACK_FILE), '{ torn')
+
+			expect(versionFactsOf({ child, baseRef: 'main' })).toEqual({
+				refusal: expect.stringContaining(
+					STACK_RECORD_DAMAGED.replace('{reason}', 'stack.json does not read as a stack record'),
+				),
+			})
+		})
+
+		it('a stack parent whose records do not read → refused naming the parent', () => {
+			const { parent, child } = stackedOnRelease()
+			rmSync(join(parent.lotFolder, 'identity.json'), { force: true })
+
+			expect(versionFactsOf({ child, baseRef: 'main' })).toEqual({
+				refusal: expect.stringContaining(`the stack parent ${LOT_NAME} cannot be read`),
+			})
+		})
+	},
+)
+
+describe(
+	'a lot whose title does not name the version it sets',
+	{ timeout: STORE_CASE_TIMEOUT },
+	() => {
+		it('main at 0.8.4, the lot sets 0.9.0, its title names 0.8.4 → no pull request text, the lot brief command named', () => {
+			const lot = changeRequestLot({
+				mainFiles: { 'package.json': '{ "version": "0.8.4" }\n' },
+				lotFiles: {
+					'package.json': '{ "version": "0.9.0" }\n',
+					'changes/x.md': '### Added\n\n- x.\n',
+				},
+				brief: {
+					lots: [{ paths: ['src/', 'changes/'], message: 'chore(release): @scope/x 0.8.4' }],
+				},
+			})
+
+			expect(
+				prepareChangeRequest({ lotFolder: lot.lotFolder, worktree: lot.worktree, baseRef: 'main' }),
+			).toEqual({
+				refusal: `the title "chore(release): @scope/x 0.8.4" does not name 0.9.0, the version this lot sets: correct lots[0].message with dialecte lot brief ${LOT_NAME} --from <brief.json> --by <who> --reason <why>`,
+			})
+		})
+
+		it('the same lot titled with 0.9.0 → its text renders, titled so', () => {
+			const lot = changeRequestLot({
+				mainFiles: { 'package.json': '{ "version": "0.8.4" }\n' },
+				lotFiles: {
+					'package.json': '{ "version": "0.9.0" }\n',
+					'changes/x.md': '### Added\n\n- x.\n',
+				},
+				brief: {
+					lots: [{ paths: ['src/', 'changes/'], message: 'chore(release): @scope/x 0.9.0' }],
+				},
+			})
+
+			const prepared = prepareChangeRequest({
+				lotFolder: lot.lotFolder,
+				worktree: lot.worktree,
+				baseRef: 'main',
+			})
+
+			expect('refusal' in prepared ? prepared : prepared.sources.messages[0]).toBe(
+				'chore(release): @scope/x 0.9.0',
+			)
 		})
 	},
 )

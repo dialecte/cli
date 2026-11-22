@@ -21,9 +21,11 @@ changelog - Changelog fragments (changes/<lot>.md): check them, or fold them int
           the merge queue's base, or a pull request merge ref's first parent)
   release - writes ## [<x.y.z>] - <date> (default today, local) under an emptied ## [Unreleased]
             (written above the first version when missing): the Unreleased summary and entries
-            first, then each fragment in file name order, section by section, one entry per line;
-            deletes the fragments and the no-entry notes; nothing written when a fragment or the
-            Unreleased part cannot be read
+            first, then each fragment in file name order, section by section, each section's
+            breaking items (a bullet opening with **Breaking, Breaking: or Breaking (types):) first,
+            its blocks joined as a markdown formatter leaves them (a blank line after an item
+            holding a second paragraph and around any other block); deletes the fragments and the
+            no-entry notes; nothing written when a fragment or the Unreleased part cannot be read
 
 exit codes:
   1  a fragment or the Unreleased part cannot be read, a released section is altered (check), the release is refused (no CHANGELOG.md, version already there, nothing to release), or a fragment could not be deleted
@@ -52,7 +54,13 @@ Security - no text before the first heading, no empty or repeated section). The 
 `dialecte changelog release <x.y.z> [--date YYYY-MM-DD]`: the new version's section is written under an emptied
 `## [Unreleased]` (written above the first version when the changelog has none; `## UNRELEASED` is read too), the
 Unreleased summary and entries first (a section written twice there is merged), then each fragment in file name
-order, section by section, one entry per line, and the fragments are deleted (`changes/.gitkeep` keeps the folder).
+order, section by section. In each section the breaking items come first (a `- ` bullet opening with a bold
+`**Breaking` in any case, or the plain `Breaking:` / `Breaking (types):`), then every other block in the order written;
+a list of another kind, a paragraph, a sub-heading, a fence or a column-0 HTML comment is one block, never
+reordered, and nothing inside a fence or a comment is read as a heading or an item; a breaking item rises above a
+sub-heading or a paragraph written before it, as above any other block. Blocks are joined as a markdown formatter
+leaves them: a blank line after an item holding a second paragraph and around any block that is no bullet item, one
+line feed between one-line items. The fragments are deleted (`changes/.gitkeep` keeps the folder).
 Code fences and a link block at the end of the changelog are kept as they are. In the commit hook the rule reads the
 version from the tree the commit records. `dialecte rules` refuses a change that edits
 `CHANGELOG.md` without bumping the package version (`changelog-edit`, an error); a package without `changes/` is not

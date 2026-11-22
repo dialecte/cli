@@ -34,8 +34,8 @@ export type ChangeRequestSources = {
 	dependsOn?: number
 	/** Whether the newest gate run of the lot's tree passed its docs step; undefined when none ran it. */
 	docsPassed?: boolean
-	/** Whether the lot changes the package's version. */
-	versionBumped: boolean
+	/** The version the lot sets: the head's package.json version when it differs from the base's; absent otherwise. */
+	bumpedTo?: string
 	/** Whether the lot is a release lot (the only kind that bumps the version). */
 	release: boolean
 	/** The base-aware findings judged on the committed head against the body's base, or why not judged. */
