@@ -142,6 +142,29 @@ describe('sectionItemsOf', () => {
 			blocks: [item({ text: '- a.\n\n    <!--', multiBlock: true }), item({ text: '- b.' })],
 		},
 		{
+			label:
+				'a comment indented under a breaking item, then its note → both stay in that item, nothing left behind',
+			text: '- c.\n- **Breaking:** a.\n\n  <!-- x -->\n  Migrate with `foo --bar`.\n- d.',
+			blocks: [
+				item({ text: '- c.' }),
+				item({
+					text: '- **Breaking:** a.\n\n  <!-- x -->\n  Migrate with `foo --bar`.',
+					breaking: true,
+					multiBlock: true,
+				}),
+				item({ text: '- d.' }),
+			],
+		},
+		{
+			label:
+				'a comment opened under an item, then a column-0 bullet → the comment ends with its item, the bullet a visible item',
+			text: '- c.\n\n  <!--\n- **Breaking:** visible\n  -->',
+			blocks: [
+				item({ text: '- c.\n\n  <!--', multiBlock: true }),
+				item({ text: '- **Breaking:** visible\n  -->', breaking: true }),
+			],
+		},
+		{
 			label: 'a four-backtick fence holding a three-backtick fence and a bullet → one text block',
 			text: '- one:\n\n````md\n```\n- **Breaking:** inside.\n```\n````\n\n- two.',
 			blocks: [

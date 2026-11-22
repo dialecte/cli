@@ -30,6 +30,15 @@ describe('readChangelogParts', () => {
 			parts: [{ kind: 'version', version: '1.0.0', heading: 0, end: 6 }],
 		},
 		{
+			label:
+				'a comment opened under an item, then a column-0 version heading → the comment ends with its item, the heading read',
+			text: '## [1.0.0]\n\n- c.\n\n  <!--\n## [0.1.0]\n  -->\n',
+			parts: [
+				{ kind: 'version', version: '1.0.0', heading: 0, end: 5 },
+				{ kind: 'version', version: '0.1.0', heading: 5, end: 8 },
+			],
+		},
+		{
 			label: 'a comment that never closes → it hides nothing: the version heading after it is read',
 			text: '## [1.0.0]\n<!--\n## [0.1.0]\n',
 			parts: [

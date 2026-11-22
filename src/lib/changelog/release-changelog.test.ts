@@ -189,6 +189,19 @@ describe('foldChangelog', () => {
 		},
 		{
 			label:
+				'a breaking item whose note follows an indented comment → lifted with its comment and note, the next item apart',
+			unreleased: '',
+			added: '',
+			fragments: [
+				changed(
+					'changes/a.md',
+					'- c.\n- **Breaking:** a.\n\n  <!-- x -->\n  Migrate with `foo --bar`.\n- d.',
+				),
+			],
+			section: '- **Breaking:** a.\n\n  <!-- x -->\n  Migrate with `foo --bar`.\n\n- c.\n- d.',
+		},
+		{
+			label:
 				'a four-backtick fence holding a three-backtick fence and a section heading → kept as text of its section',
 			unreleased: '### Changed\n\n- x:\n\n````md\n```\n### Fixed\n```\n````\n\n',
 			added: '',

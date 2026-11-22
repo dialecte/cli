@@ -140,11 +140,14 @@ export const BREAKING_ITEM_PATTERN = /^- (?:\*\*Breaking\b|Breaking(?: \([^)]*\)
 /** A line opening an HTML comment block (CommonMark: at most three spaces before it); up to its close, one block. */
 export const HTML_COMMENT_OPEN_PATTERN = /^ {0,3}<!--/
 
-/** The length of `<!--`, the opener the pattern ends with. */
-export const HTML_COMMENT_OPEN_LENGTH = 4
-
-/** The open state of a comment in the line reader, apart from a fence's marker. */
+/** The open state of a top-level comment in the line reader, apart from a fence's marker. */
 export const COMMENT_STATE = 'comment'
+
+/** The open state of a comment inside a bullet item: it ends with its item, as CommonMark ends a block with its container. */
+export const ITEM_COMMENT_STATE = 'item comment'
+
+/** Where a `- ` item's content starts: a line indented this far or more continues the item. */
+export const ITEM_CONTENT_OFFSET = 2
 
 /** What closes an HTML comment. */
 export const HTML_COMMENT_CLOSE = '-->'

@@ -2,11 +2,13 @@
 import {
 	CODE_FENCE_PATTERN,
 	CRLF_PATTERN,
+	BULLET_ITEM_PATTERN,
+	COMMENT_STATE,
 	HTML_COMMENT_CLOSE,
 	HTML_COMMENT_CLOSE_FROM,
-	COMMENT_STATE,
-	HTML_COMMENT_OPEN_LENGTH,
 	HTML_COMMENT_OPEN_PATTERN,
+	ITEM_COMMENT_STATE,
+	ITEM_CONTENT_OFFSET,
 	LINK_REFERENCE_PATTERN,
 	UNRELEASED_HEADING_PATTERN,
 	VERSION_HEADING_PATTERN,
@@ -19,7 +21,7 @@ import type { ChangelogPart, ChangelogParts, PartBoundary } from './changelog.ty
  * The lines of `text` (CRLF read as LF) and its parts in file order. The first Unreleased heading (any casing,
  * bracketed or not) opens the Unreleased part; any later `## [` line (a version heading, or a second bracketed
  * Unreleased heading) ends the current part and opens its own; a link reference line ends the current part. A
- * heading inside a code fence or a column-0 HTML comment is text. A version heading's part is keyed by its bracketed token.
+ * heading inside a code fence or an HTML comment is text. A version heading's part is keyed by its bracketed token.
  *
  * @intent read a changelog's parts once for the release fold and the released-section check
  * @internal
@@ -39,9 +41,10 @@ export function readChangelogParts(params: { text: string }): ChangelogParts {
 }
 
 /**
- * For each line, whether it is outside a code fence and a column-0 HTML comment (a heading there is a heading): the
- * line opening one is outside, the lines up to and including its close are not. A fence closes on its own character,
- * at least as long; a comment on `-->`. A comment that never closes hides nothing: its opening line is read as text.
+ * For each line, whether it is outside a code fence and an HTML comment (a heading there is a heading): the line
+ * opening one is outside, the lines up to and including its close are not. A fence closes on its own character, at
+ * least as long; a comment on `-->`, or, opened inside a bullet item (`commentOpenedIn`), when its item ends. A comment
+ * that never closes hides nothing: its opening line is read as text.
  *
  * @intent tell a changelog heading from text inside a code fence or an HTML comment
  * @internal
@@ -55,10 +58,37 @@ export function lineKinds(params: { lines: readonly string[] }): boolean[] {
 	}
 }
 
+/**
+ * Where an HTML comment opener line puts its comment: inside the open bullet item when the line is indented to the
+ * item's content (`item`), else a block of its own (`top`); undefined for a line that opens no comment. The one rule
+ * the line reader and the section blocks share.
+ *
+ * @intent tell an item's own comment from a comment block of its own
+ * @internal
+ */
+export function commentOpenedIn(params: {
+	text: string
+	inItem: boolean
+}): 'item' | 'top' | undefined {
+	const opener = HTML_COMMENT_OPEN_PATTERN.exec(params.text)
+	if (opener === null) return undefined
+	return params.inItem && indentOf(params.text) >= ITEM_CONTENT_OFFSET ? 'item' : 'top'
+}
+
+/** Whether a non-blank line ends the bullet item it follows: indented less than the item's content. */
+function endsItem(line: string): boolean {
+	return line.trim() !== '' && indentOf(line) < ITEM_CONTENT_OFFSET
+}
+
+function indentOf(line: string): number {
+	return line.length - line.trimStart().length
+}
+
 // dialecte-allow duplicate-read: lineKinds' one pass, rerun by it until no comment is left open
 /**
  * The line kinds, the comment openings in `unclosed` read as text; `openComment` the line of a comment still open at
- * the end, if any.
+ * the end, if any. A bullet item is open from its `- ` line until a line after a blank one, or a comment opener,
+ * stands below its content.
  */
 function readLineKinds(params: { lines: readonly string[]; unclosed: ReadonlySet<number> }): {
 	kinds: boolean[]
@@ -66,19 +96,28 @@ function readLineKinds(params: { lines: readonly string[]; unclosed: ReadonlySet
 } {
 	let open: string | undefined
 	let openComment: number | undefined
+	let inItem = false
+	let afterBlank = false
 	const kinds = params.lines.map(function outsideFenceOrComment(line, index) {
+		// an item's comment ends with its item: the line that ends the item is read as any line outside
+		if (open === ITEM_COMMENT_STATE && endsItem(line)) open = undefined
 		const outside = open === undefined
-		if (open === COMMENT_STATE) {
+		if (open === COMMENT_STATE || open === ITEM_COMMENT_STATE) {
 			if (line.includes(HTML_COMMENT_CLOSE)) open = undefined
 			return outside
 		}
-		const opener =
-			outside && !params.unclosed.has(index) ? HTML_COMMENT_OPEN_PATTERN.exec(line) : null
-		if (opener !== null) {
+		const opensIn =
+			outside && !params.unclosed.has(index) ? commentOpenedIn({ text: line, inItem }) : undefined
+		if (outside) {
+			if (BULLET_ITEM_PATTERN.test(line)) inItem = true
+			else if ((afterBlank || opensIn === 'top') && endsItem(line)) inItem = false
+			afterBlank = line.trim() === ''
+		}
+		if (opensIn !== undefined) {
 			// the close may follow on the opening line itself: <!-->, <!---> and <!-- x --> close there
-			const from = opener[0].length - HTML_COMMENT_OPEN_LENGTH + HTML_COMMENT_CLOSE_FROM
+			const from = indentOf(line) + HTML_COMMENT_CLOSE_FROM
 			if (!line.includes(HTML_COMMENT_CLOSE, from)) {
-				open = COMMENT_STATE
+				open = opensIn === 'item' ? ITEM_COMMENT_STATE : COMMENT_STATE
 				openComment = index
 			}
 			return outside
@@ -89,7 +128,10 @@ function readLineKinds(params: { lines: readonly string[]; unclosed: ReadonlySet
 		else if (closesFence({ line, marker, open })) open = undefined
 		return outside
 	})
-	return { kinds, openComment: open === COMMENT_STATE ? openComment : undefined }
+	return {
+		kinds,
+		openComment: open === COMMENT_STATE || open === ITEM_COMMENT_STATE ? openComment : undefined,
+	}
 }
 
 /**
