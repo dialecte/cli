@@ -18,7 +18,8 @@ import {
 	suiteText,
 } from '../../test/moved-cases-fixture.ts'
 import { noRepositoryCli } from '../../test/repository-cli-probe.ts'
-import { git, temporaryFolder } from '../../test/scratch-repository.ts'
+import { git, temporaryFolder, writeFiles } from '../../test/scratch-repository.ts'
+import { createVitestPackage } from '../../test/scratch-vitest-package.ts'
 import { HANDOVER_CASE_TIMEOUT, HELPER_SCENARIO_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { readPackageJson } from '../lib/package-json.ts'
 import { checkTddReceipts } from '../lib/tdd/check-tdd-receipts.ts'
@@ -390,5 +391,214 @@ describe('the hand-over card of a split test file', { timeout: HANDOVER_CASE_TIM
 		})
 
 		expect(card.output).toMatch(/moved {2}3 case\(s\) {2}src\/dd\.test\.ts → 3 file\(s\)/)
+	})
+})
+
+describe('a test file git reports as renamed', { timeout: HELPER_SCENARIO_TIMEOUT }, () => {
+	const ADD =
+		'export function add(left: number, right: number): number {\n\treturn left + right\n}\n'
+	const SUB_STUB =
+		"export function sub(left: number, right: number): number {\n\tthrow new Error('not implemented: sub')\n}\n"
+	const SUB =
+		'export function sub(left: number, right: number): number {\n\treturn left - right\n}\n'
+	const CASES = [
+		"it('one plus two → three', () => { expect(add(1, 2)).toBe(3) })",
+		"it('zero plus zero → zero', () => { expect(add(0, 0)).toBe(0) })",
+		"it('two plus two → four', () => { expect(add(2, 2)).toBe(4) })",
+		"it('one plus one → two', () => { expect(add(1, 1)).toBe(2) })",
+		"it('three plus three → six', () => { expect(add(3, 3)).toBe(6) })",
+	]
+	const IMPORTS = ["import { add } from './add.ts'", "import { expect, it } from 'vitest'"]
+	const BASE_TEST = [...IMPORTS, ...CASES, ''].join('\n')
+	const NAMES = CASES.map((call) => call.split("'")[1])
+	const RENAME = { from: 'src/add.test.ts', to: 'src/sum.test.ts', reason: 'a rename' }
+
+	/** A package whose base holds `add` and BASE_TEST, its test file renamed with git mv to `src/sum.test.ts`. */
+	function renamedPackage(): string {
+		const root = createVitestPackage({
+			dialecte: { gate: { fast: [{ name: 'check', run: 'true' }] } },
+			files: { 'src/add.ts': ADD, 'src/add.test.ts': BASE_TEST },
+		})
+		git({ root, args: ['mv', 'src/add.test.ts', 'src/sum.test.ts'] })
+		return root
+	}
+
+	/** Each case line of an output as `<label> <case>`. */
+	function labelsOf(output: string): string[] {
+		return caseLines(output).map((line) => line.split(/ {2,}/).slice(0, 2).join(' '))
+	}
+
+	/** The lines of the gate's tdd step (its evidence, or what fails it), trimmed. */
+	async function gateLines(root: string): Promise<string[]> {
+		const check = await checkTddReceipts({ root, packageJson: readPackageJson(root) })
+		return [...(check.details ?? []), ...(check.lines ?? [])].map((line) => line.trim())
+	}
+
+	it('renamed and one case edited (git still pairs it) → red: the untouched cases unchanged, the edited one red; nothing refused', async () => {
+		const root = renamedPackage()
+		writeFileSync(
+			join(root, 'src/sum.test.ts'),
+			[
+				...IMPORTS,
+				"import { sub } from './sub.ts'",
+				CASES[0],
+				CASES[1].replace('.toBe(0) })', '.toBe(0); expect(sub(1, 1)).toBe(0) })'),
+				...CASES.slice(2),
+				'',
+			].join('\n'),
+		)
+		writeFileSync(join(root, 'src/sub.ts'), SUB_STUB)
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect({ exitCode: red.exitCode, labels: labelsOf(red.output) }).toEqual({
+			exitCode: 0,
+			labels: NAMES.map(
+				(name, index) => `${index === 1 ? 'red' : 'unchanged'} src/sum.test.ts::${name}`,
+			),
+		})
+	})
+
+	it('renamed with an import-only edit → every case unchanged; status lists no deleted file and no move', async () => {
+		const root = renamedPackage()
+		writeFileSync(
+			join(root, 'src/sum.test.ts'),
+			[...IMPORTS, "import { join } from 'node:path'", ...CASES, ''].join('\n'),
+		)
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+		const status = await tdd({ cwd: root, argv: ['status'] })
+
+		expect({
+			exitCode: red.exitCode,
+			labels: labelsOf(red.output),
+			other: status.output.split('\n').filter((line) => /^(deleted|moved) /.test(line)),
+		}).toEqual({
+			exitCode: 0,
+			labels: NAMES.map((name) => `unchanged src/sum.test.ts::${name}`),
+			other: [],
+		})
+	})
+
+	it('renamed and one case moved out to a third file → that case paired as moved from the renamed file; nothing refused, nothing deleted', async () => {
+		const root = renamedPackage()
+		writeFiles({
+			root,
+			files: {
+				'src/sum.test.ts': [...IMPORTS, ...CASES.slice(0, 4), ''].join('\n'),
+				'src/six.test.ts': [...IMPORTS, CASES[4], ''].join('\n'),
+			},
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+		const status = await tdd({ cwd: root, argv: ['status'] })
+
+		expect({
+			exitCode: red.exitCode,
+			labels: labelsOf(red.output).sort(),
+			deleted: status.output.split('\n').filter((line) => line.startsWith('deleted ')),
+			collectFailed: status.output.includes('nothing moved by name'),
+			moved: status.output.split('\n').filter((line) => line.startsWith('moved ')),
+		}).toEqual({
+			exitCode: 0,
+			labels: [
+				`unchanged src/six.test.ts::${NAMES[4]}`,
+				...NAMES.slice(0, 4).map((name) => `unchanged src/sum.test.ts::${name}`),
+			].sort(),
+			deleted: [],
+			collectFailed: false,
+			moved: [expect.stringMatching(/^moved {2}1 case\(s\) {2}src\/sum\.test\.ts → 1 file\(s\)/)],
+		})
+	})
+
+	it('renamed and one case removed → reported deleted once, at the new path', async () => {
+		const root = renamedPackage()
+		writeFileSync(join(root, 'src/sum.test.ts'), [...IMPORTS, ...CASES.slice(0, 4), ''].join('\n'))
+
+		const status = await tdd({ cwd: root, argv: ['status'] })
+
+		expect(status.output.split('\n').filter((line) => line.startsWith('deleted '))).toEqual([
+			`deleted  src/sum.test.ts  the test "${NAMES[4]}" of the base is gone`,
+		])
+	})
+
+	it.each([
+		{
+			pair: 'a rename with an edit',
+			edit: (root: string) =>
+				writeFileSync(
+					join(root, 'src/sum.test.ts'),
+					[...IMPORTS, "import { join } from 'node:path'", ...CASES, ''].join('\n'),
+				),
+		},
+		{ pair: 'a move with the bytes', edit: () => undefined },
+	])(
+		'a moved entry on $pair → tdd red does not refuse it; the gate says it is not needed, never unused',
+		async ({ edit }) => {
+			const root = renamedPackage()
+			edit(root)
+			writeFiles({ root, files: { '.dialecte/lot.json': JSON.stringify({ moved: [RENAME] }) } })
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+			const lines = await gateLines(root)
+
+			expect({
+				refused: red.output.includes('moved entry'),
+				moved: lines.filter((line) => /^(unused )?moved entry /.test(line)),
+			}).toEqual({
+				refused: false,
+				moved: [
+					'moved entry src/add.test.ts → src/sum.test.ts: not needed, tdd pairs this move; drop it: dialecte lot moved --remove src/add.test.ts src/sum.test.ts',
+				],
+			})
+		},
+	)
+
+	it('a moved entry on a rename a case carries its red through (red at the old path, then renamed, a case of the base edited) → used: no not-needed line', async () => {
+		const root = createVitestPackage({
+			dialecte: { gate: { fast: [{ name: 'check', run: 'true' }] } },
+			files: { 'src/add.ts': ADD, 'src/add.test.ts': BASE_TEST },
+		})
+		const subCase = "it('three minus one → two', () => { expect(sub(3, 1)).toBe(2) })"
+		writeFiles({
+			root,
+			files: {
+				'src/add.test.ts': [
+					...IMPORTS,
+					"import { sub } from './sub.ts'",
+					...CASES,
+					subCase,
+					'',
+				].join('\n'),
+				'src/sub.ts': SUB_STUB,
+			},
+		})
+		await tdd({ cwd: root, argv: ['red'] })
+		writeFileSync(join(root, 'src/sub.ts'), SUB)
+		git({ root, args: ['add', '-A'] })
+		git({ root, args: ['mv', 'src/add.test.ts', 'src/sum.test.ts'] })
+		writeFiles({
+			root,
+			files: {
+				'src/sum.test.ts': [
+					...IMPORTS,
+					"import { sub } from './sub.ts'",
+					CASES[0].replace('.toBe(3) })', '.toBe(1 + 2) })'),
+					...CASES.slice(1),
+					subCase,
+					'',
+				].join('\n'),
+				'.dialecte/lot.json': JSON.stringify({
+					moved: [RENAME],
+					revised: [{ case: `src/sum.test.ts::${NAMES[0]}`, reason: 'the sum written out' }],
+				}),
+			},
+		})
+		await tdd({ cwd: root, argv: ['red'] })
+		await tdd({ cwd: root, argv: ['green'] })
+
+		const lines = await gateLines(root)
+
+		expect(lines.filter((line) => /^(unused )?moved entry /.test(line))).toEqual([])
 	})
 })

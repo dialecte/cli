@@ -331,10 +331,24 @@ export type CaseStatusLine = TestCaseId & {
 	flags: ReceiptFlag[]
 	/** The receipts of the case the read rule skips (`countingReceipts`); absent when none is. */
 	skipped?: SkippedReceipt[]
+	/** The hash of the case's test file now, as tdd records it in a receipt (`hashTestCodeText`); `readTddState` sets it. */
+	testFileHash?: string
+	/** Its test file is moved with its bytes (R100): its case is the base's; absent otherwise. */
+	movedFile?: true
+	/** It is skipped as written (`isRunCaseSkippedAsWritten`): no run judges it; absent otherwise. */
+	skippedAsWritten?: true
 }
 
-/** A test file of the change: its text now, and at the base (undefined when the file is new). */
-export type ChangedTestFile = { file: string; text: string; baseText: string | undefined }
+/**
+ * A test file of the change: its text now, and at the base (undefined when the file is new); `baseFile` its path at
+ * the base when git reports it renamed (its base text read there).
+ */
+export type ChangedTestFile = {
+	file: string
+	text: string
+	baseText: string | undefined
+	baseFile?: string
+}
 
 /** The tdd state of a lot, as `.dialecte/lot.json` declares it. */
 export type LotDeclaration = {
@@ -401,8 +415,16 @@ export type UnlistedFile = { file: string; failure: CaseFailure }
 export type TddSubcommand = (typeof TDD_SUBCOMMANDS)[number]
 
 /** The gate's `tdd` step: passed with a note, skipped or failed with a reason, and the lines that show why. */
-/** A case the gate's tdd step judged: its label (`file::name [project]`) and its status there. */
-export type JudgedCase = { label: string; status: CaseStatus }
+/**
+ * A case the gate's tdd step judged: its label (`file::name [project]`) and its status there; the step's own judgement
+ * adds its id and what the hook reads of it (absent from records written before them).
+ */
+export type JudgedCase = Partial<
+	TestCaseId & Pick<CaseStatusLine, 'testFileHash' | 'movedFile' | 'skippedAsWritten'>
+> & {
+	label: string
+	status: CaseStatus
+}
 
 /** A vitest run that answered no report: the cli's reason (one line), and the last lines vitest printed, to relay. */
 export type TestRunFailure = {
@@ -471,8 +493,10 @@ export type TddRunAdmission = {
 	testCode: Map<string, string>
 	/** Every changed test file. */
 	changed: ChangedTestFile[]
-	/** The changed test files the command line points at. */
+	/** The changed test files the command line points at (a green's: the moved ones too). */
 	files: ChangedTestFile[]
+	/** The test files moved with their bytes (R100) a green runs; none for a red. */
+	moved: ChangedTestFile[]
 	acceptances: LotCaseEntry[]
 	revisions: LotCaseEntry[]
 	moves: LotMovedEntry[]
@@ -640,7 +664,7 @@ export type PackageVitest = {
 export type MovedCaseInput = TestCaseId & { location: SourceLocation | undefined }
 
 /** A test file the change deletes, as the base held it. */
-export type DeletedTestFile = { file: string; baseText: string }
+export type DeletedTestFile = { file: string; baseText: string; baseFile?: string }
 
 /**
  * The cases moved out of one source file (deleted, or changed so that it no longer holds them) into

@@ -93,7 +93,13 @@ async function readScriptMoves(params: {
 		...params.files.flatMap((file): DeletedTestFile[] =>
 			file.baseText !== undefined &&
 			lostRegistering({ file: file.file, baseText: file.baseText, text: file.text })
-				? [{ file: file.file, baseText: file.baseText }]
+				? [
+						{
+							file: file.file,
+							baseText: file.baseText,
+							...(file.baseFile !== undefined && { baseFile: file.baseFile }),
+						},
+					]
 				: [],
 		),
 	]
@@ -192,7 +198,8 @@ function lostRegistering(params: { file: string; baseText: string; text: string 
 
 /**
  * The cases the base registered in the source files, each with its runner call (undefined for a direct test
- * call): one collect-only run, bounded, in a scratch copy of the base tree outside the worktree, removed after.
+ * call): one collect-only run, bounded, in a scratch copy of the base tree outside the worktree, removed after. A
+ * renamed source is collected at its base path (`baseFile`), its cases reported at its path now.
  */
 async function collectAtBase(params: {
 	root: string
@@ -210,16 +217,20 @@ async function collectAtBase(params: {
 		if (copied) return { result: { failure: copied }, baseCollect: baseCollect() }
 		const modules = await runTestCases({
 			root: folder,
-			files: params.sources.map((source) => source.file),
+			files: params.sources.map((source) => source.baseFile ?? source.file),
 			filter: 'collect',
 			timeoutMs: BASE_COLLECT_TIMEOUT_MS,
 		})
 		if ('failure' in modules) return { result: modules, baseCollect: baseCollect() }
 		const files = params.sources.map((source) => ({
-			file: source.file,
+			file: source.baseFile ?? source.file,
 			text: source.baseText,
 			baseText: source.baseText,
 		}))
+		// the path now of each source, by its path at the base
+		const pathNow = new Map(
+			params.sources.map((source) => [source.baseFile ?? source.file, source.file]),
+		)
 		const { cases } = readRunCases({
 			root: folder,
 			packageJson: params.packageJson,
@@ -229,7 +240,7 @@ async function collectAtBase(params: {
 		const indexes = new Map<string, TestCallIndex>()
 		const textByFile = new Map(files.map((file) => [file.file, file.text]))
 		const result = cases.map((testCase): NamedRegistration => ({
-			file: testCase.file,
+			file: pathNow.get(testCase.file) ?? testCase.file,
 			name: testCase.name,
 			project: testCase.project,
 			runner: testCase.location

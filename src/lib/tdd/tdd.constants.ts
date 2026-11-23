@@ -387,6 +387,13 @@ export const UNUSED_ENTRY_CLOSEST_LIMIT = 1
 export const UNUSED_ENTRY_REMOVE = '; drop it: dialecte lot {list} --remove {entry}'
 
 /**
+ * The line of a file-level `moved` entry naming a pair tdd matches itself (a rename git pairs, a file moved with its
+ * bytes) that no case carries a red through: `{from}`, `{to}` its paths, `{remove}` the `UNUSED_ENTRY_REMOVE` ending.
+ */
+export const MOVED_ENTRY_NOT_NEEDED =
+	'moved entry {from} → {to}: not needed, tdd pairs this move{remove}'
+
+/**
  * The paths whose text the presence map reads (`changedTestCodeOf`): a JS/TS test file, a Python file (pytest decides
  * which are tests), a file of a test or fixture folder, a snapshot. Any other changed path keeps its presence alone.
  */
@@ -399,13 +406,16 @@ export const TEST_CODE_PATH_PATTERNS: readonly RegExp[] = [
 
 /**
  * A `gone` or `moved` entry of the lot file the presence map refuses (`declaredPathRefusalOf`): `{list}` its list,
- * `{path}` the path it names, `{remove}` the `UNUSED_ENTRY_REMOVE` ending that drops it.
+ * `{path}` the path it names, `{to}` the new path of the rename it names the old one of, `{remove}` the
+ * `UNUSED_ENTRY_REMOVE` ending that drops it.
  */
 export const DECLARED_PATH_REFUSALS = {
 	present:
 		'{list} entry {path}: the path is present and unchanged since the base, the lot file is stale{remove}',
 	unknown:
 		'{list} entry {path}: no such test file at the base, in the change or in the receipts{remove}',
+	renamed:
+		'{list} entry {path}: git reports it renamed to {to}; declare a case removed in the rename as gone {to}{remove}',
 } as const
 
 /** A lot exempt from the test receipts: `"tdd": "exempt: <reason>"`. */
@@ -461,6 +471,12 @@ export const TDD_NEXT_STEPS =
 export const LEDGER_VERSION = 3
 
 export const NOTHING_CHANGED_SINCE_RED = 'nothing in production changed since red'
+
+/**
+ * The detail of a green line: a case proven without a red that the run did not run though its source does not skip it
+ * (a moved file's `skipIf(<env>)`, a node:test todo).
+ */
+export const SKIPPED_AT_THIS_RUN = 'skipped at this run'
 
 export const CHANGED_AND_PASSES =
 	'its test changed since its receipt and it passes: this test proves nothing yet'
@@ -589,6 +605,9 @@ export const CASE_ENTRY_KEYS: readonly string[] = ['case', 'reason']
 
 /** The receipts that prove a case before its code: a red, or a pass needing no red. */
 export const PROOF_KINDS: readonly string[] = ['red', 'unchanged', 'accepted', 'revised']
+
+/** The receipts of a run that passed the case: a green, or a pass needing no red recorded at a red or a green run. */
+export const PASS_KINDS: readonly string[] = ['green', 'unchanged', 'accepted', 'revised']
 
 /** Test code under a declared production folder: fixtures and snapshots by their folder. */
 export const FIXTURE_FOLDER_PATTERN = /(^|\/)(__fixtures__|fixtures|__snapshots__)\//

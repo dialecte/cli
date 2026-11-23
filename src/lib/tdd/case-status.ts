@@ -13,13 +13,17 @@
  * longer declares, or an acceptance after a red then a green of the same case, stands for no proof.
  */
 import { countingReceipts, receiptsOf } from './counting-receipts.ts'
+import { modulesOf } from './select-cases.ts'
 import { isTestFile } from './tdd-files.ts'
-import { PROOF_KINDS } from './tdd.constants.ts'
+import { PASS_KINDS, PROOF_KINDS, PYTHON_FILE_PATTERN } from './tdd.constants.ts'
+import { skippedAsWrittenReader } from './test-source.ts'
 
 import type {
 	CaseStatus,
 	LotCaseEntry,
 	ReceiptFlag,
+	ReportedModule,
+	RunCase,
 	TddEntry,
 	TddFreeze,
 	TddLedger,
@@ -126,4 +130,85 @@ function lastIndexOf(params: {
 	for (let index = params.entries.length - 1; index >= 0; index--)
 		if (params.matches(params.entries[index])) return index
 	return -1
+}
+
+/**
+ * The newest receipt of the case that counts (`countingReceipts`), taken at its test file as it is now
+ * (`testFileHash`), of a run that passed it (`PASS_KINDS`) or refused it; undefined when no run at these bytes of the
+ * file judged it. A receipt taken at other bytes of the file (edited since, or edited then put back) proves nothing now.
+ *
+ * @intent read the last verdict on a case at the test code it holds now
+ * @internal
+ */
+export function lastRunOf(params: {
+	ledger: TddLedger
+	testCase: TestCaseId
+	/** The hash of the case's test file now, as tdd records it (`hashTestCodeText`). */
+	testFileHash: string
+	acceptances: readonly LotCaseEntry[]
+	revisions: readonly LotCaseEntry[]
+}): TddReceipt | undefined {
+	return countingReceipts(params)
+		.counting.filter(
+			(receipt) =>
+				receipt.testFileHash === params.testFileHash &&
+				(PASS_KINDS.includes(receipt.kind) || receipt.kind === 'refused'),
+		)
+		.at(-1)
+}
+
+/**
+ * The case's last run at its test file now (`lastRunOf`) passed it at `productionHash`: one rule for `tdd green`,
+ * which records a passing case when it is not, and for the hook, which refuses a commit holding a case that is not.
+ *
+ * @intent tell whether a case is proven passing at the production now
+ * @internal
+ */
+export function isProvenNow(params: {
+	ledger: TddLedger
+	testCase: TestCaseId
+	testFileHash: string
+	acceptances: readonly LotCaseEntry[]
+	revisions: readonly LotCaseEntry[]
+	productionHash: string
+}): boolean {
+	const last = lastRunOf(params)
+	return (
+		last !== undefined && last.kind !== 'refused' && last.productionHash === params.productionHash
+	)
+}
+
+/**
+ * A reader of whether a case of the run is skipped as written: a script case whose test call goes through `.skip` /
+ * `.todo` / `.skipIf(true)` (`skippedAsWrittenReader`, each file parsed once), a pytest case its collect marks skipped
+ * (a run that is no collect marks none). Such a case cannot fail anywhere: nothing judges or proves it.
+ *
+ * @intent tell a case no run can judge
+ * @internal
+ */
+export function createSkippedAsWrittenReader(params: {
+	root: string
+	/** Each test file of the run, by its path, its text now. */
+	texts: ReadonlyMap<string, string>
+	/** What the run reported: a pytest case's skip mark. */
+	modules: readonly ReportedModule[]
+}): (testCase: RunCase) => boolean {
+	const readers = new Map<string, (location: RunCase['location']) => boolean>()
+	return function isSkippedAsWritten(testCase) {
+		if (PYTHON_FILE_PATTERN.test(testCase.file))
+			return modulesOf({ root: params.root, modules: params.modules, file: testCase.file }).some(
+				(testModule) =>
+					testModule.cases.some(
+						(reported) =>
+							reported.name === testCase.name &&
+							reported.project === testCase.project &&
+							reported.skipMarked === true,
+					),
+			)
+		const reader =
+			readers.get(testCase.file) ??
+			skippedAsWrittenReader({ text: params.texts.get(testCase.file) ?? '', file: testCase.file })
+		readers.set(testCase.file, reader)
+		return reader(testCase.location)
+	}
 }
