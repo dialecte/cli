@@ -136,6 +136,12 @@ export type RunnerParams = {
 	baseTexts?: Readonly<Record<string, string>>
 	/** pytest reports each test file's own code (a red run: what a moved case may keep). Default: not. */
 	ownCode?: boolean
+	/**
+	 * The vitest projects of the command (`readVitestSelection`): with CI's names, the files a selected project holds
+	 * run with a `--project` per name, the others in a second run without; a selection that could not be read is
+	 * the vitest run's failure. Default: one run, every project.
+	 */
+	vitestSelection?: VitestSelectionReader
 }
 
 /**
@@ -485,6 +491,11 @@ export type TddContext = {
 	presence: TestCodePresence
 	/** Where a vitest run announces itself (a start line or a spinner); none when not given. */
 	progress?: StepProgress
+	/**
+	 * The vitest projects of a red or green run (`readCommandSelection`), read once: every run of it passes them; why
+	 * they could not be read, answered by its vitest run.
+	 */
+	vitestSelection?: VitestSelectionReader
 }
 
 /** What a `red` or `green` run read before it runs: nothing refused it, its step is recorded from here. */
@@ -811,3 +822,75 @@ export type FallbackLotBase =
 
 /** One tracked change against a base, as the diff reads it: its path (a rename's new one) and its state there. */
 export type DiffChange = { file: string; path: TestCodePath }
+
+/**
+ * The vitest projects the package's CI runs, read from its own test workflow and the npm scripts it reaches
+ * (`ci-test-projects.ts`): the names it passes to `--project`, in first-seen order, and what was read; or every
+ * project, with why the reader could not tell.
+ */
+export type CiTestProjects =
+	| { kind: 'projects'; names: string[]; source: string }
+	| { kind: 'all'; reason: string }
+
+/** One project as vitest resolves it (`tdd-vitest-projects.ts`), and the asked files it holds. */
+export type ProbedProject = {
+	/** vitest's resolved name, the one the reporter labels cases with (`browser-all (chromium)`). */
+	name: string
+	/** The name a browser instance belongs to, else its own. */
+	parent: string
+	/** Files of one worker share loaded modules: a later file's module mock may not apply. */
+	sharesModules: boolean
+	/** The asked files (relative to the root) the project holds. */
+	holds: string[]
+}
+
+/**
+ * The projects one tdd command runs its vitest files in: CI's projects, the resolved ones, the files a selected
+ * project holds, the vitest files none does, and the lines the command prints before its run.
+ */
+export type VitestSelection = {
+	ci: CiTestProjects
+	projects: ProbedProject[]
+	held: string[]
+	outside: string[]
+	notes: string[]
+}
+
+/** A `vi.mock(...)` or `vi.doMock(...)` call of a test file: its method and its line (1-based). */
+export type ModuleMockCall = { method: 'mock' | 'doMock'; line: number }
+
+/** What the reader made of CI's commands: the project names they pass, the npm scripts read; or why it cannot tell. */
+export type CiCommandsRead = { names: string[]; scripts: string[] } | { reason: string }
+
+/** What the probe of a package's vitest projects is given: the vitest installation, the root, the asked files. */
+export type VitestProbeInput = {
+	/** The folder of the `vitest` package beside the run's `node_modules/.bin/vitest`. */
+	vitest: string
+	root: string
+	/** The asked files, relative to the root. */
+	files: string[]
+}
+
+/** What the probe writes: each project vitest resolves, or why it could not resolve them. */
+export type VitestProbeReport = { projects: ProbedProject[] } | { unresolved: string }
+
+/** A test file a red or green refuses for its module mock: the call made, its line, the sharing project. */
+export type ModuleMockRefusal = { file: string; call: string; line: number; project: string }
+
+/** A command's selection of vitest projects, or why it could not be read (its vitest run answers that failure). */
+export type CommandVitestSelection = VitestSelection | TestRunFailure
+
+/**
+ * The selection of one tdd command, read on its first use: `select` probes once (undefined when no file of the
+ * command is a vitest file); `checkBase` probes a base copy once per base, checking it declares every CI name.
+ */
+export type VitestSelectionReader = {
+	/** The selection; `announced`: a probe it starts runs as its own progress step (outside a test run's step). */
+	select: (params?: { announced?: boolean }) => Promise<CommandVitestSelection | undefined>
+	/** The selection when a `select` already read it; undefined otherwise (never probes). */
+	peek: () => CommandVitestSelection | undefined
+	checkBase: (params: { root: string; base: string }) => Promise<TestRunFailure | undefined>
+}
+
+/** Runs a probe of the vitest projects as a progress step of its own (its running line and duration). */
+export type ProbeAnnouncer = <Result>(run: () => Promise<Result>) => Promise<Result>

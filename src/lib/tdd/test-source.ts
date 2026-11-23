@@ -4,7 +4,9 @@ import {
 	ASSERTION_CALLEE,
 	CASE_FUNCTIONS,
 	CONDITION_MODIFIERS,
+	GLOBAL_THIS,
 	META_GLOB_NAME,
+	MODULE_MOCK_METHODS,
 	NEGATED_GLOB_PREFIX,
 	NODE_ASSERT_SEGMENT,
 	NODE_ASSERT_SPECIFIERS,
@@ -14,6 +16,9 @@ import {
 	SUITE_FUNCTIONS,
 	TABLE_MODIFIERS,
 	TEST_FUNCTIONS,
+	VITEST_PACKAGE,
+	VITEST_VI_BINDING,
+	VITEST_VITEST_BINDING,
 } from './tdd.constants.ts'
 
 import ts from 'typescript'
@@ -21,6 +26,7 @@ import ts from 'typescript'
 import type {
 	LocatedTestCall,
 	MetaGlob,
+	ModuleMockCall,
 	SourceLocation,
 	Surroundings,
 	TestCall,
@@ -661,9 +667,29 @@ export function moduleSpecifiers(params: {
 	file: string
 	valuesOnly?: boolean
 }): string[] {
+	return readModuleCalls(params).specifiers
+}
+
+/**
+ * The module mock calls of a file: each `mock(...)` or `doMock(...)` on vitest's `vi` (the global `vi`, the `vi`
+ * imported from `vitest` under any local name, or `.vi` of a namespace import of `vitest`), whatever its first
+ * argument, with its line. Another receiver's `.mock(` is none; `vi.spyOn`, `vi.fn`, `vi.stubGlobal`, `vi.hoisted`
+ * are none. Read in the same walk as `moduleSpecifiers`.
+ */
+export function moduleMockCalls(params: { text: string; file: string }): ModuleMockCall[] {
+	return readModuleCalls(params).mockCalls
+}
+
+/** One walk of a file's calls: the modules it names (`moduleSpecifiers`) and its module mock calls. */
+function readModuleCalls(params: { text: string; file: string; valuesOnly?: boolean }): {
+	specifiers: string[]
+	mockCalls: ModuleMockCall[]
+} {
 	const { text, valuesOnly = false } = params
 	const source = parseTestSource({ text, kind: scriptKindOf(params.file) })
+	const receivers = viBindingsOf(source)
 	const specifiers: string[] = []
+	const mockCalls: ModuleMockCall[] = []
 	function visit(node: ts.Node): void {
 		if (
 			(ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
@@ -672,22 +698,78 @@ export function moduleSpecifiers(params: {
 			!(valuesOnly && isTypeOnlyDeclaration(node))
 		)
 			specifiers.push(node.moduleSpecifier.text)
-		if (
-			ts.isCallExpression(node) &&
-			node.arguments[0] &&
-			ts.isStringLiteralLike(node.arguments[0])
-		) {
+		if (ts.isCallExpression(node)) {
 			const callee = node.expression
-			const named =
-				callee.kind === ts.SyntaxKind.ImportKeyword ||
-				(ts.isIdentifier(callee) && callee.text === 'require') ||
-				(!valuesOnly && ts.isPropertyAccessExpression(callee) && callee.name.text === 'mock')
-			if (named) specifiers.push(node.arguments[0].text)
+			const first = node.arguments[0]
+			if (first && ts.isStringLiteralLike(first)) {
+				const named =
+					callee.kind === ts.SyntaxKind.ImportKeyword ||
+					(ts.isIdentifier(callee) && callee.text === 'require') ||
+					(!valuesOnly && ts.isPropertyAccessExpression(callee) && callee.name.text === 'mock')
+				if (named) specifiers.push(first.text)
+			}
+			const method = ts.isPropertyAccessExpression(callee) ? callee.name.text : undefined
+			if (
+				method !== undefined &&
+				MODULE_MOCK_METHODS.includes(method) &&
+				ts.isPropertyAccessExpression(callee) &&
+				isViReceiver({ expression: callee.expression, receivers })
+			)
+				mockCalls.push({
+					method: method as ModuleMockCall['method'],
+					line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1,
+				})
 		}
 		ts.forEachChild(node, visit)
 	}
 	visit(source)
-	return specifiers
+	return { specifiers, mockCalls }
+}
+
+/** The expression is vitest's `vi`: one of its local names, or `.vi` of a namespace import of `vitest`. */
+function isViReceiver(params: {
+	expression: ts.Expression
+	receivers: { names: ReadonlySet<string>; namespaces: ReadonlySet<string> }
+}): boolean {
+	const { expression, receivers } = params
+	if (ts.isIdentifier(expression)) return receivers.names.has(expression.text)
+	// `.vi` of a namespace import of `vitest`, or of the global object (`globalThis.vi`)
+	return (
+		ts.isPropertyAccessExpression(expression) &&
+		expression.name.text === VITEST_VI_BINDING &&
+		ts.isIdentifier(expression.expression) &&
+		(receivers.namespaces.has(expression.expression.text) ||
+			expression.expression.text === GLOBAL_THIS)
+	)
+}
+
+/**
+ * The local names of vitest's `vi` in a parsed file (the global `vi`, and each name it is imported under) and the
+ * namespace imports of `vitest`.
+ */
+function viBindingsOf(source: ts.SourceFile): { names: Set<string>; namespaces: Set<string> } {
+	const names = new Set([VITEST_VI_BINDING])
+	const namespaces = new Set<string>()
+	for (const statement of source.statements) {
+		if (
+			!ts.isImportDeclaration(statement) ||
+			!ts.isStringLiteralLike(statement.moduleSpecifier) ||
+			statement.moduleSpecifier.text !== VITEST_PACKAGE
+		)
+			continue
+		const bindings = statement.importClause?.namedBindings
+		if (bindings && ts.isNamespaceImport(bindings)) namespaces.add(bindings.name.text)
+		if (bindings && ts.isNamedImports(bindings))
+			for (const element of bindings.elements)
+				// `vi`, or its other name `vitest`, under any local name
+				if (
+					[VITEST_VI_BINDING, VITEST_VITEST_BINDING].includes(
+						(element.propertyName ?? element.name).text,
+					)
+				)
+					names.add(element.name.text)
+	}
+	return { names, namespaces }
 }
 
 /** `import type ... from '...'` or `export type ... from '...'`: erased before the file runs. */

@@ -39,6 +39,7 @@ import { designGateOf, ownLotFolderOf } from '../lib/design/design-gate.ts'
 import { startStep } from '../lib/events/record-step.ts'
 import { realPathOf } from '../lib/file-system.ts'
 import { computeStateHash } from '../lib/gate-records/state-hash.ts'
+import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { TDD_LEGEND_TERMS } from '../lib/legend/legend.constants.ts'
 import { renderLegend } from '../lib/legend/render-legend.ts'
 import { readPackageJson } from '../lib/package-json.ts'
@@ -84,7 +85,7 @@ import {
 } from '../lib/tdd/production-states.ts'
 import { pythonBaseTextsOf } from '../lib/tdd/python-case.ts'
 import { applyMoves, readMoves } from '../lib/tdd/read-moves.ts'
-import { runTestCases } from '../lib/tdd/run-test-cases.ts'
+import { runTestCases, testFileOf } from '../lib/tdd/run-test-cases.ts'
 import {
 	caseHashOfBody,
 	caseLabel,
@@ -100,6 +101,7 @@ import {
 	hashTestCodeText,
 	isTestFile,
 	listChangedTestFiles,
+	listDeletedTestFiles,
 	listMovedTestFiles,
 	listTestFilesOfChange,
 	readLedger,
@@ -115,6 +117,10 @@ import {
 	HELPER_DEPENDENTS_LIMIT,
 	HELPER_DEPENDENTS_OVER_LIMIT,
 	HELPER_DEPENDENTS_STEP,
+	MODULE_MOCK_REASON,
+	MODULE_MOCK_REFUSAL,
+	VITEST_PROJECTS_STEP,
+	VITEST_VI_BINDING,
 	NO_RED_RECEIPT,
 	NOT_RUN_CASE_STATES,
 	NOTHING_CHANGED_SINCE_RED,
@@ -146,10 +152,15 @@ import {
 } from '../lib/tdd/tdd.constants.ts'
 import { changedTestCodeOf, declaredPathRefusalOf } from '../lib/tdd/test-code-presence.ts'
 import { listTestDependencies } from '../lib/tdd/test-dependencies.ts'
-import { findOnlyMarkers, isTableTitledAt } from '../lib/tdd/test-source.ts'
+import { findOnlyMarkers, isTableTitledAt, moduleMockCalls } from '../lib/tdd/test-source.ts'
 import { TESTS_RECORD_STEP } from '../lib/tdd/tests-record.constants.ts'
 import { refreshTddPart, testsRecordFolderOf } from '../lib/tdd/tests-record.ts'
 import { readVitestConfigs } from '../lib/tdd/vitest-configs.ts'
+import {
+	createVitestSelectionReader,
+	selectionNotes,
+	sharingProjectOf,
+} from '../lib/tdd/vitest-selection.ts'
 import { judgeZeroCaseFiles, zeroCaseLines } from '../lib/tdd/zero-case-verdict.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
@@ -162,6 +173,7 @@ import type {
 	MovedCarry,
 	ModuleResolver,
 	MovedFrom,
+	ModuleMockRefusal,
 	OwnCodeStatement,
 	OwnCodeVerdict,
 	ChangedTestFile,
@@ -184,6 +196,8 @@ import type {
 	TddTargets,
 	TestCaseId,
 	TestRunFailure,
+	VitestSelectionReader,
+	ProbeAnnouncer,
 } from '../lib/tdd/tdd.types.ts'
 import type { TestCodePresence } from '../lib/tdd/test-code-presence.types.ts'
 
@@ -379,7 +393,7 @@ async function runRed(params: {
 	context: TddContext
 	admission: TddRunAdmission
 }): Promise<CommandResult> {
-	const { context } = params
+	const context = withSelectionReader({ context: params.context, files: params.admission.files })
 	const { root } = context
 	const { testCode, changed, files, acceptances, revisions } = params.admission
 	const lines: string[] = []
@@ -406,7 +420,26 @@ async function runRed(params: {
 			fileRefusal({ file: file.file, reason: 'focus markers', productionHash, testCode, at }),
 		)
 	}
-	const runnable = files.filter((file) => !focused.includes(file))
+	// a module mock a project sharing modules between files runs: CI loads the module before the mock
+	const mocking = await moduleMockRefusalsOf({
+		context,
+		files: files.filter((file) => !focused.includes(file)),
+	})
+	for (const refusal of mocking) {
+		lines.push(moduleMockLine(refusal))
+		entries.push(
+			fileRefusal({
+				file: refusal.file,
+				reason: MODULE_MOCK_REASON,
+				productionHash,
+				testCode,
+				at,
+			}),
+		)
+	}
+	const runnable = files.filter(
+		(file) => !focused.includes(file) && !mocking.some((refusal) => refusal.file === file.file),
+	)
 	const modules = runnable.length
 		? await announcedRun({
 				context,
@@ -438,6 +471,7 @@ async function runRed(params: {
 		packageJson: context.packageJson,
 		files: runnable,
 		cases: run.cases.filter((testCase) => !isDuplicateMember({ testCase, duplicates })),
+		...(context.vitestSelection && { vitestSelection: context.vitestSelection }),
 	})
 	const cases = applyMoves({ cases: run.cases, moves })
 	const movedCases = movedCaseLabels(moves)
@@ -623,7 +657,7 @@ async function runRed(params: {
 				detail: HELPER_DEPENDENT_OUTSIDE_RUN.replace('{files}', outside.join(', ')),
 			}),
 		)
-	const helperVerdicts = await judgeOrphanHelpers({
+	const { verdicts: helperVerdicts, notes: helperNotes } = await judgeOrphanHelpers({
 		context,
 		testCode,
 		frozen,
@@ -660,7 +694,20 @@ async function runRed(params: {
 	// counted before: the rollback line is no case line
 	if (movedBack.length && countLines({ lines, label: 'red' }) > 0)
 		lines.push(ROLLBACK_LINE.replace('{files}', movedBack.join(', ')))
-	return finish({ context, lines, summary, refused, unjudgedMembers, duplicates })
+	// the projects the run selected, said before its lines; a file refused before the run is named by no note
+	// read only when a probe ran for this red: a red whose vitest files were all refused before the run probes nothing
+	const notes = selectionNotes({
+		selection: context.vitestSelection?.peek(),
+		refused: [...focused.map((file) => file.file), ...mocking.map((refusal) => refusal.file)],
+	})
+	return finish({
+		context,
+		lines: [...notes, ...helperNotes.filter((note) => !notes.includes(note)), ...lines],
+		summary,
+		refused,
+		unjudgedMembers,
+		duplicates,
+	})
 }
 
 /**
@@ -714,7 +761,7 @@ async function judgeOrphanHelpers(params: {
 	frozen: Readonly<Record<string, string>>
 	changed: readonly ChangedTestFile[]
 	dependenciesOf: (file: string) => readonly string[]
-}): Promise<HelperVerdict[]> {
+}): Promise<{ verdicts: HelperVerdict[]; notes: string[] }> {
 	const { context, changed } = params
 	const helpers = listOrphanHelpers({
 		root: context.root,
@@ -726,7 +773,7 @@ async function judgeOrphanHelpers(params: {
 				.filter((file) => params.dependenciesOf(file.file).includes(helper))
 				.map((file) => file.file),
 	})
-	if (helpers.length === 0) return []
+	if (helpers.length === 0) return { verdicts: [], notes: [] }
 	const dependents = listUnchangedDependents({
 		root: context.root,
 		helpers,
@@ -738,12 +785,20 @@ async function judgeOrphanHelpers(params: {
 	// dependents fit the budget; each one past it is named with its own count, the revised entry standing instead
 	const { within, over } = budgetDependents({ dependents, limit: HELPER_DEPENDENTS_LIMIT })
 	const files = [...new Set([...within.values()].flat())].sort()
+	// the dependents run in the command's projects: probed again only when the command's probe did not ask them
+	const vitestSelection = files.length ? await readerCovering({ context, files }) : undefined
+	const ownSelection =
+		vitestSelection && vitestSelection !== context.vitestSelection
+			? await vitestSelection.select({ announced: true })
+			: undefined
+	const notes = selectionNotes({ selection: ownSelection, refused: [] })
 	const modules = files.length
 		? await runTestCases({
 				root: context.root,
 				files,
 				filter: 'all',
 				observer: runnerObserverOf({ context, name: HELPER_DEPENDENTS_STEP }),
+				...(vitestSelection && { vitestSelection }),
 			})
 		: []
 	const overVerdicts: HelperVerdict[] = [...over].map(([file, of]) => ({
@@ -755,11 +810,20 @@ async function judgeOrphanHelpers(params: {
 		),
 	}))
 	if ('failure' in modules)
-		return [
-			...[...within.keys()].map((file) => ({ file, frozen: false, detail: modules.failure })),
+		return {
+			verdicts: [
+				...[...within.keys()].map((file) => ({ file, frozen: false, detail: modules.failure })),
+				...overVerdicts,
+			],
+			notes,
+		}
+	return {
+		verdicts: [
+			...judgeHelpers({ root: context.root, dependents: within, modules }),
 			...overVerdicts,
-		]
-	return [...judgeHelpers({ root: context.root, dependents: within, modules }), ...overVerdicts]
+		],
+		notes,
+	}
 }
 
 /** What a red run makes of one case. */
@@ -872,6 +936,7 @@ async function decideMovedCases(params: {
 			(testCase) => carries.get(caseLabel(testCase))?.kind === 'carry',
 		),
 		observer: runnerObserverOf({ context, name: MOVED_BASE_RUN_STEP }),
+		...(context.vitestSelection && { vitestSelection: context.vitestSelection }),
 	})
 	return { carries, onBase }
 }
@@ -1266,6 +1331,7 @@ async function judgeOnBase(params: {
 		packageJson: context.packageJson,
 		testCase,
 		observer: runnerObserverOf({ context, name: 'tdd red on the base' }),
+		...(context.vitestSelection && { vitestSelection: context.vitestSelection }),
 	})
 	if (verdict.kind === 'passes')
 		return {
@@ -1319,7 +1385,7 @@ async function runGreen(params: {
 	context: TddContext
 	admission: TddRunAdmission
 }): Promise<CommandResult> {
-	const { context } = params
+	const context = withSelectionReader({ context: params.context, files: params.admission.files })
 	const { root, ledger } = context
 	const { files, acceptances, revisions } = params.admission
 	const movedFiles = new Set(params.admission.moved.map((file) => file.file))
@@ -1347,6 +1413,8 @@ async function runGreen(params: {
 	const at = context.now().toISOString()
 	const lines: string[] = []
 	const entries: TddEntry[] = []
+	// a file mocking a module a project sharing modules runs: every case of it refused, the cause named once
+	const mocking = await moduleMockRefusalsOf({ context, files })
 	for (const file of unlisted)
 		lines.push(
 			statusLine({
@@ -1400,10 +1468,12 @@ async function runGreen(params: {
 			movedFile && counted?.testFileHash !== testFileHash
 				? movedFileProofOf({ testCase, testFileHash, productionHash })
 				: counted
-		// a member of a duplicate group is refused whatever its receipts: they name no single case
-		const refusal =
-			memberReasons.get(caseLabel(testCase)) ??
-			greenRefusal({ testCase, proof, ledger, testCode, productionHash, movedFile })
+		// a module mock CI cannot apply wins: the cause to fix; a member of a duplicate group is refused whatever its
+		// receipts: they name no single case
+		const refusal = mocking.some((refused) => refused.file === testCase.file)
+			? MODULE_MOCK_REASON
+			: (memberReasons.get(caseLabel(testCase)) ??
+				greenRefusal({ testCase, proof, ledger, testCode, productionHash, movedFile }))
 		return { testCase, proof, refusal }
 	})
 	const proven = verdicts
@@ -1468,8 +1538,20 @@ async function runGreen(params: {
 	// counted before: the rollback line is no case line
 	if (flags.length && countLines({ lines, label: 'green' }) > 0)
 		lines.push(ROLLBACK_LINE.replace('{files}', movedBack.join(', ')))
+	// counted before: the module mock's line names the cause of its cases' refusals, once per file
+	lines.push(...mocking.map(moduleMockLine))
 	const warning = await recordTddPart({ context, at })
-	return finish({ context, lines, summary, refused, unjudgedMembers, duplicates, warning })
+	// the projects the run selected, said before its lines
+	const notes = selectionNotes({ selection: context.vitestSelection?.peek(), refused: [] })
+	return finish({
+		context,
+		lines: [...notes, ...lines],
+		summary,
+		refused,
+		unjudgedMembers,
+		duplicates,
+		warning,
+	})
 }
 
 /**
@@ -1702,6 +1784,7 @@ async function announcedRun(params: {
 		filter: params.filter ?? 'all',
 		...(params.baseTexts && { baseTexts: params.baseTexts }),
 		...(params.ownCode && { ownCode: true }),
+		...(context.vitestSelection && { vitestSelection: context.vitestSelection }),
 		observer: runnerObserverOf({ context, name: `tdd ${params.subcommand}` }),
 	})
 }
@@ -1724,6 +1807,109 @@ function runnerObserverOf(params: { context: TddContext; name: string }): Runner
 			}
 		},
 	}
+}
+
+/**
+ * The context with the reader of the run's vitest projects (`createVitestSelectionReader`) over the files it runs and
+ * the base's deleted test files (a base collect runs those): read on first use, once; a selection that could not be
+ * read is answered by the vitest run, as its step.
+ */
+function withSelectionReader(params: {
+	context: TddContext
+	files: readonly ChangedTestFile[]
+}): TddContext {
+	const { context } = params
+	return {
+		...context,
+		vitestSelection: createVitestSelectionReader({
+			root: context.root,
+			packageJson: context.packageJson,
+			files: params.files,
+			baseFiles: listDeletedTestFiles(context),
+			announce: probeAnnouncerOf(context),
+		}),
+	}
+}
+
+/** A probe asked outside a test run's step, shown as its own progress step: a running line, then its duration. */
+function probeAnnouncerOf(context: TddContext): ProbeAnnouncer {
+	return async function announceProbe(run) {
+		const clock = createSystemClock()
+		const startedAt = clock.now()
+		const running = context.progress?.start({ name: VITEST_PROJECTS_STEP, detail: '' })
+		let failed = true
+		try {
+			const result = await run()
+			failed = false
+			return result
+		} finally {
+			running?.finish(
+				`${failed ? '✗' : '✓'} ${VITEST_PROJECTS_STEP}  ${formatDuration(clock.now() - startedAt)}`,
+			)
+		}
+	}
+}
+
+/**
+ * The command's reader when its selection asked every one of `files` (or selects every project); else a reader over
+ * them (a red's orphan helpers' dependents, found after its run; a red of helpers alone asked none). That second
+ * reader keeps its own base-check cache: no path reaches it today, the dependents never run on a base copy.
+ */
+async function readerCovering(params: {
+	context: TddContext
+	files: readonly string[]
+}): Promise<VitestSelectionReader> {
+	const { context } = params
+	const reader = context.vitestSelection
+	const selection = await reader?.select({ announced: true })
+	if (reader && selection) {
+		if ('failure' in selection || selection.ci.kind === 'all') return reader
+		const asked = new Set([...selection.held, ...selection.outside])
+		if (params.files.every((file) => asked.has(file))) return reader
+	}
+	return createVitestSelectionReader({
+		root: context.root,
+		packageJson: context.packageJson,
+		files: params.files.map((file) => testFileOf({ root: context.root, file })),
+		baseFiles: [],
+		announce: probeAnnouncerOf(context),
+	})
+}
+
+/**
+ * The files mocking a module (`vi.mock`, `vi.doMock`) that a project of the run sharing modules between files holds;
+ * the selection read only when a file mocks one.
+ */
+async function moduleMockRefusalsOf(params: {
+	context: TddContext
+	files: readonly ChangedTestFile[]
+}): Promise<ModuleMockRefusal[]> {
+	const mocking = params.files.flatMap((file) => {
+		const [call] = moduleMockCalls({ text: file.text, file: file.file })
+		return call ? [{ file: file.file, call }] : []
+	})
+	if (mocking.length === 0) return []
+	// before the run: the probe is a step of its own
+	const selection = await params.context.vitestSelection?.select({ announced: true })
+	if (!selection || 'failure' in selection) return []
+	return mocking.flatMap(({ file, call }) => {
+		const project = sharingProjectOf({ selection, file })
+		return project === undefined
+			? []
+			: [{ file, call: `${VITEST_VI_BINDING}.${call.method}`, line: call.line, project }]
+	})
+}
+
+/** The refusal line of a file mocking a module in a project sharing modules between files. */
+function moduleMockLine(refusal: ModuleMockRefusal): string {
+	return statusLine({
+		label: 'refused',
+		id: refusal.file,
+		detail: fillMessage({
+			template: MODULE_MOCK_REFUSAL,
+			values: { call: refusal.call, line: String(refusal.line), project: refusal.project },
+		}),
+	})
 }
 
 /** A refusal of a whole file (it cannot run, or holds a focus marker), kept in the ledger. */
