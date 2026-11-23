@@ -46,14 +46,14 @@ gate - The package's Definition of Done with the real counts
            changed case since the lot base proven red then green, unchanged, accepted or revised,
            each closed case proven passing at the production as committed: its last run at its test
            file now passed it there, else listed stale (proven at another production) or refused
-           (its last run refused it), both naming dialecte tdd green (measured from the lot base),
-           or unproven (no proof receipt: a case moved into a file a red ran before the move) naming
-           dialecte tdd red; a case skipped as written is never listed; a test file moved with its
-           bytes lists its cases too; a first or merge commit skips it), then the declared steps
-           (the cli: check, then rules on the touched files); without one, every step of --full, a
-           scoped one against the hook base; each step answered by a green record (any mode) of the
-           committed tree and install that ran it as it is now, else run; the running line names the
-           steps it runs
+           (its last run refused it), both naming a tdd green run (measured from the lot base), or
+           unproven (no proof receipt: a case moved into a file a red ran before the move) naming a
+           tdd red run; a case skipped as written is never listed; a test file moved with its bytes
+           lists its cases too; a first or merge commit skips it), then the declared steps (the cli:
+           check, then rules on the touched files); without one, every step of --full, a scoped one
+           against the hook base; each step answered by a green record (any mode) of the committed
+           tree and install that ran it as it is now, else run; the running line names the steps it
+           runs
   --release - alone: "dialecte.gate.release" (default: the --full steps), every scoped step against
               the empty tree (--base feeds only the tdd step); records dialecte-gate-release.json;
               each of its steps answers a hook step of the same step hash (a scoped one at any base:
