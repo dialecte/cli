@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-23
+
+### Added
+
+- `dialecte lot approve` names the queue the host merges the change request through, as the host answers it for the change request's base: `queued (merge queue)` or `queued (auto-merge)`; nothing is added when the host offers neither or the read is refused, and a stacked lot's line names none. `dialecte doctor --host` probes this read.
+
+### Changed
+
+- **Breaking:** `dialecte lot approve` of a lot queued alone asks the host once which queue it offers the change request, before anything is recorded: a host that allows no auto-merge and has no queue on the base branch is refused (exit 1) naming what to turn on, with no approval recorded and no text sent. It used to record the approval and then fail at the host; running it again answered "already approved", and now refuses again until auto-merge or a queue is turned on. A read the host refuses refuses nothing: the queue goes ahead as before. A stacked lot reads no queue kind (it merges through the host's stack tool).
+- **Breaking:** `dialecte worktree prune --yes` decides each rehearsal clone again right before its move, on the processes, links and lots read after the confirmation: a clone that is kept by then prints `✗ <clone> kept: <why>`, one gone since the plan prints `✗ <clone>: gone since the plan`, nothing is moved and the command exits 1, where it used to move the clone and exit 0.
+- **Breaking:** a rehearsal clone whose marker pid runs again with another start time, and that no process works in, is now moved by `dialecte worktree prune`: the pid was reused, its rehearsal is over. It used to be kept for as long as that unrelated process lived.
+- **Breaking:** `dialecte lot pr <id>` is now `dialecte lot describe <id>`, with the same `--print` and `--json`; `lot pr` is an unknown verb (exit 2, the lot usage). The pull request template's header comment names the new verb.
+- **Breaking:** `dialecte lot review <id> --pull --round <n>` is now `dialecte lot review <id> --comments --round <n>`; `--pull` is an unknown flag (exit 2). The `pulled-comments.jsonl` record keeps its name, so comments already taken are not taken again.
+- **Breaking:** `dialecte text check --kind pr` is now `--kind change-request`, still the default kind; `--kind pr` is refused with the usage naming the four kinds.
+- **Breaking:** `dialecte worktree prune --yes` decides every item again after the confirmation - worktree, branch, committed hand-over folder, rehearsal clone, scratch and rehearsal hook folder, pool left-over - by the same rules as the plan, on a plan taken again right after the confirmation (the hand-overs found again, the processes, links, lots and markers read then, once, before the first move). An item goes only when that plan removes it with the same command; any other prints `✗ <name> kept: <why>`, `✗ <name>: gone since the plan`, `✗ <name> kept: not offered now`, `✗ <name> kept: removed another way now: <command>`, `✗ <branch> kept: its worktree stays`, `✗ <worktree> kept: git worktree prune would now also unregister <worktrees>` or `✗ <name>: not decided again: <reason>`, nothing is moved for it and the command exits 1, where it used to run the planned command and exit 0. An item only the second plan offers is never removed nor printed. A change made between two moves of one run is not seen; pool left-overs and rehearsal clones, read again right before their own move until now, are read at that one point.
+- **Breaking:** a scratch folder, a rehearsal hook folder or a committed hand-over folder a process works in is now kept at the plan (`a process works in it: pid <pid>`), and kept with why when the processes cannot be listed; the processes are asked after every other rule.
+- `dialecte lot review`'s approve line names the same refusal for a lot queued alone.
+- The queued line of `lot approve` names the queue from that one read; the host is no longer asked again after the queue.
+- Keep reasons changed: a worktree whose root `.dialecte/lot` link names a lot that is open, damaged or kept on purpose is now kept with that lot's reason (`lot <name> <state>`, its kept text) before any other rule, by `worktree prune`, `worktree prune --reclaim`, `lot close`, `lot close --feature` and `lot prune`; a store lot folder present but not read keeps it as `lot <name>: its records do not read`. A rehearsal clone whose marker cannot be parsed is kept with the marker reader's why.
+- `dialecte worktree prune --json` gives a rehearsal clone item that goes its `owner`, the folder of the lot it belongs to.
+- `lot describe`, `lot review` and `lot approve` name the change request in the host's own word: a repository whose origin is GitHub reads "pull request" as before; a repository no host serves (a local-path origin, no origin) reads "change request".
+- The change-request template is the host's own: GitHub's `.github/pull_request_template.md`. A repository no host serves is read for the first host template its tree holds, and a refusal for a missing template names every path it looked for.
+- Every printed line of `lot land`, `lot approve`, `lot stop`, `lot close`, `lot prune`, `lot status`, `lot describe` and the CI-first refusal of the hand-over verbs that names the change request uses the host's own word: a repository whose origin is GitHub reads "pull request" as before; a repository no host serves (a local-path origin, no origin) reads "change request". The rendered body's stale tests line says the same.
+- Two lines read files only and so print "change request" on every repository, GitHub's included: the hand-over card's stack line, and `lot status`'s stack line when no landing is read.
+- `lot stop` of a queued lot says its change request is "out of the queue", not "out of the merge queue".
+- The help, the command reference pages, `README.md` and `AGENTS.md` say "change request" and "the queue", and quote no `gh` command; the CI pages name GitHub Actions' `pull_request` event by its name.
+- A landed fact whose change request does not read is damaged with the reason "changeRequest is not a change request record".
+- `dialecte worktree prune --json` gives every worktree item on a branch its `branch`, kept or not.
+- The `worktree` page lists the exit codes of `worktree prune`.
+
+### Fixed
+
+- `dialecte worktree prune` no longer moves a rehearsal clone a process works in: a clone is decided by the same rules as in `dialecte lot close --feature`, so it stays while a process works in it, the processes cannot be listed (a lister that fails included), its lot is kept on purpose or damaged (a clone of a committed hand-over registered for exactly one lot's worktree and branch belongs to that lot; two such lots keep it, `owner not single: <lots>`), its run is alive, its marker cannot tell, a link reaches it, or the clone cannot be read; a plan never throws on an unreadable clone. A pid running again with another start time no longer keeps a clone nothing works in. `--yes` decides each clone again right before its move, on the processes, links and lots read after the confirmation: `✗ <clone> kept: <why>` or `✗ <clone>: gone since the plan`, nothing moved, exit 1.
+- `dialecte lot close --feature` keeps the clones of a lot damaged by the time its clones are read at the plan, with the damaged text, instead of only at the move.
+- A store lot whose `identity.json` does not read still holds what it held, found through the worktree's root `.dialecte/lot` link and through the registry entry naming its folder (`lot <name> damaged`): `dialecte worktree prune` keeps its worktree, its branch and its review throwaways; `worktree prune --reclaim`, `lot close` and `lot close --feature` keep its worktree; `lot prune` never takes its worktree for a hand-made throwaway and keeps its stack parent's branch, at the plan and again at the move. A worktree's root link names the lot that holds it for every remover: a lot it names that is open, damaged or kept on purpose keeps the worktree first, a lot folder present in the store but not read keeps it (`lot <name>: its records do not read`), and a lot folder gone or moved aside by `lot stop` holds nothing.
+- A damaged lot kept on purpose now gives its kept text as its reason in `lot close` and `worktree prune --reclaim` too, as `worktree prune` did.
+- Reading which host serves a repository spawns `ssh -G` once per ssh alias in a run, where every read spawned it again.
+- `dialecte worktree prune --yes` no longer throws when the process lister throws after the confirmation: a pool left-over it would move is kept with `the processes are not known (<reason>)`, exit 1.
+- `dialecte worktree prune --yes` no longer removes a worktree, deletes a branch or moves a folder kept since the plan: a worktree a process entered, changed or wrote an ignored file in, a branch a lot started on or a hand-over became pending on, a hand-over folder a process entered or a link reaches, a scratch or hook folder a process entered. It no longer deletes a branch whose worktree stayed, nor runs a `git worktree prune` that would unregister a worktree no confirmation covered, and the same branch name in two repositories is decided in each one.
+- `tdd green` runs every case of the changed test files and of the test files moved with their bytes, and refuses
+  every case that does not pass, whatever its proof: a red, an unchanged case, an accepted one, one revised by a
+  case or file entry, or the base's case of a moved file. A case proven without a red records its proof again when
+  its last run was at another production or at other bytes of its test file.
+- The commit hook's tdd step refuses a commit holding a case of the lot that is not proven passing at the production
+  committed, whatever its proof: `stale` (proven at another production) or `refused` (its last run refused it), both
+  naming `dialecte tdd green`, or `unproven` (a case moved into a file a red ran before the move) naming
+  `dialecte tdd red`. A case skipped as written is never listed.
+- A test file git reports renamed is read at the base at its old path: its untouched cases stay `unchanged`, a
+  `moved` entry may name that old path, a `gone` entry naming it is refused (a case removed in the rename is gone at
+  the new path), and a file-level `moved` entry on a pair tdd matches itself is listed `not needed`, never `unused`.
+
+A lot in flight that holds a test file moved with its bytes, a case proven without a red before a production change,
+or such a case in a test file edited since its proof, needs one `dialecte tdd green` before its next commit. One
+holding a case moved into a file a red ran before the move (the hook now lists it `unproven`) needs one
+`dialecte tdd red`. A `gone` entry naming the old path of a git rename is now refused before any run: drop it with
+`dialecte lot gone --remove <old path>` and declare a case removed in the rename as gone at the new path.
+
 ## [0.11.0] - 2026-11-22
 
 ### Changed
