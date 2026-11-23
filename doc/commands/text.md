@@ -27,7 +27,7 @@ Text written with an assistant tends to retell the diff and grow long. The pull 
 an expandable part made from records, and a short human part that is checked before it is posted. Both
 commands only print; the user posts.
 
-- `dialecte text check <file> [--kind pr|issue|comment|commit]` checks every line before the first `<details`
+- `dialecte text check <file> [--kind change-request|issue|comment|commit]` checks every line before the first `<details`
   line (the recap is not checked). A pull request or an issue holds the headings `What changes`, `Why`, `How
   to check it` in this order, then `Watch out` only when it has something to say; each with text under it,
   nothing before the first. A comment or a commit holds no heading; a commit's line 1 is its subject, not

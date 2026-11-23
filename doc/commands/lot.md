@@ -1182,7 +1182,7 @@ record, `decisions.md`, every finding with its text and state, the standard line
 then it opens the Files tab. It writes nothing.
 
 Points that can be public are line comments on the pull request, prefixed `blocking:`, `should-fix:` or `nit:`
-(should-fix when none). `dialecte lot review <id> --pull --round <n>` brings them back as findings of round n, each
+(should-fix when none). `dialecte lot review <id> --comments --round <n>` brings them back as findings of round n, each
 comment once; the lot fixes them as a review round. Private points (the plans, the standard) never go on GitHub: they
 are recorded with `lot finding`.
 
