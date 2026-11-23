@@ -111,6 +111,7 @@ import type {
 	PrunePlanParams,
 	ReclaimContext,
 	ReclaimItem,
+	ReclaimKeep,
 	ReclaimOutcome,
 	ReclaimPlan,
 	ReclaimRepositoryRun,
@@ -253,13 +254,17 @@ export function planReclaim(params: {
 	now: Date
 	/** Git activity in the last `olderThanDays` days keeps a worktree. */
 	olderThanDays: number
-	/** Lists the processes and their working folders (the tests stand in for it); default: the system's. */
+	/**
+	 * Lists the processes and their working folders (the tests stand in for it), read once through `readProcesses`: a
+	 * lister that throws reads as the processes not known, and each worktree that reaches the process rule is kept.
+	 * Default: the system's.
+	 */
 	listProcesses?: () => ProcessFolder[] | string
 	/** Where rehearsal clones are made: their links are read with the workspace's. Default: none. */
 	scratchRoots?: readonly string[]
 }): ReclaimPlan {
 	const cutoff = new Date(params.now.getTime() - params.olderThanDays * RECLAIM_DAY_MS)
-	const processes = (params.listProcesses ?? listProcessFolders)()
+	const processes = readProcesses(params.listProcesses ?? listProcessFolders)
 	const links = linkRootsOf({
 		workspace: params.workspace,
 		scratchRoots: params.scratchRoots ?? [],
@@ -286,7 +291,8 @@ export function planReclaim(params: {
  * or worked in since the plan is kept, its line says why), then each `park` through the pool cache, each `trash`
  * through the trash; what is gone since the plan (another
  * reclaim) is a line, and a move that throws (a folder moved under it by another park or take) a refused line, never
- * a throw: the next items still run. The workspace-wide facts (the processes, the links, each repository's worktree
+ * a throw: the next items still run. A process list that cannot be read keeps each planned move (the processes not
+ * known). The workspace-wide facts (the processes, the links, each repository's worktree
  * list, store, hand-over registry, runs and pool cap) are read once per execution, at its first move, and kept up to
  * date in memory as items move; the facts of one worktree (gone, locked, git activity, a hand-over running in it) are
  * read again just before its move. A process that starts working in a worktree after the execution read the
@@ -301,7 +307,11 @@ export function executeReclaim(params: {
 	now: Date
 	/** Starts the background removals of the trash; default: `spawnDetached`. */
 	spawner?: BackgroundSpawner
-	/** Lists the processes for the keep rules checked again before each move, once per execution; default: the system's. */
+	/**
+	 * Lists the processes for the keep rules checked again before each move, once per execution, through
+	 * `readProcesses`: a lister that throws reads as the processes not known, and each planned move is kept. Default:
+	 * the system's.
+	 */
 	listProcesses?: () => ProcessFolder[] | string
 	/** Where rehearsal clones are made: their links are read with the workspace's. Default: none. */
 	scratchRoots?: readonly string[]
@@ -313,7 +323,7 @@ export function executeReclaim(params: {
 	/** The repository's facts of this execution: read at its first move, then as the moves left them. */
 	function runOf(repository: string): ReclaimRepositoryRun {
 		shared ??= {
-			processes: (params.listProcesses ?? listProcessFolders)(),
+			processes: readProcesses(params.listProcesses ?? listProcessFolders),
 			links: linkRootsOf({ workspace, scratchRoots: params.scratchRoots ?? [] }).flatMap((folder) =>
 				findLinks(folder),
 			),
@@ -327,7 +337,12 @@ export function executeReclaim(params: {
 	}
 	return params.plan.items.map(function carryOut(item): ReclaimOutcome {
 		if (item.action === 'keep')
-			return { worktree: item.worktree, line: reclaimItemLine({ item, workspace }), moved: false }
+			return {
+				worktree: item.worktree,
+				line: reclaimItemLine({ item, workspace }),
+				moved: false,
+				...(item.processesNotKnown && { processesNotKnown: true }),
+			}
 		const run = runOf(item.repository)
 		if (item.action === 'park') run.cap ??= readPoolCap({ repository: item.repository })
 		const moved = moveReclaimItem({
@@ -502,7 +517,6 @@ function groupByRepository(params: {
 	return grouped
 }
 
-// dialecte-allow duplicate-read: decides a prune plan's removal on a second plan; moveReclaimItem moves a reclaim item on its own reads
 /**
  * A planned removal decided again after the confirmation, by the plan's own rules (`fresh`, the plan taken again):
  * kept now (why, as the plan prints it); absent from the plan, gone (not present) or not offered now; offered by
@@ -1409,41 +1423,47 @@ function decideReclaim(params: { listed: ListedWorktree; context: ReclaimContext
 	const worktree = spellUnder({ path: params.listed.path, folder: dirname(context.repository) })
 	const base = { repository: context.repository, worktree }
 	const kept = whyKeepReclaimed({ listed: params.listed, worktree, context })
-	if (kept !== undefined) return keepItemOf({ ...base, reason: kept })
+	if (kept !== undefined) return keepItemOf({ ...base, ...kept })
 	return decideNodeModules({ ...base, mainLockKey: context.mainLockKey })
 }
 
-function keepItemOf(params: { repository: string; worktree: string; reason: string }): ReclaimItem {
+function keepItemOf(params: { repository: string; worktree: string } & ReclaimKeep): ReclaimItem {
 	return { ...params, action: 'keep', files: 0, bytes: 0 }
 }
 
 /**
  * The first keep rule of the invariant that holds for the worktree, or undefined: not on disk, an open lot names it,
- * locked, a process or a mutation run works in it, a link reaches it, a hand-over runs in it or an open one names it,
- * git activity after the cutoff.
+ * locked, a process or a mutation run works in it (or the processes are not known: flagged), a link reaches it, a
+ * hand-over runs in it or an open one names it, git activity after the cutoff.
  */
 function whyKeepReclaimed(params: {
 	listed: ListedWorktree
 	worktree: string
 	context: ReclaimContext
-}): string | undefined {
+}): ReclaimKeep | undefined {
 	const { worktree, context } = params
-	if (!existsSync(worktree)) return RECLAIM_KEEP_REASONS.missing
+	if (!existsSync(worktree)) return { reason: RECLAIM_KEEP_REASONS.missing }
 	// a held lot only, by its worktree or its root link: an open lot's throwaways are reclaimed like any idle worktree
 	const lotItem = lotItemOf({ items: context.lotItems, worktree, link: true })
-	if (lotItem?.held) return lotItem.reason
-	if (params.listed.locked) return RECLAIM_KEEP_REASONS.locked
+	if (lotItem?.held) return { reason: lotItem.reason }
+	if (params.listed.locked) return { reason: RECLAIM_KEEP_REASONS.locked }
 	const working = whyKeepByProcess({ worktree, processes: context.processes })
-	if (working !== undefined) return working
+	if (working !== undefined)
+		return {
+			reason: working,
+			...(typeof context.processes === 'string' && { processesNotKnown: true }),
+		}
 	const run = mutationRunKeeping({ runs: context.runs, folder: worktree })
-	if (run !== undefined) return run
+	if (run !== undefined) return { reason: run }
 	const reachedBy = linkReaching({ folder: worktree, links: context.links })
-	if (reachedBy !== undefined) return RECLAIM_KEEP_REASONS.link.replace('{link}', reachedBy)
-	if (existsSync(handoverLockPath(worktree))) return RECLAIM_KEEP_REASONS.handoverRunning
-	return (
+	if (reachedBy !== undefined)
+		return { reason: RECLAIM_KEEP_REASONS.link.replace('{link}', reachedBy) }
+	if (existsSync(handoverLockPath(worktree)))
+		return { reason: RECLAIM_KEEP_REASONS.handoverRunning }
+	const reason =
 		whyKeepByHandover({ worktree, handovers: context.handovers }) ??
 		whyKeepByActivity({ worktree, cutoff: context.cutoff, workspace: context.workspace })
-	)
+	return reason === undefined ? undefined : { reason }
 }
 
 /** A process works in the worktree (its pid), or the processes are not known (why); undefined when none does. */
@@ -1602,16 +1622,24 @@ function moveReclaimItem(params: {
 }): { outcome: ReclaimOutcome; context: ReclaimContext } {
 	const { item, context } = params
 	const name = relative(context.workspace, item.worktree) || item.worktree
-	function notMoved(why: string): { outcome: ReclaimOutcome; context: ReclaimContext } {
+	function notMoved(kept: ReclaimKeep): { outcome: ReclaimOutcome; context: ReclaimContext } {
 		return {
-			outcome: { worktree: item.worktree, line: `kept  ${name}  ${why}`, moved: false },
+			outcome: {
+				worktree: item.worktree,
+				line: `kept  ${name}  ${kept.reason}`,
+				moved: false,
+				...(kept.processesNotKnown && { processesNotKnown: true }),
+			},
 			context,
 		}
 	}
-	if (!isPresent(join(item.worktree, 'node_modules'))) return notMoved(RECLAIM_GONE)
+	if (!isPresent(join(item.worktree, 'node_modules'))) return notMoved({ reason: RECLAIM_GONE })
 	const fresh = recheckReclaim({ item, context })
 	if (fresh.action !== item.action)
-		return notMoved(fresh.reason ?? `now ${fresh.action}, not ${item.action}: nothing done`)
+		return notMoved({
+			reason: fresh.reason ?? `now ${fresh.action}, not ${item.action}: nothing done`,
+			...(fresh.processesNotKnown && { processesNotKnown: true }),
+		})
 	let moved: { done: string; to: string } | { refused: string }
 	try {
 		moved =
@@ -1635,7 +1663,7 @@ function moveReclaimItem(params: {
 			context,
 		}
 	}
-	if ('refused' in moved) return notMoved(moved.refused)
+	if ('refused' in moved) return notMoved({ reason: moved.refused })
 	return {
 		outcome: { worktree: item.worktree, line: `${moved.done}  ${name}  ${moved.to}`, moved: true },
 		context,
@@ -1671,7 +1699,7 @@ function recheckReclaim(params: { item: ReclaimItem; context: ReclaimContext }):
 		worktree: item.worktree,
 		context,
 	})
-	if (kept !== undefined) return keepItemOf({ ...base, reason: kept })
+	if (kept !== undefined) return keepItemOf({ ...base, ...kept })
 	if (isLink(join(item.worktree, 'node_modules')))
 		return keepItemOf({ ...base, reason: RECLAIM_KEEP_REASONS.nodeModulesLink })
 	return item

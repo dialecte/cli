@@ -23,11 +23,13 @@ import {
 } from '../../test/worktree-pool.ts'
 import { COMMAND_MAP } from '../lib/command-map/command-map.constants.ts'
 import { computeLockKey } from '../lib/worktree/lock-key.ts'
+import { reclaimTotalLine } from '../lib/worktree/prune-worktrees.ts'
 import { runWorktreePrune } from './worktree.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { BriefWorkspace } from '../../test/brief-workspace.types.ts'
+import type { ProcessFolder } from '../lib/worktree/worktree.types.ts'
 
 afterEach(function restoreEnvironment() {
 	vi.unstubAllEnvs()
@@ -89,6 +91,66 @@ function runPrune(params: { workspace: BriefWorkspace; flags: string[] }) {
 		},
 		spawner: createRecordingSpawner().spawner,
 	})
+}
+
+/** What the process lister throws in the cases where the processes cannot be listed. */
+const LISTER_FAILURE = 'the process list cannot be read'
+/** The keep reason of a worktree whose processes are not known because the lister threw. */
+const NOT_KNOWN = `the processes are not known (${LISTER_FAILURE}): nothing is moved`
+/** The pid of the process the lister reports working in a worktree (this test's own: alive). */
+const WORKING_PID = process.pid
+
+/** A process lister that throws `LISTER_FAILURE`. */
+function throwingLister(): ProcessFolder[] {
+	throw new Error(LISTER_FAILURE)
+}
+
+/**
+ * A process lister for the plan and the execution: no process on its first call (the plan's one read), `then` from its
+ * second (the execution's one read, at its first move). A reclaim has no confirmation to switch it inside: the plan
+ * reads the processes once and the execution once, so the call order is the contract, not an incidental count.
+ */
+function planThenMoveLister(then: () => ProcessFolder[] | string): () => ProcessFolder[] | string {
+	let read = false
+	return function listProcesses() {
+		if (!read) {
+			read = true
+			return []
+		}
+		return then()
+	}
+}
+
+/** `worktree prune --root <workspace> --reclaim` and `flags` with `listProcesses`; the result and the spawns recorded. */
+function runReclaimListing(params: {
+	workspace: BriefWorkspace
+	flags: string[]
+	listProcesses: () => ProcessFolder[] | string
+}) {
+	const recording = createRecordingSpawner()
+	const result = runWorktreePrune({
+		argv: ['--root', params.workspace.workspace, '--reclaim', ...params.flags],
+		cwd: params.workspace.workspace,
+		scratchRoot: temporaryFolder('dialecte-scratch-root-'),
+		isTerminal: false,
+		confirm: async function never() {
+			return false
+		},
+		now: new Date(),
+		listProcesses: params.listProcesses,
+		spawner: recording.spawner,
+	})
+	return { result, spawns: recording.calls }
+}
+
+/** What a reclaim left of one worktree's node_modules: still in place with its marker, the pool and trash empty. */
+function leftOf(params: { workspace: BriefWorkspace; worktree: string }) {
+	const worktreesFolder = join(params.workspace.workspace, '.worktrees')
+	return {
+		nodeModules: existsSync(join(params.worktree, 'node_modules', MARKER_FILE)),
+		pool: poolEntriesOf(worktreesFolder),
+		trash: trashedNamesOf(worktreesFolder),
+	}
 }
 
 /** The line of the output naming the worktree folder `name`. */
@@ -257,3 +319,164 @@ describe('worktree prune --reclaim: the command', { timeout: POOL_COMMAND_CASE_M
 			expect(existsSync(join(worktree, 'node_modules', MARKER_FILE))).toBe(true)
 		})
 })
+
+describe(
+	'worktree prune --reclaim: a process list that cannot be read',
+	{ timeout: POOL_COMMAND_CASE_MS },
+	() => {
+		const NOTHING_MOVED = { nodeModules: true, pool: [], trash: [] }
+
+		it('the lister throws at the plan → the worktree kept, the processes not known, nothing moved, exit 1', async () => {
+			const workspace = createReclaimWorkspace()
+			const worktree = addOneWorktree(workspace)
+			ageEverything({ workspace })
+
+			const run = runReclaimListing({ workspace, flags: [], listProcesses: throwingLister })
+
+			await expect(run.result).resolves.toMatchObject({ exitCode: 1 })
+			const { output } = await run.result
+			expect({
+				line: lineOf({ output, name: PARKABLE }),
+				left: leftOf({ workspace, worktree }),
+				spawns: run.spawns,
+			}).toEqual({
+				line: `keep  .worktrees/${PARKABLE}  ${NOT_KNOWN}`,
+				left: NOTHING_MOVED,
+				spawns: [],
+			})
+		})
+
+		it('the lister throws at the plan, --dry-run → the same keep line, a total of nothing, nothing moved, exit 1', async () => {
+			const workspace = createReclaimWorkspace()
+			const worktree = addOneWorktree(workspace)
+			ageEverything({ workspace })
+
+			const run = runReclaimListing({
+				workspace,
+				flags: ['--dry-run'],
+				listProcesses: throwingLister,
+			})
+
+			await expect(run.result).resolves.toMatchObject({ exitCode: 1 })
+			const { output } = await run.result
+			expect({
+				line: lineOf({ output, name: PARKABLE }),
+				total: output.split('\n').filter(Boolean).at(-1),
+				left: leftOf({ workspace, worktree }),
+				spawns: run.spawns,
+			}).toEqual({
+				line: `keep  .worktrees/${PARKABLE}  ${NOT_KNOWN}`,
+				total: reclaimTotalLine([]),
+				left: NOTHING_MOVED,
+				spawns: [],
+			})
+		})
+
+		it('no process at the plan, the lister throws before the move → planned to park, kept at the move, the processes not known, nothing moved, exit 1', async () => {
+			const workspace = createReclaimWorkspace()
+			const worktree = addOneWorktree(workspace)
+			ageEverything({ workspace })
+
+			const run = runReclaimListing({
+				workspace,
+				flags: [],
+				listProcesses: planThenMoveLister(throwingLister),
+			})
+
+			await expect(run.result).resolves.toMatchObject({ exitCode: 1 })
+			const { output } = await run.result
+			expect({
+				line: lineOf({ output, name: PARKABLE }),
+				left: leftOf({ workspace, worktree }),
+				spawns: run.spawns,
+			}).toEqual({
+				line: `kept  .worktrees/${PARKABLE}  ${NOT_KNOWN}`,
+				left: NOTHING_MOVED,
+				spawns: [],
+			})
+		})
+
+		it('the lister answers that the processes are not known (no throw) → the worktree kept with its text, nothing moved, exit 1', async () => {
+			const workspace = createReclaimWorkspace()
+			const worktree = addOneWorktree(workspace)
+			ageEverything({ workspace })
+			const notKnown = 'the processes are not known (the lister cannot run): nothing is moved'
+
+			const run = runReclaimListing({
+				workspace,
+				flags: [],
+				listProcesses: function answersNotKnown() {
+					return notKnown
+				},
+			})
+
+			await expect(run.result).resolves.toMatchObject({ exitCode: 1 })
+			const { output } = await run.result
+			expect({
+				line: lineOf({ output, name: PARKABLE }),
+				left: leftOf({ workspace, worktree }),
+				spawns: run.spawns,
+			}).toEqual({
+				line: `keep  .worktrees/${PARKABLE}  ${notKnown}`,
+				left: NOTHING_MOVED,
+				spawns: [],
+			})
+		})
+
+		it('the only worktree held by a working lot, the lister throws at the plan, --dry-run → kept for its lot, exit 0', async () => {
+			const workspace = createReclaimWorkspace()
+			const worktree = addReclaimWorktree({
+				workspace,
+				name: ASKING,
+				lot: 'working',
+				marker: ASKING,
+			})
+			ageEverything({ workspace })
+
+			const run = runReclaimListing({
+				workspace,
+				flags: ['--dry-run'],
+				listProcesses: throwingLister,
+			})
+
+			await expect(run.result).resolves.toMatchObject({ exitCode: 0 })
+			const { output } = await run.result
+			expect({
+				line: lineOf({ output, name: ASKING }),
+				left: leftOf({ workspace, worktree }),
+			}).toEqual({
+				line: expect.stringMatching(
+					new RegExp(`^keep  \\.worktrees/${ASKING}  .*lot ${ASKING} working`),
+				),
+				left: NOTHING_MOVED,
+			})
+		})
+
+		it('no process at the plan, a process working in the worktree before the move → kept at the move naming its pid, nothing moved, exit 0', async () => {
+			// guard: a keep at the move for a known fact keeps exit 0 (D3); kills the flag widened to every process keep or every move-time keep
+			const workspace = createReclaimWorkspace()
+			const worktree = addOneWorktree(workspace)
+			ageEverything({ workspace })
+
+			const run = runReclaimListing({
+				workspace,
+				flags: [],
+				listProcesses: planThenMoveLister(function working() {
+					return [{ pid: WORKING_PID, folder: worktree }]
+				}),
+			})
+
+			await expect(run.result).resolves.toMatchObject({ exitCode: 0 })
+			const { output } = await run.result
+			expect({
+				line: lineOf({ output, name: PARKABLE }),
+				left: leftOf({ workspace, worktree }),
+				spawns: run.spawns,
+			}).toEqual({
+				line: `kept  .worktrees/${PARKABLE}  a process works in it: pid ${WORKING_PID}`,
+				left: NOTHING_MOVED,
+				spawns: [],
+			})
+		})
+	},
+)
