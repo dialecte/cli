@@ -25,8 +25,10 @@ tdd - Receipts that each new test failed on an assertion before the code, then p
           written is not judged
   status - per case red, green, unchanged, missing receipt, test edited after red, flags
   base - the change is measured from the lot base: HEAD's fork point from the base branch (the newer
-         of the local branch and origin's), or from an open stack parent's line; HEAD only when no
-         base branch is found; a green taken before a rebase still counts after it
+         of the local branch and origin's), or from an open stack parent's line; a stacked lot that
+         merged the base branch is measured from the join of both lines (the base line says joined
+         with), so the base's commits are not its own; HEAD only when no base branch is found; a
+         green taken before a rebase still counts after it
   --base - measure from where HEAD left the ref given instead of the lot base
   declarations - a gone or moved entry of the lot file naming a path the change leaves unchanged, or
                  one known nowhere (not at the base, not now, not in the receipts), is refused

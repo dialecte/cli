@@ -26,4 +26,13 @@ export type LotBase = {
 	ref: string
 	label: string
 	forkPoint: string
+	/**
+	 * The commits a joined base joins, in order (the parent's line, then the base), when the lot holds lines none of
+	 * which holds the others (a merge of the base branch): `forkPoint` is then a commit no ref names, whose parents they
+	 * are. Absent for a single fork point.
+	 */
+	joined?: readonly string[]
 }
+
+/** A commit a lot's line forks at, with the label of that line (the parent's branch, or the base). */
+export type LotLineFork = { commit: string; label: string }

@@ -51,6 +51,7 @@ import { writeLanded } from '../landing/landed-record.ts'
 import { STACK_RECORD_DAMAGED } from '../landing/lot-landing.constants.ts'
 import { STACK_FILE, STACK_SCHEMA } from '../store/stack.constants.ts'
 import { prepareChangeRequest, readChangeRequestSources } from './change-request-sources.ts'
+import { titleVersionFault } from './compose-change-request.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -587,7 +588,12 @@ const RELEASED_AT = '2026-11-17T21:00:00.000Z'
 function stackedOnRelease(
 	params: { childFiles?: Record<string, string>; childMessage?: string } = {},
 ) {
-	const parent = changeRequestLot({
+	return stackedOn({ ...params, parent: releaseLot() })
+}
+
+/** The release lot: main at 0.8.4, its commit folds the fragment into the changelog and sets 0.9.0. */
+function releaseLot(): ChangeRequestLot {
+	return changeRequestLot({
 		mainFiles: {
 			'changes/old.md': '### Added\n\n- Old.\n',
 			'CHANGELOG.md': '# Changelog\n',
@@ -600,6 +606,18 @@ function stackedOnRelease(
 		lotDeletes: ['changes/old.md'],
 		brief: { lots: [{ paths: ['src/', 'changes/'], message: 'chore(release): @scope/x 0.9.0' }] },
 	})
+}
+
+/**
+ * A lot started on `parent`, the parent's branch pushed (the child: its own worktree on `feat/child` cut from the
+ * parent's tip, one commit of `childFiles`, its `stack.json` naming the parent).
+ */
+function stackedOn(params: {
+	parent: ChangeRequestLot
+	childFiles?: Record<string, string>
+	childMessage?: string
+}) {
+	const { parent } = params
 	const { repository } = parent.workspace
 	git({ root: parent.worktree, args: ['push', '-q', 'origin', 'feat/x'] })
 	const parentTip = git({ root: parent.worktree, args: ['rev-parse', 'HEAD'] }).trim()
@@ -629,6 +647,26 @@ function stackedOnRelease(
 		JSON.stringify({ schema: STACK_SCHEMA, parent: LOT_NAME }),
 	)
 	return { parent, parentTip, repository, child: { lotFolder, worktree } }
+}
+
+/** A release on main (it sets 0.2.0, with a file of its own), pushed to origin. */
+function releaseOnMain(params: { repository: string }): void {
+	writeFiles({
+		root: params.repository,
+		files: {
+			'package.json': '{ "version": "0.2.0" }\n',
+			'src/release.ts': 'export const release = 1\n',
+		},
+	})
+	git({ root: params.repository, args: ['add', '-A'] })
+	git({ root: params.repository, args: ['commit', '-qm', 'chore(release): @scope/x 0.2.0 (#4)'] })
+	git({ root: params.repository, args: ['push', '-q', 'origin', 'main'] })
+}
+
+/** The base merged into the worktree's branch: origin fetched, then origin's main merged. */
+function mergeBaseInto(params: { worktree: string }): void {
+	git({ root: params.worktree, args: ['fetch', '-q', 'origin'] })
+	git({ root: params.worktree, args: ['merge', '--no-edit', '-q', 'origin/main'] })
 }
 
 /** The parent merged into main as one squash commit, as the host merges a pull request. */
@@ -759,6 +797,32 @@ describe(
 				[false, undefined],
 				[false, undefined],
 			])
+		})
+
+		it("a lot started on an open lot cut at 0.1.0, a release at 0.2.0 on main, the child merges origin's main, its title naming no version → it sets none, its title not refused", () => {
+			const parent = changeRequestLot({ mainFiles: { 'package.json': '{ "version": "0.1.0" }\n' } })
+			const { repository, child } = stackedOn({ parent })
+			releaseOnMain({ repository })
+			mergeBaseInto({ worktree: child.worktree })
+
+			const sources = readChangeRequestSources({ ...child, baseRef: 'main' })
+
+			expect(
+				'refusal' in sources
+					? sources
+					: [sources.bumpedTo, titleVersionFault({ sources, lot: CHILD })],
+			).toEqual([undefined, undefined])
+		})
+
+		// guard: a lot cut from the base reads its merge-base with it, which a merge of the base moves past the release
+		it("a lot not stacked, cut at 0.1.0, a release at 0.2.0 on main, the lot merges origin's main → it sets none", () => {
+			const lot = changeRequestLot({ mainFiles: { 'package.json': '{ "version": "0.1.0" }\n' } })
+			releaseOnMain({ repository: lot.workspace.repository })
+			mergeBaseInto({ worktree: lot.worktree })
+
+			const sources = sourcesOf(lot)
+
+			expect('refusal' in sources ? sources : sources.bumpedTo).toBeUndefined()
 		})
 
 		it('a damaged stack.json → refused naming it, never read as a lot not stacked', () => {

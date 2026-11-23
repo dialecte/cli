@@ -6,7 +6,7 @@
 import { findBaseBranchRef, resolveFlagBase } from '../gate/gate-base.ts'
 import { readGit, tryReadGit } from '../git.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
-import { lotBaseOf } from '../landing/lot-base.ts'
+import { labelOf, lotBaseOf } from '../landing/lot-base.ts'
 import { readStackParent } from '../landing/read-stack-parent.ts'
 import { lotOfWorktree } from '../store/resolve-lot.ts'
 import { readStack } from '../store/stack.ts'
@@ -55,10 +55,20 @@ export function resolveTddBase(params: {
 		...(parent !== undefined && { parent }),
 	})
 	if ('refusal' in base) return { failure: `tdd base: ${base.refusal}` }
+	if (base.joined === undefined)
+		return {
+			commit: base.forkPoint,
+			kind: 'lot',
+			source: fillMessage({ template: TDD_BASE_SOURCES.lotBase, values: { ref: base.label } }),
+		}
+	// a joined base (the lot merged its base branch) names the parent's line and the base: it is no commit of the history
 	return {
 		commit: base.forkPoint,
 		kind: 'lot',
-		source: fillMessage({ template: TDD_BASE_SOURCES.lotBase, values: { ref: base.label } }),
+		source: fillMessage({
+			template: TDD_BASE_SOURCES.lotBaseJoined,
+			values: { ref: parent?.branch ?? base.label, base: labelOf(found.ref) },
+		}),
 	}
 }
 

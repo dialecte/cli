@@ -66,20 +66,25 @@ export async function runHookTddStep(params: {
 	// the whole lot: a commit of production alone can make an earlier commit's proof stale
 	const { base } = params
 	if ('failure' in base) return failed({ reason: base.failure })
-	const check = await checkTddReceipts({ root: cwd, packageJson, ref: base.commit })
+	// the base as resolved, never again as a ref: a joined base and HEAD have two best common ancestors, git would pick
+	// one; the hook prints no base line, so the note is dropped
+	const { baseNote: _baseNote, ...check } = await checkTddReceipts({
+		root: cwd,
+		packageJson,
+		base,
+		measureLot: true,
+	})
 	const result = tddStepResultOf(check)
 	if (result.status !== 'passed') return result
 	const unproven = listStaleCases({ cwd, packageJson, cases: check.cases ?? [] })
 	if (unproven.length === 0) return result
-	// the passing count and its evidence no longer stand: the reason and the tail say what is not proven instead (the
-	// base line stays, for the record)
+	// the passing count and its evidence no longer stand: the reason and the tail say what is not proven instead
 	const { note: _passedNote, details: _passedDetails, ...judged } = result
 	// a green clears a stale or refused case; an unproven one needs its red first
 	const greenAgain = unproven.some((stale) => !stale.needsRed)
 	return {
 		...judged,
 		status: 'failed',
-		...(check.baseNote && { details: [check.baseNote] }),
 		reason: HOOK_TDD_STALE_REASON.replace('{count}', () => String(unproven.length)),
 		tail: [
 			...unproven.map((stale) => stale.line),

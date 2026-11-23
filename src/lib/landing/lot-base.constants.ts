@@ -12,4 +12,13 @@ export const LOT_BASE_REFUSALS = {
 	noHead: "the lot's head {head} does not resolve",
 	noForkPoint: "the lot's head {head} shares no commit with {ref}",
 	noParentRef: 'the stack parent {branch} has no branch here nor on origin',
+	joinConflict:
+		"the lines the lot holds ({a}, {b}) do not merge clean ({paths}): its own change cannot be told apart from {base}'s; rebase it onto {base} once its parent landed, or merge {base} into its parent first",
+	joinFailed: 'the lines the lot holds ({a}, {b}) could not be joined: {reason}',
 } as const
+
+/** The message of the commit that joins the lines a lot holds (no ref names it). */
+export const LOT_BASE_JOIN_MESSAGE = 'dialecte lot base: join of the lines the lot holds'
+
+/** How the conflicted paths of a join are listed in its refusal. */
+export const JOIN_PATH_SEPARATOR = ', '

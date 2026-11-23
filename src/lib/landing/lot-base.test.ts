@@ -4,8 +4,11 @@
  * and lands on origin's main once the parent merged. The rebase rows run the rebase the base implies and check that
  * only the child's own commit moves.
  */
+import { spawnSync } from 'node:child_process'
+
 import {
 	CHILD_BRANCH,
+	CHILD_FILE,
 	LOT_BRANCH,
 	ORIGIN_MAIN,
 } from '../../../test/landing-repository.constants.ts'
@@ -18,7 +21,7 @@ import {
 	mergeOnOrigin,
 	stackedChildOf,
 } from '../../../test/landing-repository.ts'
-import { git } from '../../../test/scratch-repository.ts'
+import { git, writeFiles } from '../../../test/scratch-repository.ts'
 import { SCRATCH_GIT_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
 import { lotBaseOf } from './lot-base.ts'
 
@@ -28,6 +31,15 @@ import type { LandingRepository } from '../../../test/landing-repository.types.t
 import type { LandingState } from './landing-state.types.ts'
 
 const OPEN: LandingState = { kind: 'unlanded' }
+
+/** A release on main: the version set and a file of its own. */
+const RELEASE = {
+	'package.json': '{ "name": "x", "version": "0.2.0" }\n',
+	'src/release.ts': 'export const release = 1\n',
+}
+
+/** The subject git gives the child's merge of origin's main. */
+const MERGE_SUBJECT = `Merge remote-tracking branch 'origin/main' into ${CHILD_BRANCH}`
 
 /** The subjects of the commits `ref` holds beyond `base`, newest first. */
 function subjectsBeyond(params: { root: string; base: string; ref: string }): string[] {
@@ -244,6 +256,110 @@ describe('lotBaseOf', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		).toEqual({ ref: `refs/heads/${LOT_BRANCH}`, label: LOT_BRANCH, forkPoint: repository.cut })
 	})
 
+	it("a stacked child on an open parent, a release on main, the child merges origin's main → only its own commit and its merge beyond its base, joining the parent commit it holds and main's tip", () => {
+		const repository = landingRepositoryOf()
+		const child = stackedChildOf(repository)
+		const release = editOnOrigin({ repository, files: RELEASE })
+		mergeBaseInto({ worktree: child.worktree })
+
+		const base = lotBaseOf({
+			root: repository.root,
+			head: headOf(child.worktree),
+			baseRef: ORIGIN_MAIN,
+			parent: { branch: LOT_BRANCH, landing: OPEN },
+		})
+
+		expect(ownChangeOf({ worktree: child.worktree, base })).toEqual({
+			beyond: [MERGE_SUBJECT, 'feat(y): y'],
+			changed: [CHILD_FILE],
+		})
+		expect(base).toMatchObject({
+			ref: `refs/heads/${LOT_BRANCH}`,
+			label: LOT_BRANCH,
+			joined: [repository.tip, release],
+		})
+	})
+
+	it("a stacked child never rebased, its parent squash-merged then a release on main, the child merges origin's main, the parent read open → only its own commit and its merge beyond its base, no package.json changed", () => {
+		const { repository, worktree } = squashedParentThenMergedRelease()
+
+		const base = lotBaseOf({
+			root: repository.root,
+			head: headOf(worktree),
+			baseRef: ORIGIN_MAIN,
+			parent: { branch: LOT_BRANCH, landing: OPEN },
+		})
+
+		expect(ownChangeOf({ worktree, base })).toEqual({
+			beyond: [MERGE_SUBJECT, 'feat(y): y'],
+			changed: [CHILD_FILE],
+		})
+	})
+
+	it('the same, the parent read merged → the same: only its own commit and its merge beyond its base, no package.json changed', () => {
+		const { repository, worktree } = squashedParentThenMergedRelease()
+
+		const base = lotBaseOf({
+			root: repository.root,
+			head: headOf(worktree),
+			baseRef: ORIGIN_MAIN,
+			parent: {
+				branch: LOT_BRANCH,
+				landing: { kind: 'merged', how: 'tree', tip: repository.tip },
+			},
+		})
+
+		expect(ownChangeOf({ worktree, base })).toEqual({
+			beyond: [MERGE_SUBJECT, 'feat(y): y'],
+			changed: [CHILD_FILE],
+		})
+	})
+
+	it("a stacked child on an open parent that merged origin's main after a release, rebased onto the parent's tip from its base → only its own commit moves", () => {
+		const repository = landingRepositoryOf()
+		const child = stackedChildOf(repository)
+		editOnOrigin({ repository, files: RELEASE })
+		mergeBaseInto({ worktree: child.worktree })
+		const base = lotBaseOf({
+			root: repository.root,
+			head: headOf(child.worktree),
+			baseRef: ORIGIN_MAIN,
+			parent: { branch: LOT_BRANCH, landing: OPEN },
+		})
+
+		git({
+			root: child.worktree,
+			args: ['rebase', '-q', '--onto', repository.tip, forkPointOf(base)],
+		})
+
+		expect(subjectsBeyond({ root: child.worktree, base: repository.tip, ref: 'HEAD' })).toEqual([
+			'feat(y): y',
+		])
+	})
+
+	it('a stacked child on an open parent, the parent and main changing the same line differently, the child merging main resolving it → refused naming the path and both ways out', () => {
+		const repository = landingRepositoryOf()
+		commitIn({
+			root: repository.worktree,
+			files: { 'README.md': 'parent\n' },
+			message: 'feat(x): the parent reads',
+		})
+		const child = stackedChildOf(repository)
+		editOnOrigin({ repository, files: { 'README.md': 'main\n' } })
+		mergeBaseResolving({ worktree: child.worktree, files: { 'README.md': 'parent and main\n' } })
+
+		expect(
+			lotBaseOf({
+				root: repository.root,
+				head: headOf(child.worktree),
+				baseRef: ORIGIN_MAIN,
+				parent: { branch: LOT_BRANCH, landing: OPEN },
+			}),
+		).toEqual({
+			refusal: `the lines the lot holds (${LOT_BRANCH}, origin/main) do not merge clean (README.md): its own change cannot be told apart from origin/main's; rebase it onto origin/main once its parent landed, or merge origin/main into its parent first`,
+		})
+	})
+
 	it('a head that does not resolve -> refused naming it', () => {
 		const repository = landingRepositoryOf()
 
@@ -266,4 +382,61 @@ function dropParentBranches(params: { repository: LandingRepository }): void {
 		root: repository.root,
 		args: ['update-ref', '-d', `refs/remotes/origin/${LOT_BRANCH}`],
 	})
+}
+
+/** The base merged into the worktree's branch: origin fetched, then origin's main merged. */
+function mergeBaseInto(params: { worktree: string }): void {
+	git({ root: params.worktree, args: ['fetch', '-q', 'origin'] })
+	git({ root: params.worktree, args: ['merge', '--no-edit', '-q', 'origin/main'] })
+}
+
+/**
+ * The base merged into the worktree's branch, its conflict resolved by hand: origin fetched, origin's main merged until
+ * it stops on a conflict, `files` written over the conflicted ones, then the merge committed.
+ */
+function mergeBaseResolving(params: { worktree: string; files: Record<string, string> }): void {
+	git({ root: params.worktree, args: ['fetch', '-q', 'origin'] })
+	const merge = spawnSync('git', ['merge', '--no-edit', '-q', 'origin/main'], {
+		cwd: params.worktree,
+		encoding: 'utf8',
+	})
+	if (merge.status === 0) throw new Error('git merge origin/main met no conflict')
+	writeFiles({ root: params.worktree, files: params.files })
+	git({ root: params.worktree, args: ['add', '-A'] })
+	git({ root: params.worktree, args: ['commit', '-q', '--no-edit'] })
+}
+
+/** The files `ref` changed since `base`, sorted. */
+function changedSince(params: { root: string; base: string; ref: string }): string[] {
+	return git({ root: params.root, args: ['diff', '--name-only', params.base, params.ref] })
+		.split('\n')
+		.filter(Boolean)
+		.sort()
+}
+
+/** The fork point of a base, or HEAD for a refusal (nothing beyond it, nothing changed since). */
+function forkPointOf(base: ReturnType<typeof lotBaseOf>): string {
+	return 'forkPoint' in base ? base.forkPoint : 'HEAD'
+}
+
+/** What a stacked child's base leaves as its own: the subjects beyond its fork point and the files changed since. */
+function ownChangeOf(params: { worktree: string; base: ReturnType<typeof lotBaseOf> }): {
+	beyond: string[]
+	changed: string[]
+} {
+	const forkPoint = forkPointOf(params.base)
+	return {
+		beyond: subjectsBeyond({ root: params.worktree, base: forkPoint, ref: 'HEAD' }),
+		changed: changedSince({ root: params.worktree, base: forkPoint, ref: 'HEAD' }),
+	}
+}
+
+/** The parent squash-merged on origin's main, a release on main, then the child, never rebased, merges main. */
+function squashedParentThenMergedRelease(): { repository: LandingRepository; worktree: string } {
+	const repository = landingRepositoryOf()
+	const child = stackedChildOf(repository)
+	mergeOnOrigin({ repository, how: 'squash' })
+	editOnOrigin({ repository, files: RELEASE })
+	mergeBaseInto({ worktree: child.worktree })
+	return { repository, worktree: child.worktree }
 }

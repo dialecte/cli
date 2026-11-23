@@ -239,15 +239,17 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
          request is linked on the parent's; without, a note says why; it is never queued (lot
          approve queues it); before each landing it is rebased onto the parent branch's newest tip
          (the local branch or origin's) when it does not hold it, from its fork point (git
-         merge-base --fork-point: only its own commits move, whatever the parent's amend or rebase);
-         once the parent merged (its landing state: a merge, a squash read offline, or its change
-         request merged; never the registry's committed alone, which a hand-over run writes before
-         anything reaches the base), the parent's landed fact is recorded and the child is rebased
-         with git rebase --onto origin/<base> <fork point>, only its own commits moved, and its
-         change request retargeted to the base when the host did not; when the host already rewrote
-         its branch on origin (a native stack), it follows that rewrite (local commits beyond its
-         last push rebased onto it, that head the lease); a conflict names its files, the rebase
-         undone, nothing pushed, exit 2
+         merge-base --fork-point: only its own commits move, whatever the parent's amend or rebase;
+         a lot that merged the base branch forks at the join of the lines it holds, a commit no ref
+         names, so the base's commits are never its own, and lines that do not merge clean refuse,
+         naming the ways out); once the parent merged (its landing state: a merge, a squash read
+         offline, or its change request merged; never the registry's committed alone, which a
+         hand-over run writes before anything reaches the base), the parent's landed fact is
+         recorded and the child is rebased with git rebase --onto origin/<base> <fork point>, only
+         its own commits moved, and its change request retargeted to the base when the host did not;
+         when the host already rewrote its branch on origin (a native stack), it follows that
+         rewrite (local commits beyond its last push rebased onto it, that head the lease); a
+         conflict names its files, the rebase undone, nothing pushed, exit 2
   land - the lot lands through its change request: its committed HEAD (uncommitted files stay in the
          worktree, named), rebased onto origin/<base> when behind (a conflict undone and named,
          nothing pushed; with uncommitted tracked changes it is pushed as committed, the rebase left
