@@ -7,9 +7,15 @@ import { join } from 'node:path'
 
 import { parentChangeRequest, recordingHost } from '../../test/land-lot.ts'
 import { LOT_NAME } from '../../test/lot-describe.constants.ts'
-import { REVIEWER, STACK_PARENT_LOT } from '../../test/lot-review.constants.ts'
+import {
+	REVIEW_CHANGE_REQUEST_NUMBER,
+	REVIEWER,
+	STACK_PARENT_LOT,
+} from '../../test/lot-review.constants.ts'
 import { landedLot, stackedLandedLot } from '../../test/lot-review.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
+import { STACK_QUEUE_LINES } from '../lib/handover/stack-queue.constants.ts'
+import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { appendFinding } from '../lib/review-rounds/findings-ledger.ts'
 import { LEDGER_FILE } from '../lib/review-rounds/review-rounds.constants.ts'
 import { STORE_FILES } from '../lib/store/store.constants.ts'
@@ -24,8 +30,14 @@ import type { ChangeRequestChecks } from '../lib/host/host.types.ts'
 type HostParams = NonNullable<Parameters<typeof recordingHost>[0]>
 
 const PARENT_NOT_QUEUED = `${LOT_NAME} stacks on #5 (${STACK_PARENT_LOT}), not queued yet: approve ${STACK_PARENT_LOT} first, the stack queues with it`
-const PARENT_MERGED = `${LOT_NAME} stacks on #5 (${STACK_PARENT_LOT}), merged: lot land ${LOT_NAME} again moves it onto the base, then approve it`
-const PARENT_WAITS = `${LOT_NAME} waits for #5 (${STACK_PARENT_LOT}) to merge: without native stacks a stacked lot queues after its parent; then lot land ${LOT_NAME} again`
+const PARENT_MERGED = fillMessage({
+	template: STACK_QUEUE_LINES.parentMerged,
+	values: { lot: LOT_NAME, parent: STACK_PARENT_LOT, number: '5' },
+})
+const PARENT_WAITS = fillMessage({
+	template: STACK_QUEUE_LINES.waits,
+	values: { lot: LOT_NAME, parent: STACK_PARENT_LOT, number: '5' },
+})
 const READY_LINE = `approve: ready: dialecte lot approve ${LOT_NAME} --by <who>`
 const SHOULD_FIX_OPEN = 'findings open: R1-1 should-fix'
 const RENDER_DROPS =
@@ -212,6 +224,24 @@ describe(
 				exitCode: 1,
 				recorded: false,
 			})
+		})
+
+		it('lot review of a stacked lot → the host only read: the change request, its checks, the parent, its stacks and queue state', () => {
+			const lot = stackedLandedLot()
+			const recording = recordingHost(stackedHost({ lot, parent: 'open', stacks: true }))
+
+			runLotReview({
+				cwd: lot.workspace.repository,
+				argv: [LOT_NAME, '--no-open'],
+				host: recording.host,
+			})
+
+			expect(recording.calls).toEqual([
+				`read ${REVIEW_CHANGE_REQUEST_NUMBER}`,
+				`checks ${REVIEW_CHANGE_REQUEST_NUMBER}`,
+				'read feat/p',
+				'probe',
+			])
 		})
 
 		it('a ready lot on a host with a merge queue → lot review prints the approve command, lot approve queues', () => {

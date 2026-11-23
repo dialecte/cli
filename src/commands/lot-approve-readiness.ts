@@ -53,15 +53,30 @@ export function approvalReadinessOf(params: {
 	const refusals = approvalRefusals({ place, changeRequest, checks, landed: params.landed, queue })
 	// a route that does not stand leaves the text unchecked: the render reads the same stack record
 	if ('refusal' in route) {
-		const [first = route.refusal, ...rest] = [...refusals, route.refusal]
-		return { reasons: [first, ...rest] }
+		const [first, ...rest] = refusals
+		return { reasons: first === undefined ? [route.refusal] : [first, ...rest, route.refusal] }
 	}
-	const [first, ...rest] = [
-		...refusals,
-		...stackReasons({ host, place, route }),
-		...renderReasons({ place, changeRequest }),
-	]
-	return first === undefined ? { route, queue } : { reasons: [first, ...rest] }
+	return readinessOf({
+		reasons: [
+			...refusals,
+			...stackReasons({ host, place, route }),
+			...renderReasons({ place, changeRequest }),
+		],
+		route,
+		queue,
+	})
+}
+
+/** The reasons of a lot whose route stands, when there is one; else the route and the queue kind it goes on with. */
+function readinessOf(params: {
+	reasons: readonly string[]
+	route: Exclude<StackRoute, { refusal: string }>
+	queue: QueueRead
+}): ApprovalReadiness {
+	const [first, ...rest] = params.reasons
+	return first === undefined
+		? { route: params.route, queue: params.queue }
+		: { reasons: [first, ...rest] }
 }
 
 /** Why a stacked lot cannot queue now (`stackQueueOf`): its parent missing, merged or not queued, or no stacks. */

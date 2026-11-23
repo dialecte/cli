@@ -1,7 +1,7 @@
 /**
  * `dialecte lot approve <id> --by <who> [--reason <text>]`: a person's approval of the lot's change request (33CI CI7).
- * Refused, nothing recorded and nothing queued, with every reason at once, while `approvalReadinessOf` names one (the
- * reader `lot review`'s approve line prints too). Then the approval is appended to the lot folder's `approvals.jsonl`
+ * Refused, nothing recorded and nothing queued, on every reason `approvalReadinessOf` gives (the reader `lot review`'s
+ * approve line prints too). Then the approval is appended to the lot folder's `approvals.jsonl`
  * (a person's verdict row of `review.jsonl`), the change request's text rendered again from the records and the change
  * request queued (made ready when a draft): the only verb that queues, `lot land` never does. A lot started on another
  * whose change request still merges into its parent's branch queues as a native stack. `--by orchestrator` approves the
@@ -65,7 +65,7 @@ export function runLotApprove(params: {
 	if ('exitCode' in place) return place
 	const optionRefusal = approverRefusal({ place, by, reason })
 	if (optionRefusal !== undefined) return lineOf({ exitCode: 2, line: optionRefusal })
-	// a lot no longer at work is refused before the host is asked (approvalRefusals names it too, for lot review)
+	// a lot no longer at work is refused before the host is asked (approvalReadinessOf names it too, for lot review)
 	if (!APPROVABLE_STATES.includes(place.state))
 		return lineOf({
 			exitCode: 1,
