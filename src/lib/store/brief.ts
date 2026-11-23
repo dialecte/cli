@@ -1,3 +1,4 @@
+/** The brief of a lot: the field checks (pure), and the whole check against the repository, the plan and the store. */
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
@@ -9,7 +10,6 @@ import { readEvents } from '../events/read-events.ts'
 import { onDiskPathOf, realPathOf } from '../file-system.ts'
 import { branchExists, mainCheckoutOf, readGit } from '../git.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
-/** The brief of a lot: the field checks (pure), and the whole check against the repository, the plan and the store. */
 import { unsettledOf } from '../landing/met-lots.ts'
 import { findWorkspace } from '../workspace.ts'
 import {

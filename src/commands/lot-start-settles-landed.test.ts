@@ -289,5 +289,58 @@ describe(
 				answers.map((answer) => answer.expected),
 			)
 		})
+
+		it('a lot merged and fetched whose worktree is on a detached HEAD with a commit of its own -> refused, nothing written, the work named', () => {
+			const lot = pushedLockLot()
+			mergeOnOrigin({ repository: lot.repository, how: 'squash' })
+			git({ root: lot.worktree, args: ['switch', '-q', '--detach'] })
+			commitIn({
+				root: lot.worktree,
+				files: { 'src/d.ts': 'export const detached = 1\n' },
+				message: 'feat: detached',
+			})
+
+			const started = startMeeting({ lot, host: landingHostOf({}).host })
+
+			expect({
+				exitCode: started.exitCode,
+				refused: started.output.includes(lockOverlapOf(lot)),
+				why: started.output.includes(
+					heldLineOf({ lot, why: 'its worktree holds 1 commit(s) of its own since' }),
+				),
+				landed: landedWritten(lot),
+			}).toEqual({ exitCode: 2, refused: true, why: true, landed: false })
+		})
+
+		it('a lot merged and fetched whose worktree holds a new untracked file -> refused, nothing written, the uncommitted work named', () => {
+			const lot = pushedLockLot()
+			mergeOnOrigin({ repository: lot.repository, how: 'squash' })
+			writeFileSync(join(lot.worktree, 'src', 'new.ts'), 'export const fresh = 1\n')
+
+			const started = startMeeting({ lot, host: landingHostOf({}).host })
+
+			expect({
+				exitCode: started.exitCode,
+				refused: started.output.includes(lockOverlapOf(lot)),
+				why: started.output.includes(
+					heldLineOf({ lot, why: 'its worktree holds uncommitted changes' }),
+				),
+				landed: landedWritten(lot),
+			}).toEqual({ exitCode: 2, refused: true, why: true, landed: false })
+		})
+
+		it('a lot merged and fetched whose worktree is detached at the fetched origin main -> settled, the start goes on', () => {
+			const lot = pushedLockLot()
+			mergeOnOrigin({ repository: lot.repository, how: 'squash' })
+			git({ root: lot.worktree, args: ['switch', '-q', '--detach', 'origin/main'] })
+
+			const started = startMeeting({ lot, host: landingHostOf({}).host })
+
+			expect({
+				exitCode: started.exitCode,
+				settled: settledLineOf({ lot }).test(started.output),
+				landed: landedWritten(lot),
+			}).toEqual({ exitCode: 0, settled: true, landed: true })
+		})
 	},
 )

@@ -1,15 +1,3 @@
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { createInterface } from 'node:readline/promises'
-
-import { floorRefusalOf, runningCliOf } from '../lib/cli-floor/cli-floor.ts'
-import { closestNames } from '../lib/closest-names.ts'
-import { renderLotUsage } from '../lib/command-map/render-help.ts'
-import { resultOf } from '../lib/command-result.ts'
-import { isFolder } from '../lib/file-system.ts'
-import { createHost } from '../lib/host/select-host.ts'
-import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
-import { statusLandingOf } from '../lib/landing/lot-landing.ts'
 /**
  * `dialecte lot exempt <reason>` / `lot accept <case> <reason>` / `lot revised <case|file|glob> <reason>` /
  * `lot gone <file|glob> <reason>` / `lot moved <from> <to> <reason>` / `lot mutation <off|changed|audit|gate>`: writes the lot declaration `.dialecte/lot.json` of the package in the
@@ -26,6 +14,18 @@ import { statusLandingOf } from '../lib/landing/lot-landing.ts'
  * asynchronous verb (`run` awaits it; `runLot` stays synchronous for the others). A review rounds' verb takes `<id|folder>`: an id resolves to its lot folder first.
  * The usage is the map's lot section.
  */
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { createInterface } from 'node:readline/promises'
+
+import { floorRefusalOf, runningCliOf } from '../lib/cli-floor/cli-floor.ts'
+import { closestNames } from '../lib/closest-names.ts'
+import { renderLotUsage } from '../lib/command-map/render-help.ts'
+import { resultOf } from '../lib/command-result.ts'
+import { isFolder } from '../lib/file-system.ts'
+import { createHost } from '../lib/host/select-host.ts'
+import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
+import { statusLandingOf } from '../lib/landing/lot-landing.ts'
 import { withSettledLines } from '../lib/landing/met-lots.ts'
 import { MUTATION_MODES } from '../lib/mutation/mutation.constants.ts'
 import { packageRootOf } from '../lib/package-root.ts'

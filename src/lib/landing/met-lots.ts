@@ -8,7 +8,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
-import { tryReadGit } from '../git.ts'
+import { readGit, tryReadGit } from '../git.ts'
 import { readLanding } from '../handover/land-record.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { jsonOf, textOf } from '../print/print.ts'
@@ -18,11 +18,12 @@ import { isPushed, readLotLanding, recordLandedOrWhy } from './lot-landing.ts'
 import { MET_LOT_LINES } from './met-lots.constants.ts'
 
 import type { CommandResult } from '../command-result.types.ts'
+import type { ForecastSettled } from '../coordination/forecast.types.ts'
 import type { HostAdapter } from '../host/host.types.ts'
 import type { PrintedText } from '../print/print.types.ts'
 import type { LotOverlap } from '../store/store.types.ts'
 import type { LotLanding } from './lot-landing.types.ts'
-import type { LandedMetLot, LazyHost, MetLotsSettled } from './met-lots.types.ts'
+import type { LandedMetLot, LazyHost, MetLotsSettled, SettledMetLot } from './met-lots.types.ts'
 
 // dialecte-allow duplicate-read: chooses the met lots and reads them offline first; settleLotLanding settles one lot for close and prune with the host given
 /**
@@ -57,9 +58,7 @@ export function settleMetLots(params: {
  * @intent let a forecast leave out a lot that merged but was never closed
  * @internal
  */
-export function mergedOfflineOf(params: {
-	lotFolder: string
-}): { name: string; base: string; tip: string } | undefined {
+export function mergedOfflineOf(params: { lotFolder: string }): ForecastSettled | undefined {
 	// a lot never pushed costs no landing read
 	if (!isPushedLot(params)) return undefined
 	const landing = readLotLanding({ lotFolder: params.lotFolder })
@@ -115,8 +114,8 @@ function isPushedLot(params: { lotFolder: string }): boolean {
 
 // dialecte-allow duplicate-read: the settled and would-settle lines of a start or a scope, not the landed line of close, prune or the hook
 /** The lines of the landed met lots: settled, or would settle for a read only. */
-export function landedMetLinesOf(landed: readonly LandedMetLot[]): string[] {
-	return landed.map(function lineOf(lot) {
+function landedMetLinesOf(params: { landed: readonly LandedMetLot[] }): string[] {
+	return params.landed.map(function lineOf(lot) {
 		return fillMessage({
 			template: lot.written ? MET_LOT_LINES.settled : MET_LOT_LINES.wouldSettle,
 			values: {
@@ -146,7 +145,7 @@ export function withSettledLines(params: {
 		return result
 	if (params.json) return withSettledJson({ result, settle })
 	const lines = [
-		...landedMetLinesOf(settle.landed),
+		...landedMetLinesOf({ landed: settle.landed }),
 		...settle.warnings.map((warning) => `! ${warning}`),
 	]
 	// the result's text is printed already: the settle's lines are printed and joined before it
@@ -185,10 +184,12 @@ function withSettledJson(params: { result: CommandResult; settle: MetLotsSettled
 
 // dialecte-allow duplicate-read: the host asked only when git cannot tell, a pushed lot only, and work since the landing keeps the hold; settleLotLanding asks the host it is given
 /** One met lot: landed, or why a merged lot still holds; nothing for a lot not pushed or not read merged. */
-function settleMetLot(params: { lotFolder: string; host: LazyHost; now: Date; write: boolean }): {
-	landed?: LandedMetLot
-	warning?: string
-} {
+function settleMetLot(params: {
+	lotFolder: string
+	host: LazyHost
+	now: Date
+	write: boolean
+}): SettledMetLot {
 	const { lotFolder } = params
 	if (!isPushedLot({ lotFolder })) return {}
 	const offline = readLotLanding({ lotFolder })
@@ -218,13 +219,16 @@ function settleMetLot(params: { lotFolder: string; host: LazyHost; now: Date; wr
 	return { landed: { ...landed, written: true } }
 }
 
-/** Why a merged lot still holds: commits on its branch after the landed tip, or uncommitted changes in its worktree. */
+/**
+ * Why a merged lot still holds: commits on its branch after the landed tip, commits of its worktree's own HEAD (a
+ * detached HEAD, another branch), uncommitted changes or untracked files there, or a worktree git cannot read.
+ */
 function heldWorkOf(params: {
 	landing: LotLanding
 	tip: string
 	values: Record<string, string>
 }): string | undefined {
-	const { landing } = params
+	const { landing, values } = params
 	const since = workSinceLanding({
 		root: landing.root,
 		branch: landing.identity.branch,
@@ -234,16 +238,47 @@ function heldWorkOf(params: {
 	if (since.length > 0)
 		return fillMessage({
 			template: MET_LOT_LINES.workSince,
-			values: { ...params.values, count: String(since.length) },
+			values: { ...values, count: String(since.length) },
 		})
 	const { worktree } = landing.identity
 	if (worktree === null || !existsSync(worktree)) return undefined
-	const status = tryReadGit({
-		root: worktree,
-		args: ['status', '--porcelain', '--untracked-files=no'],
-	})
+	const own = headWorkOf({ worktree, tip: params.tip, landing })
 	// a worktree git cannot read is not known clean: it keeps the hold
-	if (status === undefined || status.trim() !== '')
-		return fillMessage({ template: MET_LOT_LINES.uncommitted, values: params.values })
-	return undefined
+	if (own === undefined) return fillMessage({ template: MET_LOT_LINES.unreadable, values })
+	if (own > 0)
+		return fillMessage({
+			template: MET_LOT_LINES.headWork,
+			values: { ...values, count: String(own) },
+		})
+	const status = tryReadGit({ root: worktree, args: ['status', '--porcelain'] })
+	if (status === undefined) return fillMessage({ template: MET_LOT_LINES.unreadable, values })
+	return status.trim() === ''
+		? undefined
+		: fillMessage({ template: MET_LOT_LINES.uncommitted, values })
+}
+
+/**
+ * How many commits the worktree's own HEAD holds beyond the landed tip, the lot's cut and the base (origin's and the
+ * local one: a worktree moved onto the base holds nothing of its own); undefined when its HEAD does not resolve (an
+ * unborn or broken HEAD) or git cannot read it.
+ */
+function headWorkOf(params: {
+	worktree: string
+	tip: string
+	landing: LotLanding
+}): number | undefined {
+	const { worktree, landing } = params
+	if (tryReadGit({ root: worktree, args: ['rev-parse', '--verify', '-q', 'HEAD'] }) === undefined)
+		return undefined
+	const base = landing.base.branch
+	try {
+		const listed = readGit({
+			root: worktree,
+			args: ['rev-list', '--ignore-missing', '--stdin'],
+			input: `HEAD\n--not\n${params.tip}\n${landing.identity.base.commit}\nrefs/remotes/origin/${base}\nrefs/heads/${base}\n`,
+		})
+		return listed.split('\n').filter(Boolean).length
+	} catch {
+		return undefined
+	}
 }

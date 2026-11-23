@@ -22,7 +22,8 @@ import {
 } from '../../../test/forecast-workspace.ts'
 import { LANDING_CHANGE_REQUEST_NUMBER } from '../../../test/landing-lot.constants.ts'
 import { addLandingLot, landingLotOf, writeLandingRecord } from '../../../test/landing-lot.ts'
-import { mergeOnOrigin } from '../../../test/landing-repository.ts'
+import { commitIn, mergeOnOrigin } from '../../../test/landing-repository.ts'
+import { git } from '../../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
 import { overlappingOpenLots, registryOfLotFolder } from '../store/lot-records.ts'
 import { STORE_FILES } from '../store/store.constants.ts'
@@ -69,6 +70,30 @@ describe('the library the wiring reads', { timeout: STORE_CASE_TIMEOUT }, () => 
 			settled: 'settled' in run ? run.settled.map((lot) => lot.name) : undefined,
 			landed: existsSync(join(merged.lotFolder, 'landed.json')),
 		}).toEqual({ compared: false, settled: [merged.name], landed: false })
+	})
+
+	it('another open lot squash-merged and fetched whose worktree holds a detached commit of its own -> compared, not settled', () => {
+		const merged = landingLotOf()
+		writeLandingRecord({ lot: merged, number: LANDING_CHANGE_REQUEST_NUMBER })
+		mergeOnOrigin({ repository: merged.repository, how: 'squash' })
+		git({ root: merged.worktree, args: ['switch', '-q', '--detach'] })
+		commitIn({
+			root: merged.worktree,
+			files: { 'src/d.ts': 'export const detached = 1\n' },
+			message: 'feat: detached',
+		})
+		const self = addLandingLot({ lot: merged, name: '0002-repo-y', branch: 'feat/y' })
+
+		const run = forecastLot({
+			lotFolder: self.lotFolder,
+			trigger: 'forecast',
+			now: () => FORECAST_NOW,
+		})
+
+		expect({
+			compared: 'lines' in run && run.lines.some((line) => line.against === merged.name),
+			settled: 'settled' in run ? run.settled.map((lot) => lot.name) : undefined,
+		}).toEqual({ compared: true, settled: [] })
 	})
 
 	it('the forecast of a damaged lot -> a refusal value naming its damage, no throw, nothing written', () => {

@@ -5,6 +5,10 @@ export const MET_LOT_LINES = {
 		'would settle {lot}: merged on {base} at {tip} ({how}); it would no longer hold its scope',
 	workSince:
 		'{lot} merged on {base} at {tip} but its branch holds {count} commit(s) since: it still holds its scope',
+	headWork:
+		'{lot} merged on {base} at {tip} but its worktree holds {count} commit(s) of its own since: it still holds its scope',
+	unreadable:
+		'{lot} merged on {base} at {tip} but its worktree does not read: it still holds its scope',
 	uncommitted:
 		'{lot} merged on {base} at {tip} but its worktree holds uncommitted changes: it still holds its scope',
 	notWritten:

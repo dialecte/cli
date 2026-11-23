@@ -18,3 +18,6 @@ export type MetLotsSettled = {
 
 /** The host a settle asks only when a met lot is not decided offline (`lazyHostOf`: made on the first call). */
 export type LazyHost = () => HostAdapter
+
+/** One met lot settled: landed, or why a merged lot still holds; neither for a lot not pushed or not read merged. */
+export type SettledMetLot = { landed?: LandedMetLot; warning?: string }
