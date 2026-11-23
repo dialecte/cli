@@ -10,6 +10,7 @@ import {
 	CHILD_BRANCH,
 	CHILD_FILE,
 	LOT_BRANCH,
+	LOT_FILE,
 	ORIGIN_MAIN,
 } from '../../../test/landing-repository.constants.ts'
 import {
@@ -40,6 +41,12 @@ const RELEASE = {
 
 /** The subject git gives the child's merge of origin's main. */
 const MERGE_SUBJECT = `Merge remote-tracking branch 'origin/main' into ${CHILD_BRANCH}`
+
+/** Main's later text of the line the parent changed (its squash landed first). */
+const EDITED_ON_MAIN = { [LOT_FILE]: 'export const x = 2\n' }
+
+/** The refusal of a join whose parent `feat/x` and origin's main do not merge clean on the parent's file. */
+const PARENT_FILE_CONFLICT = `the lines the lot holds (${LOT_BRANCH}, origin/main) do not merge clean (${LOT_FILE}): its own change cannot be told apart from origin/main's; rebase it onto origin/main once its parent landed, or merge origin/main into its parent first`
 
 /** The subjects of the commits `ref` holds beyond `base`, newest first. */
 function subjectsBeyond(params: { root: string; base: string; ref: string }): string[] {
@@ -360,6 +367,151 @@ describe('lotBaseOf', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		})
 	})
 
+	it("a stacked child never rebased, its parent squash-merged then edited on main, the child merges origin's main resolving it, the parent read merged → only its own commit and its merge beyond its base, joining the landed tip and main's tip", () => {
+		const { repository, worktree, main } = squashedParentThenEditedOnMain()
+
+		const base = lotBaseOf({
+			root: repository.root,
+			head: headOf(worktree),
+			baseRef: ORIGIN_MAIN,
+			parent: {
+				branch: LOT_BRANCH,
+				landing: { kind: 'merged', how: 'tree', tip: repository.tip },
+			},
+		})
+
+		expect(base).toMatchObject({
+			ref: ORIGIN_MAIN,
+			label: 'origin/main',
+			joined: [repository.tip, main],
+		})
+		expect(ownChangeOf({ worktree, base })).toEqual({
+			beyond: [MERGE_SUBJECT, 'feat(y): y'],
+			changed: [CHILD_FILE],
+		})
+	})
+
+	it("the same, rebased onto origin's main from its base → only its own commit replays, clean", () => {
+		const { repository, worktree } = squashedParentThenEditedOnMain()
+		const base = lotBaseOf({
+			root: repository.root,
+			head: headOf(worktree),
+			baseRef: ORIGIN_MAIN,
+			parent: {
+				branch: LOT_BRANCH,
+				landing: { kind: 'merged', how: 'tree', tip: repository.tip },
+			},
+		})
+
+		git({ root: worktree, args: ['rebase', '-q', '--onto', ORIGIN_MAIN, forkPointOf(base)] })
+
+		expect(subjectsBeyond({ root: worktree, base: ORIGIN_MAIN, ref: 'HEAD' })).toEqual([
+			'feat(y): y',
+		])
+	})
+
+	it('the same, the parent read unlanded though pushed, no host asked → refused naming the parent that may have landed and how to record it', () => {
+		const { repository, worktree } = squashedParentThenEditedOnMain()
+
+		expect(
+			lotBaseOf({
+				root: repository.root,
+				head: headOf(worktree),
+				baseRef: ORIGIN_MAIN,
+				parent: {
+					branch: LOT_BRANCH,
+					landing: { kind: 'unlanded', proof: 'offline-unproven' },
+				},
+			}),
+		).toEqual({
+			refusal: `the lines the lot holds (${LOT_BRANCH}, origin/main) do not merge clean (${LOT_FILE}), and its parent ${LOT_BRANCH} may have landed though git alone cannot prove it: record the parent's landing (lot close on the parent's lot), then read it again; or rebase it onto origin/main once its parent landed, or merge origin/main into its parent first`,
+		})
+	})
+
+	// guard: a parent read plainly unlanded keeps the conflict's own refusal, never the may-have-landed text
+	it('the same, the parent read unlanded → refused naming the path and both ways out', () => {
+		const { repository, worktree } = squashedParentThenEditedOnMain()
+
+		expect(
+			lotBaseOf({
+				root: repository.root,
+				head: headOf(worktree),
+				baseRef: ORIGIN_MAIN,
+				parent: { branch: LOT_BRANCH, landing: OPEN },
+			}),
+		).toEqual({ refusal: PARENT_FILE_CONFLICT })
+	})
+
+	// guard: a clean join of the landed tip and a base line older than the squash keeps merge-tree's tree, never the base's
+	it("a stacked child that merged origin's main before its parent's squash, the parent read merged → only its own commit and its merge beyond its base, no parent file", () => {
+		const repository = landingRepositoryOf()
+		const child = stackedChildOf(repository)
+		editOnOrigin({ repository, files: { 'src/other.ts': 'export const other = 1\n' } })
+		mergeBaseInto({ worktree: child.worktree })
+		mergeOnOrigin({ repository, how: 'squash' })
+
+		const base = lotBaseOf({
+			root: repository.root,
+			head: headOf(child.worktree),
+			baseRef: ORIGIN_MAIN,
+			parent: {
+				branch: LOT_BRANCH,
+				landing: { kind: 'merged', how: 'tree', tip: repository.tip },
+			},
+		})
+
+		expect(ownChangeOf({ worktree: child.worktree, base })).toEqual({
+			beyond: [MERGE_SUBJECT, 'feat(y): y'],
+			changed: [CHILD_FILE],
+		})
+	})
+
+	// guard: it guards a parent whose landed tip HEAD does not hold
+	it("a stacked child holding its parent's commit before an amend, the amended parent squash-merged then edited on main, the child merges origin's main resolving it, the parent read merged → refused naming the path and both ways out", () => {
+		const repository = landingRepositoryOf()
+		const child = stackedChildOf(repository)
+		const amended = amendLot({ worktree: repository.worktree })
+		mergeOnOrigin({ repository, how: 'squash' })
+		editOnOrigin({ repository, files: EDITED_ON_MAIN })
+		mergeBaseResolving({ worktree: child.worktree, files: EDITED_ON_MAIN })
+
+		expect(
+			lotBaseOf({
+				root: repository.root,
+				head: headOf(child.worktree),
+				baseRef: ORIGIN_MAIN,
+				parent: { branch: LOT_BRANCH, landing: { kind: 'merged', how: 'tree', tip: amended } },
+			}),
+		).toEqual({ refusal: PARENT_FILE_CONFLICT })
+	})
+
+	// guard: the parent line the lot holds is a commit beyond the landed tip, whose work the base does not hold
+	it("a stacked child that merged its parent's commit made after the parent's squash, main then editing the parent's line, the child merges origin's main resolving it, the parent read merged → refused naming the path and both ways out", () => {
+		const repository = landingRepositoryOf()
+		const child = stackedChildOf(repository)
+		mergeOnOrigin({ repository, how: 'squash' })
+		commitIn({
+			root: repository.worktree,
+			files: { 'src/q.ts': 'export const q = 1\n' },
+			message: 'feat(x): q',
+		})
+		git({ root: child.worktree, args: ['merge', '--no-edit', '-q', LOT_BRANCH] })
+		editOnOrigin({ repository, files: EDITED_ON_MAIN })
+		mergeBaseResolving({ worktree: child.worktree, files: EDITED_ON_MAIN })
+
+		expect(
+			lotBaseOf({
+				root: repository.root,
+				head: headOf(child.worktree),
+				baseRef: ORIGIN_MAIN,
+				parent: {
+					branch: LOT_BRANCH,
+					landing: { kind: 'merged', how: 'tree', tip: repository.tip },
+				},
+			}),
+		).toEqual({ refusal: PARENT_FILE_CONFLICT })
+	})
+
 	it('a head that does not resolve -> refused naming it', () => {
 		const repository = landingRepositoryOf()
 
@@ -439,4 +591,21 @@ function squashedParentThenMergedRelease(): { repository: LandingRepository; wor
 	editOnOrigin({ repository, files: RELEASE })
 	mergeBaseInto({ worktree: child.worktree })
 	return { repository, worktree: child.worktree }
+}
+
+/**
+ * The parent squash-merged on origin's main, main then edits the parent's line, and the child, never rebased, merges
+ * main resolving the conflict to main's text; main's new tip.
+ */
+function squashedParentThenEditedOnMain(): {
+	repository: LandingRepository
+	worktree: string
+	main: string
+} {
+	const repository = landingRepositoryOf()
+	const child = stackedChildOf(repository)
+	mergeOnOrigin({ repository, how: 'squash' })
+	const main = editOnOrigin({ repository, files: EDITED_ON_MAIN })
+	mergeBaseResolving({ worktree: child.worktree, files: EDITED_ON_MAIN })
+	return { repository, worktree: child.worktree, main }
 }

@@ -86,8 +86,9 @@ export function prepareChangeRequest(params: {
 		vendors: params.vendors ?? HOST_VENDORS,
 	})
 	if ('refusal' in template) return template
-	const sources = readChangeRequestSources(params)
-	if ('refusal' in sources) return sources
+	const read = readSourcesAt(params)
+	if ('refusal' in read) return read
+	const { sources } = read
 	const title = titleVersionFault({ sources, lot: basename(params.lotFolder) })
 	if (title !== undefined) return { refusal: title }
 	const forged = recordValueFault(sources)
@@ -99,12 +100,11 @@ export function prepareChangeRequest(params: {
 		}
 	const lists = referencePatternsOf({ root: params.worktree })
 	if ('refusal' in lists) return lists
-	const base = mergeBaseOf(params)
 	const refused = publicRefusalOf({
 		pieces: publicPiecesOf(sources),
 		patterns: lists.patterns,
 		ids: folderPlanEntryIds({ folder: params.lotFolder }),
-		treeFiles: treeFilesOf({ worktree: params.worktree, base }),
+		treeFiles: treeFilesOf({ worktree: params.worktree, base: read.base }),
 	})
 	if (refused !== undefined)
 		return {
@@ -172,6 +172,19 @@ export function readChangeRequestSources(params: {
 	worktree: string
 	baseRef: string
 }): ChangeRequestSources | { refusal: string } {
+	const read = readSourcesAt(params)
+	return 'refusal' in read ? read : read.sources
+}
+
+/**
+ * The lot's sources and the one base the whole body was read from: the lot's own fork (`lotBaseOf`), stacked or not;
+ * the refusal when its brief does not read, names no commit message, or its base cannot be read.
+ */
+function readSourcesAt(params: {
+	lotFolder: string
+	worktree: string
+	baseRef: string
+}): { sources: ChangeRequestSources; base: string } | { refusal: string } {
 	const briefPath = join(params.lotFolder, STORE_FILES.brief)
 	let brief: Record<string, unknown>
 	try {
@@ -189,15 +202,10 @@ export function readChangeRequestSources(params: {
 		}
 	const fork = lotForkOf(params)
 	if ('refusal' in fork) return fork
-	// a lot not stacked forks at the body's merge-base: one merge-base read serves both
-	const base = fork.stacked ? mergeBaseOf(params) : fork.forkPoint
+	// one base for the whole body: the lot's own fork, a stacked lot's too (its change request shows its own commits)
+	const base = fork.forkPoint
 	const changes = changedFilesOf({ worktree: params.worktree, base })
-	const version = versionFactsOf({
-		worktree: params.worktree,
-		forkPoint: fork.forkPoint,
-		base,
-		changes,
-	})
+	const version = versionFactsOf({ worktree: params.worktree, base, changes })
 	const treeHash = hashStateTree(
 		readGit({ root: params.worktree, args: ['rev-parse', 'HEAD^{tree}'] }).trim(),
 	)
@@ -216,7 +224,7 @@ export function readChangeRequestSources(params: {
 		lot: record.lot,
 		reason: record.reason,
 	}))
-	return {
+	const sources: ChangeRequestSources = {
 		messages: lots.lots.map((lot) => lot.message.trim()),
 		...(typeof brief.summary === 'string' && { summary: brief.summary }),
 		...(Array.isArray(brief.steps) && { steps: stepsOf(brief.steps) }),
@@ -234,6 +242,7 @@ export function readChangeRequestSources(params: {
 		quality: bodyQualityOf({ worktree: params.worktree, base }),
 		...version,
 	}
+	return { sources, base }
 }
 
 /** The review record's verdicts at the worktree's HEAD; undefined without a review record. */
@@ -249,14 +258,14 @@ function reviewAtHead(params: {
 
 /**
  * The lot's own fork point (`lotBaseOf`: the base's merge-base, or the newest commit of an open stack parent's line the
- * lot holds) and whether it is stacked; refused for a base that cannot be read here, a stack record or parent that
+ * lot holds, or the join of the lines it holds); refused for a base that cannot be read here, a stack record or parent that
  * cannot be read, or no fork point, never read against the base branch.
  */
 function lotForkOf(params: {
 	lotFolder: string
 	worktree: string
 	baseRef: string
-}): { forkPoint: string; stacked: boolean } | { refusal: string } {
+}): { forkPoint: string } | { refusal: string } {
 	const { worktree, baseRef } = params
 	if (readCommitOrNone({ root: worktree, ref: baseRef }) === undefined)
 		return {
@@ -274,24 +283,21 @@ function lotForkOf(params: {
 		...(parent !== undefined && { parent }),
 	})
 	if ('refusal' in lotBase) return lotBase
-	return { forkPoint: lotBase.forkPoint, stacked: parent !== undefined }
+	return { forkPoint: lotBase.forkPoint }
 }
 
 /**
- * The version facts of the checklist, read at the lot's own fork point: the version it sets and whether it is a release
- * (a fragment deleted and the changelog changed). A fork point that is the body's `base` reuses its `changes`.
+ * The version facts of the checklist, read at the lot's own fork point (the body's `base`, whose `changes` they reuse):
+ * the version it sets and whether it is a release (a fragment deleted and the changelog changed).
  */
 function versionFactsOf(params: {
 	worktree: string
-	forkPoint: string
 	base: string
 	changes: readonly ChangedFile[]
 }): { bumpedTo?: string; release: boolean } {
-	const { worktree, forkPoint } = params
-	const changes =
-		forkPoint === params.base ? params.changes : changedFilesOf({ worktree, base: forkPoint })
+	const { worktree, changes } = params
 	return {
-		...bumpedToOf({ worktree, base: forkPoint }),
+		...bumpedToOf({ worktree, base: params.base }),
 		release:
 			changes.some((change) => change.status === 'D' && FRAGMENT_PATTERN.test(change.path)) &&
 			changes.some((change) => change.path === CHANGELOG_FILE),
@@ -378,14 +384,6 @@ function stepsOf(steps: unknown[]): ChangeRequestStep[] {
 			},
 		]
 	})
-}
-
-/** Where the lot's branch left the base branch: its merge base, or the base itself when git cannot tell. */
-function mergeBaseOf(params: { worktree: string; baseRef: string }): string {
-	return (
-		tryReadGit({ root: params.worktree, args: ['merge-base', params.baseRef, 'HEAD'] })?.trim() ||
-		params.baseRef
-	)
 }
 
 /** The paths the lot's commits change since `base`, each with its status letter (renames as delete and add). */

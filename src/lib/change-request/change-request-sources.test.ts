@@ -257,6 +257,26 @@ describe(
 				entries: [{ section: 'Added', text: '- `x` answers one.', file: 'changes/x.md' }],
 			})
 		})
+
+		it("a lot started on an open lot, each adding a fragment and a file of its own → only the child's fragment", () => {
+			const parent = changeRequestLot({
+				lotFiles: {
+					'changes/parent.md': '### Added\n\n- Parent answers.\n',
+					'src/parent.ts': 'export const parent = 1\n',
+				},
+			})
+			const { child } = stackedOn({
+				parent,
+				childFiles: { 'changes/child.md': '### Added\n\n- Child answers.\n' },
+			})
+
+			const sources = readChangeRequestSources({ ...child, baseRef: 'main' })
+
+			expect('refusal' in sources ? sources : sources.changelog).toEqual({
+				kind: 'entries',
+				entries: [{ section: 'Added', text: '- Child answers.', file: 'changes/child.md' }],
+			})
+		})
 	},
 )
 

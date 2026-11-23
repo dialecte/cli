@@ -414,14 +414,18 @@ describe('a stacked lot after its parent merged', { timeout: SCRATCH_GIT_CASE_TI
 })
 
 /**
- * A stack of two store lots of a brief workspace pushed to a bare origin: the parent `0001-repo-x` on `feat/x` (one
+ * A stack of two store lots of a brief workspace pushed to a bare origin (main holding `mainFiles` beside the template):
+ * the parent `0001-repo-x` on `feat/x` (one
  * commit, pushed, pull request #5 in its landing.json) and the child `0002-repo-y` on `feat/y`, cut at the parent's tip
  * with one commit, its stack.json naming the parent.
  */
-function storeStack() {
+function storeStack(params: { mainFiles?: Record<string, string> } = {}) {
 	const workspace = createBriefWorkspace()
 	const { repository } = workspace
-	writeFiles({ root: repository, files: { [FIXTURE_TEMPLATE_PATH]: cliTemplate() } })
+	writeFiles({
+		root: repository,
+		files: { [FIXTURE_TEMPLATE_PATH]: cliTemplate(), ...params.mainFiles },
+	})
 	git({ root: repository, args: ['add', '-A'] })
 	git({ root: repository, args: ['commit', '-qm', 'chore: the template'] })
 	const origin = join(workspace.workspace, 'origin.git')
@@ -518,6 +522,40 @@ describe('dialecte lot land of a stacked store lot', { timeout: SCRATCH_GIT_CASE
 		}).toEqual({
 			exitCode: 0,
 			scope: [],
+			opened: ['open feat/y -> feat/x "feat: x" draft'],
+		})
+	})
+
+	it("a lot started on its open parent cut at 0.1.0, a release at 0.2.0 on main, the child merges origin's main, its title naming no version → lot land not refused by the title: landed on the parent branch", () => {
+		const stack = storeStack({ mainFiles: { 'package.json': '{ "version": "0.1.0" }\n' } })
+		landOnOrigin({
+			origin: stack.origin,
+			files: {
+				'package.json': '{ "version": "0.2.0" }\n',
+				'src/release.ts': 'export const release = 1\n',
+			},
+		})
+		git({ root: stack.childWorktree, args: ['fetch', '-q', 'origin'] })
+		git({ root: stack.childWorktree, args: ['merge', '--no-edit', '-q', 'origin/main'] })
+		const host = recordingHost({ parent: parentChangeRequest() })
+
+		const landed = landLot({
+			lot: CHILD,
+			worktree: stack.childWorktree,
+			branch: 'feat/y',
+			base: 'main',
+			lotFolder: stack.childFolder,
+			host: host.host,
+			now: NOW,
+		})
+
+		expect({
+			exitCode: landed.exitCode,
+			title: landed.lines.filter((line) => line.startsWith('lot land: the title')),
+			opened: writesOf(host).filter((call) => call.startsWith('open')),
+		}).toEqual({
+			exitCode: 0,
+			title: [],
 			opened: ['open feat/y -> feat/x "feat: x" draft'],
 		})
 	})

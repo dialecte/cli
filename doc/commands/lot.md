@@ -131,21 +131,23 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
              change-request template (its host's path; with no host known, the first host template
              the tree holds): the title is the brief's first commit message (changed with lot
              brief), the body its summary and other commit messages, step titles and behaviours, the
-             changelog fragments the lot adds, tests.json (a part of another tree reads stale),
-             review.jsonl (findings and how each closed, the verdicts by reviewer kind, never a
-             name; a row value its writer never writes refused), the risk class and effort, the
-             overlaps it accepted (the other lot by its index, and why), the issue it closes, and
-             the author's checklist ticked from the records; a missing record reads not recorded; a
-             lot that changes package.json's version is refused when its title does not name the new
-             version (read at the lot's own fork point: a lot started on an open release lot sets
-             none), naming lot brief; the record text is checked first (a reference, a forbidden
-             word, a plan entry id, a link or a path outside the tree refused, naming the word and
-             the record); the open change request (landing.json's, else the branch's newest) is
-             edited only when its title or body reads otherwise, a person's part after the kept
-             marker kept (a body without that heading holding a person's text refused, never
-             dropped); a damaged lot refused; --print prints and sends nothing; no change request
-             yet prints the text and names lot land; --json { title, body, changeRequest, head, sent
-             }
+             changelog fragments the lot adds (every part read from the lot's own base: its fork
+             from the base branch, or for a lot started on another its parent's line, joined with
+             the base branch when it merged it, so a lot on an open parent lists its own work only),
+             tests.json (a part of another tree reads stale), review.jsonl (findings and how each
+             closed, the verdicts by reviewer kind, never a name; a row value its writer never
+             writes refused), the risk class and effort, the overlaps it accepted (the other lot by
+             its index, and why), the issue it closes, and the author's checklist ticked from the
+             records; a missing record reads not recorded; a lot that changes package.json's version
+             is refused when its title does not name the new version (read at the lot's own fork
+             point: a lot started on an open release lot sets none), naming lot brief; the record
+             text is checked first (a reference, a forbidden word, a plan entry id, a link or a path
+             outside the tree refused, naming the word and the record); the open change request
+             (landing.json's, else the branch's newest) is edited only when its title or body reads
+             otherwise, a person's part after the kept marker kept (a body without that heading
+             holding a person's text refused, never dropped); a damaged lot refused; --print prints
+             and sends nothing; no change request yet prints the text and names lot land; --json {
+             title, body, changeRequest, head, sent }
   review - the private half of the lot's review, read-only (nothing written): the lot's state and
            branch, its change request (landing.json's) with the head it is at, the head the lot
            landed and the worktree's HEAD, its checks, the brief's goal and steps (title, spec,
@@ -268,14 +270,16 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
          merge-base --fork-point: only its own commits move, whatever the parent's amend or rebase;
          a lot that merged the base branch forks at the join of the lines it holds, a commit no ref
          names, so the base's commits are never its own, and lines that do not merge clean refuse,
-         naming the ways out); once the parent merged (its landing state: a merge, a squash read
-         offline, or its change request merged; never the registry's committed alone, which a
-         hand-over run writes before anything reaches the base), the parent's landed fact is
-         recorded and the child is rebased with git rebase --onto origin/<base> <fork point>, only
-         its own commits moved, and its change request retargeted to the base when the host did not;
-         when the host already rewrote its branch on origin (a native stack), it follows that
-         rewrite (local commits beyond its last push rebased onto it, that head the lease); a
-         conflict names its files, the rebase undone, nothing pushed, exit 2
+         naming the ways out, except a merged parent's landed tip the lot holds against the base,
+         where the base's content wins; a parent that may have landed though git alone cannot prove
+         it refuses naming how to record its landing); once the parent merged (its landing state: a
+         merge, a squash read offline, or its change request merged; never the registry's committed
+         alone, which a hand-over run writes before anything reaches the base), the parent's landed
+         fact is recorded and the child is rebased with git rebase --onto origin/<base> <fork
+         point>, only its own commits moved, and its change request retargeted to the base when the
+         host did not; when the host already rewrote its branch on origin (a native stack), it
+         follows that rewrite (local commits beyond its last push rebased onto it, that head the
+         lease); a conflict names its files, the rebase undone, nothing pushed, exit 2
   land - the lot lands through its change request: its committed HEAD (uncommitted files stay in the
          worktree, named), rebased onto origin/<base> when behind (a conflict undone and named,
          nothing pushed; with uncommitted tracked changes it is pushed as committed, the rebase left
