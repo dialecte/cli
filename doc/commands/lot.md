@@ -184,7 +184,9 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
             own lots only (the package named @dialecte/cli), every other package waits for a person
             (exit 2); a forbidden word in --by or --reason, or a --by holding what a public record
             never holds, refused (exit 2) before the host is asked; a lot without a landing names
-            lot land <id>
+            lot land <id>; the queued line names the queue the host answers for the change request's
+            base (queued (merge queue), queued (auto-merge)), nothing when it offers none, the read
+            is refused or the lot is stacked
   design - a lot's design (design before code): --from <file> records it by the sha256 of its bytes,
            appending { schema, at, kind: recorded, file, hash, from } to the lot folder's
            design.jsonl and keeping its copy as design/<hash>.md (the copy rules once the source is
@@ -1148,13 +1150,13 @@ Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`
 files stay in the worktree and are named, `uncommitted, not pushed: N files`), rebased onto `origin/<base>` when
 behind it (a conflict undone, its files named, nothing pushed; with a tracked file changed git cannot rebase: the lot
 is pushed as committed, a line saying the rebase waits for a clean worktree; CI tests the merge with the base), pushed
-with a lease, its pull request opened or reused with the title and body `lot pr` renders from the lot's records
+with a lease, its pull request opened or reused with the title and body `lot describe` renders from the lot's records
 through `.github/pull_request_template.md`, on the rebased head before the push: the title is the lot's own message
 (the first commit lot of its brief), never the branch's last commit, so a merge of main never becomes the squash title,
 and the body is the lot's final state, never its commit bodies. The message is changed with `dialecte lot brief`, so a
 re-versioned release lot needs no hand edit of its title. A lot that changes package.json's version (read at the lot's
 own fork point: a lot started on an open release lot sets none of its own) is refused while its title does not name
-the new version, by `lot pr`, `lot land` before anything is pushed and `lot approve` before anything is queued. A
+the new version, by `lot describe`, `lot land` before anything is pushed and `lot approve` before anything is queued. A
 reused pull request whose title or body reads otherwise is edited, a person's part after the template's kept marker
 kept; records that do not render push nothing.
 The pull request is always a draft and `lot land` never queues it: CI runs on every push while the lot goes on, and

@@ -14,10 +14,10 @@ doctor - Installed versions, core API generation, skills in sync, local checkout
   what to fix before trusting what you read
   --brief - the session-start form, nothing when in sync, one line per problem
   --host - runs every read of the repository's host once, for real, through the cli's own code (the
-           newest merged pull request, its checks and queued state, a reference pull request's line
-           comments, the stack extension), then the tool versions against the recorded ones and git
-           against its floor; only those lines; network by name; --vendor <name> probes that vendor
-           whatever the origin
+           newest merged pull request, its checks, its queued state and the queue its base offers, a
+           reference pull request's line comments, the stack extension), then the tool versions
+           against the recorded ones and git against its floor; only those lines; network by name;
+           --vendor <name> probes that vendor whatever the origin
 
 exit codes:
   1  a warning

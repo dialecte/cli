@@ -1,5 +1,5 @@
 /**
- * `dialecte lot pr <id> [--print] [--json]`: the lot's pull request rendered from its records through the repository's
+ * `dialecte lot describe <id> [--print] [--json]`: the lot's pull request rendered from its records through the repository's
  * one template (`src/lib/change-request/`), checked as public text, then sent to its open pull request when that reads otherwise:
  * the squash commit on the base branch takes this title and body, so they hold the lot's final state. `--print` sends
  * nothing; a lot without a pull request yet prints its text (`lot land` opens it).
