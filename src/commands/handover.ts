@@ -112,6 +112,7 @@ import { NOT_A_LOT_VALUE_OPTIONS } from '../lib/handover/store-lot-guard.constan
 import { notALotWordRefusal, readNotALotOptions } from '../lib/handover/store-lot-guard.ts'
 import { findTargetRef } from '../lib/handover/target-moved.ts'
 import { writeHandover } from '../lib/handover/write-handover.ts'
+import { hostNounsOf } from '../lib/host/select-host.ts'
 import { startLongRun } from '../lib/keep-awake/long-run.ts'
 import { flowRefusalOf } from '../lib/landing/flow.ts'
 import { HANDOVER_LEGEND } from '../lib/legend/legend.constants.ts'
@@ -271,6 +272,7 @@ export function runHandover(params: {
 		root: lotsFile.repository,
 		command: 'handover',
 		verb: 'write',
+		nouns: hostNounsOf({ root: lotsFile.repository }),
 	})
 	if (writeRefusal !== undefined) return usage(writeRefusal)
 	const outWord = getArg(argv, 'out')
@@ -507,6 +509,7 @@ export async function runHandoverRun(params: {
 		root: handover.lotsFile.repository,
 		command: 'handover',
 		verb: 'run',
+		nouns: hostNounsOf({ root: handover.lotsFile.repository }),
 	})
 	if (runRefusal !== undefined) {
 		write(textOf([runRefusal]))

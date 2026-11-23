@@ -30,8 +30,9 @@ import type { HostSeamFinding, HostSeamVendor, PlacedHostSeamFinding } from './h
  * The breaches of the host seam in `root`, read from the syntax tree so no comment or text counts: in `src/` (tests
  * excluded), a vendor's tool literal outside `src/lib/host/<name>/`, a file importing a vendor's folder (but the
  * vendor's own files and `VENDOR_IMPORTERS`), and a file of `src/lib/config/` importing anything of `src/lib/host/` but
- * `host.constants.ts`; in `src/` and `test/` (tests included), a vendor's change-request noun in an identifier or a file
- * name outside the vendor's folders (`src/lib/host/<name>/`, `test/fixtures/host-contract/<name>/`).
+ * `host.constants.ts`, and a string literal or template part printing a vendor's change-request noun outside its folder;
+ * in `src/` and `test/` (tests included), a vendor's change-request noun in an identifier or a file name outside the
+ * vendor's folders (`src/lib/host/<name>/`, `test/fixtures/host-contract/<name>/`).
  */
 export function scanHostSeam(params: {
 	root: string
@@ -159,7 +160,7 @@ function isTextNode(node: ts.Node): node is ts.StringLiteral | ts.TemplateLitera
 
 // dialecte-allow duplicate-read: it matches printed nouns as whole phrases in text; spellsVendorNoun matches identifier words
 /**
- * Whether a text prints a vendor's change-request noun (`change request`, `change requests`) as whole words, in any case;
+ * Whether a text prints a vendor's change-request noun (GitHub's `pull request`, `pull requests`) as whole words, in any case;
  * `pull_request` and a noun split across template parts do not.
  */
 function printsVendorNoun(params: { text: string; vendors: readonly HostSeamVendor[] }): boolean {

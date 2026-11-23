@@ -47,7 +47,7 @@ export type ReviewComment = {
 /** How a vendor names its change requests in printed text; the keys are the placeholders a message fills. */
 export type HostNouns = { changeRequestNoun: string; changeRequestNouns: string }
 
-/** How the host merges a change request once its checks pass: a queue (queue, merge train), auto-merge, or neither. */
+/** How the host merges a change request once its checks pass: a queue (merge queue, merge train), auto-merge, or neither. */
 export type QueueKind = 'queue' | 'auto-merge' | 'none'
 
 /** The queue the change request's base offers, and the vendor's word for it. */

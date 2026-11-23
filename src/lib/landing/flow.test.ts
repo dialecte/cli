@@ -4,6 +4,7 @@
  * working lot's next line and refuses the other flow's landing verbs.
  */
 import { temporaryFolder, writeFiles } from '../../../test/scratch-repository.ts'
+import { GENERIC_NOUNS } from '../host/host.constants.ts'
 import { flowRefusalOf, landingFlow, landingFlowOf } from './flow.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -183,6 +184,6 @@ describe('flowRefusalOf', () => {
 		const root = temporaryFolder('dialecte-flow-')
 		writeFiles({ root, files })
 
-		expect(flowRefusalOf({ root, command, verb })).toEqual(expected(root))
+		expect(flowRefusalOf({ root, command, verb, nouns: GENERIC_NOUNS })).toEqual(expected(root))
 	})
 })

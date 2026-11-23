@@ -63,7 +63,7 @@ export function gitDeclaredHighOf(params: {
 }
 
 /**
- * The areas `lot design`, `lot forecast` and the pull request hold a lot to: through git at its lot base when its
+ * The areas `lot design`, `lot forecast` and the change request hold a lot to: through git at its lot base when its
  * worktree is there, else at its fallback base (`fallbackLotBaseOf`; never HEAD); else at the base recorded at its
  * start, with a note saying so (a pruned worktree is no reason to stop reading the lot).
  *

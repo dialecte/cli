@@ -586,6 +586,17 @@ describe('scanHostSeam: the change-request noun of one vendor stays in the vendo
 		).toMatchObject(findingsOf([]))
 	})
 
+	it('a string and a template holding the noun and a pullRequest-like word → the noun-text finding only, never a noun identifier', () => {
+		const file =
+			"export const A = 'pull request #7 pullRequest'\nexport const B = `pull ${'x'} pullRequest`\n"
+
+		expect(
+			scanHostSeam(scanOf({ files: { 'src/lib/landing/text.ts': file }, vendors: [GITHUB] })),
+		).toEqual([
+			expect.objectContaining({ file: 'src/lib/landing/text.ts', line: 1, kind: 'noun-text' }),
+		])
+	})
+
 	it("each vendor's own folders hold the noun, a second vendor's too → no finding", () => {
 		expect(
 			scanHostSeam(

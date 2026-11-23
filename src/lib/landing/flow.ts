@@ -7,7 +7,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { hostNounsOf } from '../host/select-host.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import {
 	CI_WORKFLOW_PATH,
@@ -20,6 +19,7 @@ import {
 
 import { parse } from 'yaml'
 
+import type { HostNouns } from '../host/host.types.ts'
 import type { LandingFlow, LandingFlowName } from './flow.types.ts'
 
 /**
@@ -52,6 +52,8 @@ export function flowRefusalOf(params: {
 	root: string
 	command: string
 	verb: string
+	/** The host's change-request nouns for the refusal, from the caller (flow.ts resolves no host). */
+	nouns: HostNouns
 }): string | undefined {
 	const { root, command, verb } = params
 	const flow = landingFlowOf(root)
@@ -62,7 +64,7 @@ export function flowRefusalOf(params: {
 			command,
 			verb,
 			root,
-			why: fillMessage({ template: FLOW_REFUSAL_WHY[flow], values: hostNounsOf({ root }) }),
+			why: fillMessage({ template: FLOW_REFUSAL_WHY[flow], values: params.nouns }),
 		},
 	})
 }
