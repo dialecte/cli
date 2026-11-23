@@ -66,7 +66,6 @@ import type {
 	PlannedRemoval,
 	PruneItem,
 	PrunePlanParams,
-	ProcessFolder,
 	PrunePlan,
 	SiblingLink,
 	WorkspacePrunePlan,
@@ -130,32 +129,16 @@ export function runWorktreeAdd(params: {
 	return { exitCode: 0, output: renderCard({ card: worktreeCard(added), colour: params.colour }) }
 }
 
-export async function runWorktreePrune(params: {
-	argv: string[]
-	cwd: string
-	/** Where rehearsal clones are looked for. */
-	scratchRoot: string
-	/**
-	 * Where earlier cli versions made rehearsal clones (the system's temporary folder), looked in too when
-	 * it is not `scratchRoot`.
-	 */
-	formerScratchRoot?: string
-	/** The cli's scratch root, whose leaked folders go to the trash; default: none read. */
-	scratchFolderRoot?: string
-	isTerminal: boolean
-	confirm: (question: string) => Promise<boolean>
-	/** The clock `--reclaim` measures idleness from, and a pool left-over's age; default: now. */
-	now?: Date
-	/**
-	 * Lists the processes and their working folders for `--reclaim` and the pool left-overs (the tests stand in for it);
-	 * default: the system's.
-	 */
-	listProcesses?: () => ProcessFolder[] | string
-	/** Starts the background removals of the trash, `--reclaim`'s and a pool left-over's (the tests record them); default: `spawnDetached`. */
-	spawner?: BackgroundSpawner
-	/** Reads a pid's start time for a rehearsal clone's run (the tests stand in for it); default `processStartTime`. */
-	readStartTime?: (pid: number) => string | undefined
-}): Promise<CommandResult> {
+export async function runWorktreePrune(
+	params: PrunePlanParams & {
+		argv: string[]
+		cwd: string
+		isTerminal: boolean
+		confirm: (question: string) => Promise<boolean>
+		/** Starts the background removals of the trash, `--reclaim`'s and a pool left-over's (the tests record them); default: `spawnDetached`. */
+		spawner?: BackgroundSpawner
+	},
+): Promise<CommandResult> {
 	const { argv } = params
 	if (hasFlag(argv, 'reclaim')) return runWorktreeReclaim(params)
 	if (hasFlag(argv, 'dry-run') || hasFlag(argv, 'older-than'))
@@ -248,17 +231,12 @@ function planWorkspacePrune(input: {
 }): WorkspacePrunePlan {
 	const { workspace, params } = input
 	return planPrune({
+		...params,
 		workspace,
 		handoverFolders: findHandoverFolders({
 			folder: join(workspace, COMMIT_PLAN_FOLDER),
 			depth: LIST_DEPTH,
 		}),
-		scratchRoot: params.scratchRoot,
-		formerScratchRoot: params.formerScratchRoot,
-		scratchFolderRoot: params.scratchFolderRoot,
-		now: params.now,
-		listProcesses: params.listProcesses,
-		readStartTime: params.readStartTime,
 		ownersAtPlan: input.ownersAtPlan,
 	})
 }
@@ -299,9 +277,11 @@ function decideAfterConfirmation(input: {
 			),
 		})
 		return decideRemovalsAtMove({
-			removals,
+			removals: removals.map((removal) => ({
+				...removal,
+				present: isPlannedRemovalPresent(removal),
+			})),
 			fresh,
-			present: removals.map((removal) => isPlannedRemovalPresent(removal)),
 		})
 	} catch (error) {
 		const reason = (error instanceof Error ? error.message : String(error)).trim()
@@ -319,15 +299,13 @@ function decideAfterConfirmation(input: {
  * `worktree prune --reclaim [--dry-run] [--older-than <days>]`: one line per worktree, the moves done (none with
  * `--dry-run`), the total (worktrees, files, size) at the end.
  */
-function runWorktreeReclaim(params: {
-	argv: string[]
-	cwd: string
-	scratchRoot: string
-	formerScratchRoot?: string
-	now?: Date
-	listProcesses?: () => ProcessFolder[] | string
-	spawner?: BackgroundSpawner
-}): CommandResult {
+function runWorktreeReclaim(
+	params: Pick<PrunePlanParams, 'scratchRoot' | 'formerScratchRoot' | 'now' | 'listProcesses'> & {
+		argv: string[]
+		cwd: string
+		spawner?: BackgroundSpawner
+	},
+): CommandResult {
 	const { argv } = params
 	const olderThanDays = readOlderThanDays(argv)
 	if (olderThanDays === undefined)

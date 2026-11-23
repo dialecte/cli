@@ -148,24 +148,40 @@ export type PruneItem = {
 
 /** What `worktree prune` plans with besides the workspace: the same for the plan and the plan taken again at `--yes`. */
 export type PrunePlanParams = {
+	/** Where rehearsal clones are looked for (rehearsal folders are made there). */
 	scratchRoot: string
+	/**
+	 * Where earlier cli versions made rehearsal clones (the system's temporary folder), looked in too when it is not
+	 * `scratchRoot`.
+	 */
 	formerScratchRoot?: string
+	/** The cli's scratch root, whose leaked folders go to the trash (`scratchRoot` of the scratch module); default: none read. */
 	scratchFolderRoot?: string
+	/** The clock a pool left-over's age, a scratch folder's and `--reclaim`'s idleness are read against; default: now. */
 	now?: Date
+	/**
+	 * Lists the processes and their working folders, for every keep rule that reads them (the tests stand in for it); a
+	 * lister that throws reads as the processes not known. Default: the system's.
+	 */
 	listProcesses?: () => ProcessFolder[] | string
+	/** Reads a pid's start time for a rehearsal clone's run (the tests stand in for it); default `processStartTime`. */
 	readStartTime?: (pid: number) => string | undefined
 }
 
 /** A removal of a `worktree prune` plan, with the repository whose plan holds it (undefined: a clone or a folder). */
 export type PlannedRemoval = { repository: string | undefined; item: PruneItem }
 
+/**
+ * A planned removal with its presence read after the confirmation: its folder, or its branch's ref, is still there (a
+ * read that fails counts as there).
+ */
+export type PlannedRemovalAtMove = PlannedRemoval & { present: boolean }
+
 /** What `itemAtMove` decides a planned removal on, everything read after the confirmation. */
 export type ItemAtMoveInput = {
-	removal: PlannedRemoval
+	removal: PlannedRemovalAtMove
 	/** The plan taken again after the confirmation. */
 	fresh: WorkspacePrunePlan
-	/** The removal's folder, or its branch's ref, is still there (a read that fails counts as there). */
-	present: boolean
 	/**
 	 * Per repository, the branches of the planned worktrees whose own outcome was neither go nor gone: a planned branch
 	 * among them stays with its worktree.

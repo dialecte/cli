@@ -102,11 +102,13 @@ import type {
 	ItemAtMoveInput,
 	ListedWorktree,
 	PlannedRemoval,
+	PlannedRemovalAtMove,
 	ProcessFolder,
 	PruneCloneReads,
 	PruneHandover,
 	PruneItem,
 	PrunePlan,
+	PrunePlanParams,
 	ReclaimContext,
 	ReclaimItem,
 	ReclaimOutcome,
@@ -116,28 +118,18 @@ import type {
 } from './worktree.types.ts'
 import type { Dirent } from 'node:fs'
 
-export function planPrune(params: {
-	workspace: string
-	/** Hand-over folders found under the workspace's `_commit-plan`. */
-	handoverFolders: readonly string[]
-	/** Where rehearsal folders are made. */
-	scratchRoot: string
-	/** Where earlier cli versions made rehearsal clones, looked in too when it is not `scratchRoot`. */
-	formerScratchRoot?: string
-	/** The cli's scratch root, whose leaked folders go to the trash (`scratchRoot` of the scratch module); default: none read. */
-	scratchFolderRoot?: string
-	/** The clock a pool left-over's age is read against; default: now. */
-	now?: Date
-	/** Lists the processes and their working folders (the tests stand in for it); default: the system's. */
-	listProcesses?: () => ProcessFolder[] | string
-	/** Reads a pid's start time for a rehearsal clone's run; default `processStartTime`. */
-	readStartTime?: (pid: number) => string | undefined
-	/**
-	 * The plan taken again after `--yes`'s confirmation: each clone the first plan let go, with the folder of the lot
-	 * that owned it then (`PruneItem.owner`), whose keep is read again on that folder. Default: none (the first plan).
-	 */
-	ownersAtPlan?: ReadonlyMap<string, string>
-}): WorkspacePrunePlan {
+export function planPrune(
+	params: PrunePlanParams & {
+		workspace: string
+		/** Hand-over folders found under the workspace's `_commit-plan`. */
+		handoverFolders: readonly string[]
+		/**
+		 * The plan taken again after `--yes`'s confirmation: each clone the first plan let go, with the folder of the lot
+		 * that owned it then (`PruneItem.owner`), whose keep is read again on that folder. Default: none (the first plan).
+		 */
+		ownersAtPlan?: ReadonlyMap<string, string>
+	},
+): WorkspacePrunePlan {
 	const scratchRoots = [
 		...new Set([params.scratchRoot, params.formerScratchRoot ?? params.scratchRoot]),
 	]
@@ -448,16 +440,15 @@ export function isPlannedRemovalPresent(removal: PlannedRemoval): boolean {
 
 /**
  * The planned removals of a `--yes` run decided again on the plan taken after the confirmation (`fresh`), in their
- * order: the worktrees first, so a planned branch whose worktree stays is kept with it. `present` holds each removal's
- * presence, read after the confirmation, in the same order.
+ * order: the worktrees first, so a planned branch whose worktree stays is kept with it. Each removal carries its
+ * presence, read after the confirmation.
  *
  * @intent move nothing on a decision older than the confirmation
  * @internal
  */
 export function decideRemovalsAtMove(params: {
-	removals: readonly PlannedRemoval[]
+	removals: readonly PlannedRemovalAtMove[]
 	fresh: WorkspacePrunePlan
-	present: readonly boolean[]
 }): ItemAtMove[] {
 	const { removals, fresh } = params
 	const plannedGoneWorktrees = groupByRepository({
@@ -470,12 +461,11 @@ export function decideRemovalsAtMove(params: {
 		valueOf: (removal) => removal.item.name,
 	})
 	const noneStayed: ReadonlyMap<string, ReadonlySet<string>> = new Map()
-	const worktreesAtMove = removals.map((removal, index) =>
+	const worktreesAtMove = removals.map((removal) =>
 		removal.item.kind === 'worktree'
 			? itemAtMove({
 					removal,
 					fresh,
-					present: params.present[index],
 					stayedWorktreeBranches: noneStayed,
 					plannedGoneWorktrees,
 				})
@@ -492,7 +482,6 @@ export function decideRemovalsAtMove(params: {
 			itemAtMove({
 				removal,
 				fresh,
-				present: params.present[index],
 				stayedWorktreeBranches,
 				plannedGoneWorktrees,
 			}),
@@ -516,15 +505,14 @@ function groupByRepository(params: {
 // dialecte-allow duplicate-read: decides a prune plan's removal on a second plan; moveReclaimItem moves a reclaim item on its own reads
 /**
  * A planned removal decided again after the confirmation, by the plan's own rules (`fresh`, the plan taken again):
- * kept now (why, as the plan prints it); absent from the plan, gone (`present` false) or not offered now; offered by
+ * kept now (why, as the plan prints it); absent from the plan, gone (not present) or not offered now; offered by
  * another command (removed another way now); a `git worktree prune` that would now unregister a worktree no plan
  * confirmed; a branch whose planned worktree stays; else it goes with its command. An item only `fresh` offers is never
  * asked here: no confirmation covers it.
  *
  * @intent move an item only when the plan taken after the confirmation removes it the same way
- * @internal
  */
-export function itemAtMove(params: ItemAtMoveInput): ItemAtMove {
+function itemAtMove(params: ItemAtMoveInput): ItemAtMove {
 	const { removal } = params
 	const { item, repository } = removal
 	const { name } = item
@@ -532,16 +520,16 @@ export function itemAtMove(params: ItemAtMoveInput): ItemAtMove {
 		(candidate) => candidate.name === name,
 	)
 	if (freshItem?.kept !== undefined)
-		return keptAtMove({ template: PRUNE_AT_MOVE_TEXTS.kept, values: { name, why: freshItem.kept } })
+		return keptLine({ template: PRUNE_AT_MOVE_TEXTS.kept, values: { name, why: freshItem.kept } })
 	if (freshItem?.command === undefined)
-		return params.present
-			? keptAtMove({ template: PRUNE_AT_MOVE_TEXTS.notOffered, values: { name } })
+		return removal.present
+			? keptLine({ template: PRUNE_AT_MOVE_TEXTS.notOffered, values: { name } })
 			: {
 					outcome: 'gone',
 					line: fillMessage({ template: PRUNE_AT_MOVE_TEXTS.gone, values: { name } }),
 				}
 	if (freshItem.command !== item.command)
-		return keptAtMove({
+		return keptLine({
 			template: PRUNE_AT_MOVE_TEXTS.anotherWay,
 			values: { name, command: freshItem.command },
 		})
@@ -552,7 +540,7 @@ export function itemAtMove(params: ItemAtMoveInput): ItemAtMove {
 			.filter((candidate) => candidate.command === item.command && !plannedGone.has(candidate.name))
 			.map((candidate) => candidate.name)
 		if (alsoUnregistered.length > 0)
-			return keptAtMove({
+			return keptLine({
 				template: PRUNE_AT_MOVE_TEXTS.wouldUnregister,
 				values: { name, worktrees: alsoUnregistered.join(', ') },
 			})
@@ -562,13 +550,12 @@ export function itemAtMove(params: ItemAtMoveInput): ItemAtMove {
 		repository !== undefined &&
 		params.stayedWorktreeBranches.get(repository)?.has(name)
 	)
-		return keptAtMove({ template: PRUNE_AT_MOVE_TEXTS.worktreeStays, values: { name } })
+		return keptLine({ template: PRUNE_AT_MOVE_TEXTS.worktreeStays, values: { name } })
 	return { outcome: 'go', command: freshItem.command }
 }
 
-// dialecte-allow duplicate-read: fills worktree prune's at-move text; keptAtMoveOf reads a lot prune record's keep
 /** A planned removal kept at the move: its line, `template` filled. */
-function keptAtMove(params: { template: string; values: Record<string, string> }): ItemAtMove {
+function keptLine(params: { template: string; values: Record<string, string> }): ItemAtMove {
 	return { outcome: 'kept', line: fillMessage(params) }
 }
 

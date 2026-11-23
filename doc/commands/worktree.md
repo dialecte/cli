@@ -48,27 +48,27 @@ worktree - A worktree ready to work in; prune what a merge left
           why), the processes are not known, a process works in it (a process works in it: pid
           <pid>), or a link reaches it; a pid running with another start time is dead; a lot folder
           gone or moved aside releases its clones; a committed hand-over folder, a scratch folder or
-          a rehearsal hook folder a process works in is kept (a process works in it: pid <pid>; for
-          a scratch or hook folder, processes not known: kept with why), the processes asked last;
-          --json prints the plan, a worktree on a branch naming branch (kept or not), a clone let go
-          naming owner (the folder of the lot that owned it at the plan, whose keep --yes reads
-          again); --yes runs them after a confirmation on a terminal, and decides every item again
-          first - worktree, branch, hand-over folder, rehearsal clone, scratch and hook folder, pool
-          left-over - by the same rules, on a plan taken again right after the confirmation
-          (processes, links, lots, hand-overs and markers read then, once, before the first move: a
-          change between two moves of one run is not seen, and pool left-overs and clones, read
-          right before their own move until now, are read earlier): an item goes only when that plan
-          removes it with the same command, else, nothing moved, ✗ <name> kept: <why>, ✗ <name>:
-          gone since the plan (its folder or refs/heads/<branch> missing), ✗ <name> kept: not
-          offered now, ✗ <name> kept: removed another way now: <command>, ✗ <branch> kept: its
-          worktree stays (its worktree did not go), ✗ <worktree> kept: git worktree prune would now
-          also unregister <worktrees>, or ✗ <name>: not decided again: <reason> (the hand-overs or
-          the plan could not be read again); an item only that plan offers is never removed nor
-          printed; committed hand-over folders, finished rehearsal clones, scratch folders and pool
-          left-overs (.worktrees/_pool-<repository>-<n> with no pool.json: a park that never
-          finished, unwritten for a while, no process in it) go to the trash like the other items
-          (the workspace's .worktrees/_trash for a clone or a folder in its own .worktrees/_scratch,
-          else the scratch root's dialecte-trash): the plan shows the move (mkdir -p <trash> && mv
+          a rehearsal hook folder a process works in is kept (a process works in it: pid <pid>;
+          processes not known: kept with why), the processes asked last; --json prints the plan, a
+          worktree on a branch naming branch (kept or not), a clone let go naming owner (the folder
+          of the lot that owned it at the plan, whose keep --yes reads again); --yes runs them after
+          a confirmation on a terminal, and decides every item again first - worktree, branch,
+          hand-over folder, rehearsal clone, scratch and hook folder, pool left-over - by the same
+          rules, on a plan taken again right after the confirmation (processes, links, lots,
+          hand-overs and markers read then, once, before the first move: a change between two moves
+          of one run is not seen, and pool left-overs and clones, read right before their own move
+          until now, are read earlier): an item goes only when that plan removes it with the same
+          command, else, nothing moved, ✗ <name> kept: <why>, ✗ <name>: gone since the plan (its
+          folder or refs/heads/<branch> missing), ✗ <name> kept: not offered now, ✗ <name> kept:
+          removed another way now: <command>, ✗ <branch> kept: its worktree stays (its worktree did
+          not go), ✗ <worktree> kept: git worktree prune would now also unregister <worktrees>, or ✗
+          <name>: not decided again: <reason> (the hand-overs or the plan could not be read again);
+          an item only that plan offers is never removed nor printed; committed hand-over folders,
+          finished rehearsal clones, scratch folders and pool left-overs
+          (.worktrees/_pool-<repository>-<n> with no pool.json: a park that never finished,
+          unwritten for a while, no process in it) go to the trash like the other items (the
+          workspace's .worktrees/_trash for a clone or a folder in its own .worktrees/_scratch, else
+          the scratch root's dialecte-trash): the plan shows the move (mkdir -p <trash> && mv
           <folder> <trash>/), --yes makes it; a move that cannot be made is a ✗ line, nothing
           deleted; the pool entries (with their pool.json) and the trash (.worktrees/_trash/) are
           counted, never touched
