@@ -6,12 +6,13 @@ import { readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node
 import { join } from 'node:path'
 
 import { recordingHost } from '../../test/land-lot.ts'
-import { LOT_NAME } from '../../test/lot-pr.constants.ts'
+import { LOT_NAME } from '../../test/lot-describe.constants.ts'
 import {
 	REVIEW_CHANGE_REQUEST_NUMBER,
 	REVIEW_CHANGE_REQUEST_URL,
 } from '../../test/lot-review.constants.ts'
 import { landedLot } from '../../test/lot-review.ts'
+import { git } from '../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { LANDING_FILE } from '../lib/handover/land-lot.constants.ts'
 import { appendDecision } from '../lib/review-rounds/decisions-file.ts'
@@ -83,8 +84,8 @@ describe('dialecte lot review', { timeout: STORE_CASE_TIMEOUT }, () => {
 		const head = lot.head.slice(0, 12)
 		expect(lines.slice(0, 4)).toEqual([
 			`lot review ${LOT_NAME} · working · feat/x`,
-			`pull request #${REVIEW_CHANGE_REQUEST_NUMBER} draft · ${REVIEW_CHANGE_REQUEST_URL}`,
-			`heads: pull request ${head}, landed ${head}, worktree ${head}`,
+			`change request #${REVIEW_CHANGE_REQUEST_NUMBER} draft · ${REVIEW_CHANGE_REQUEST_URL}`,
+			`heads: change request ${head}, landed ${head}, worktree ${head}`,
 			'checks: pending (ci-ok)',
 		])
 		expect(lines).toContain(`goal: ${brief.goal}`)
@@ -177,19 +178,26 @@ describe('dialecte lot review', { timeout: STORE_CASE_TIMEOUT }, () => {
 		expect(calls).toContain(`files ${REVIEW_CHANGE_REQUEST_URL}`)
 	})
 
-	it('a lot without a pull request → the private half printed and lot land named, the host never asked', () => {
-		const lot = reviewedLot()
-		rmSync(join(lot.lotFolder, LANDING_FILE))
-		const { host, calls } = recordingHost()
+	it.each([
+		{ origin: 'a local origin', url: '/srv/git/repo.git', noun: 'change request' },
+		{ origin: 'a GitHub origin', url: 'https://github.com/o/r.git', noun: 'pull request' },
+	])(
+		'a lot without a change request, $origin → the private half printed, lot land named with the $noun noun, the host never asked',
+		({ url, noun }) => {
+			const lot = reviewedLot()
+			rmSync(join(lot.lotFolder, LANDING_FILE))
+			git({ root: lot.workspace.repository, args: ['remote', 'set-url', 'origin', url] })
+			const { host, calls } = recordingHost()
 
-		const result = runLotReview({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
+			const result = runLotReview({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
 
-		expect(result.exitCode).toBe(0)
-		const lines = result.output.split('\n')
-		expect(lines[1]).toBe(`no pull request yet: dialecte lot land ${LOT_NAME} opens it`)
-		expect(lines).toContain('  - R1-1 round 1 blocking open src/x.ts:1: x is wrong')
-		expect(calls).toEqual([])
-	})
+			expect(result.exitCode).toBe(0)
+			const lines = result.output.split('\n')
+			expect(lines[1]).toBe(`no ${noun} yet: dialecte lot land ${LOT_NAME} opens it`)
+			expect(lines).toContain('  - R1-1 round 1 blocking open src/x.ts:1: x is wrong')
+			expect(calls).toEqual([])
+		},
+	)
 
 	it('an unknown option → usage, exit 2, the host never asked', () => {
 		const lot = landedLot()

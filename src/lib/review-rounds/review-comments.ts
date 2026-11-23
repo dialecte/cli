@@ -1,5 +1,5 @@
 /**
- * A pull request's line comments as findings of the lot's ledger (33CI CI7, `lot review --pull`): a thread's first
+ * A change request's line comments as findings of the lot's ledger (`lot review --comments`): a thread's first
  * comment only (a reply discusses it), each once (`pulled-comments.jsonl` holds the comments already pulled).
  */
 import { existsSync, readFileSync } from 'node:fs'
@@ -15,11 +15,11 @@ import {
 	DEFAULT_COMMENT_SEVERITY,
 	ORPHAN_FINDING_REFUSAL,
 	PULLED_LINE_SCHEMA,
-} from './pull-comments.constants.ts'
+} from './review-comments.constants.ts'
 import { LEDGER_FILE, SEVERITY_SPELLINGS } from './review-rounds.constants.ts'
 
 import type { ReviewComment } from '../host/host.types.ts'
-import type { CommentFinding, PulledLine } from './pull-comments.types.ts'
+import type { CommentFinding, PulledLine } from './review-comments.types.ts'
 
 /**
  * The comments of `number` not pulled into the folder yet, threads' first comments only, each as a finding: the

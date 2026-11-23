@@ -10,7 +10,7 @@ import { join } from 'node:path'
 
 import { recordingHost } from '../../../test/land-lot.ts'
 import { addRoundOf, landingLotOf } from '../../../test/landing-lot.ts'
-import { LOT_NAME } from '../../../test/lot-pr.constants.ts'
+import { LOT_NAME } from '../../../test/lot-describe.constants.ts'
 import { OTHER_PACKAGE } from '../../../test/lot-review.constants.ts'
 import { landedLot } from '../../../test/lot-review.ts'
 import { addVerifyThrowaway, rehearsalCloneOf } from '../../../test/scope-guard-lot.ts'

@@ -3,7 +3,7 @@
  * (the copy of the base a base run makes), every file of the tree but `node_modules`, `.git` and `dist`.
  */
 import { readdirSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import { join, posix, relative, sep } from 'node:path'
 
 import { readGit, tryReadGit } from '../git.ts'
 import { TREE_SKIPPED_FOLDERS } from './tdd.constants.ts'
@@ -25,10 +25,17 @@ export function listPackageFiles(root: string): string[] {
 export function listTreeFiles(folder: string): string[] {
 	return readdirSync(folder, { recursive: true, withFileTypes: true })
 		.filter((entry) => !entry.isDirectory())
-		.map((entry) => relative(folder, join(entry.parentPath, entry.name)))
+		.map((entry) =>
+			posixPathOf({ path: relative(folder, join(entry.parentPath, entry.name)), separator: sep }),
+		)
 		.filter(
 			(file) =>
 				!TREE_SKIPPED_FOLDERS.some((skipped) => file === skipped || file.startsWith(`${skipped}/`)),
 		)
 		.sort()
+}
+
+/** A relative path written with `/`, whatever `separator` the platform split it with. */
+export function posixPathOf(params: { path: string; separator: string }): string {
+	return params.path.split(params.separator).join(posix.sep)
 }

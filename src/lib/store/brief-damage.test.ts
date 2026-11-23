@@ -7,8 +7,8 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { replaceRecord } from '../../../test/damaged-lot-workspace.ts'
-import { LOT_NAME } from '../../../test/lot-pr.constants.ts'
-import { changeRequestLot } from '../../../test/lot-pr.ts'
+import { LOT_NAME } from '../../../test/lot-describe.constants.ts'
+import { changeRequestLot } from '../../../test/lot-describe.ts'
 import { temporaryFolder } from '../../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
 import { runLot } from '../../commands/lot.ts'
@@ -17,7 +17,7 @@ import { appendTransition } from './transitions.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { ChangeRequestLot } from '../../../test/lot-pr.types.ts'
+import type { ChangeRequestLot } from '../../../test/lot-describe.types.ts'
 
 afterEach(function restoreEnvironment() {
 	vi.unstubAllEnvs()

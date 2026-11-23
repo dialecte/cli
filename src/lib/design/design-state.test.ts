@@ -33,8 +33,8 @@ const STORE_REASON_OTHER_PATH: DesignNeedReason = {
 }
 const PR_REASON: DesignNeedReason = {
 	kind: 'shared',
-	glob: 'src/lib/pr/**',
-	path: 'src/lib/pr/public-body.ts',
+	glob: 'src/lib/change-request/**',
+	path: 'src/lib/change-request/public-body.ts',
 }
 const ENTRY_REASON: DesignNeedReason = { kind: 'entry' }
 const LIGHT: DesignNeed = { required: false, reasons: [] }

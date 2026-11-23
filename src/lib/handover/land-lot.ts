@@ -5,7 +5,7 @@
  * already merged (its pull request merged, or its tip or its work in the base: the landing state) is committed: its
  * landed fact written, nothing pushed, the close line printed. Otherwise the lot is rebased onto origin's base branch when behind (a conflict undone and named), pushed
  * with a lease pinned to the head its last landing pushed (a branch it never pushed must not exist on origin), its open
- * pull request reused or a new one opened (its title and body rendered from the lot's records, `lot pr`'s template; a reused one edited when it
+ * pull request reused or a new one opened (its title and body rendered from the lot's records, `lot describe`'s template; a reused one edited when it
  * reads otherwise), always a draft and never queued (`lot approve`, a person's step, queues it; a push that moves a
  * reused pull request's head takes it back out of the queue as a draft) - and the landing recorded: `landing.json` in the lot's folder, and
  * the lot's hand-over entry (state pending; committed once its pull request merged) that `lot status`, `plan next` and
@@ -15,6 +15,12 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { prepareChangeRequest } from '../change-request/change-request-sources.ts'
+import {
+	composeChangeRequest,
+	keptPartOf,
+	linesOf,
+} from '../change-request/compose-change-request.ts'
 import { recordForecastRun } from '../coordination/forecast-record.ts'
 import { forecastConflictsText, forecastHoldText } from '../coordination/forecast-view.ts'
 import { AGAINST_MAIN, FORECAST_STEP_LIMIT_MS } from '../coordination/forecast.constants.ts'
@@ -33,8 +39,6 @@ import { readLandingState } from '../landing/landing-state.ts'
 import { workSinceLanding, workSinceLandingText } from '../landing/lost-work.ts'
 import { landedLineOf } from '../landing/lot-landing.ts'
 import { readPackageJson } from '../package-json.ts'
-import { prepareChangeRequest } from '../pr/change-request-sources.ts'
-import { composeChangeRequest, keptPartOf, linesOf } from '../pr/compose-change-request.ts'
 import { workTreeTopOf } from '../review-rounds/worktree-state.ts'
 import { readIdentity } from '../store/identity.ts'
 import { keepNextOf, keptByDecision } from '../store/lot-keep.ts'
@@ -60,9 +64,9 @@ import { NOTHING_BEYOND_BASE_LINE } from './land-push.constants.ts'
 import { readLanding, readRawLanding } from './land-record.ts'
 import { prepareStackLanding, settleStackedChangeRequest } from './land-stack.ts'
 
+import type { ChangeRequestText } from '../change-request/change-request.types.ts'
 import type { HostAdapter, HostRefusal, ChangeRequest } from '../host/host.types.ts'
 import type { LandedFact } from '../landing/landed-record.types.ts'
-import type { ChangeRequestText } from '../pr/change-request.types.ts'
 import type { KeepDecision } from '../store/keep-decisions.types.ts'
 import type { LandingRecord, LandingResult } from './land-lot.types.ts'
 import type { StackLanding } from './land-stack.types.ts'
@@ -404,7 +408,7 @@ function unreadyRefusal(params: {
 }
 
 /**
- * After the push: the lot's pull request, its text rendered on the pushed head (`lot pr`'s template), reused or opened
+ * After the push: the lot's pull request, its text rendered on the pushed head (`lot describe`'s template), reused or opened
  * with it, the landing recorded at once (the next push's lease needs its head, whatever the host
  * answers next), a reused one edited when its title or body reads otherwise; never queued. `lines` holds
  * what the landing said so far.

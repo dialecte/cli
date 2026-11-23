@@ -1,9 +1,9 @@
 /**
  * `dialecte lot review <id> [--no-open]`: the private half of a lot's review (33CI CI7), read-only. Prints what never
- * goes on the pull request page - the lot's state and heads, its checks, the brief's goal and steps, its tests record,
+ * goes on the change request page - the lot's state and heads, its checks, the brief's goal and steps, its tests record,
  * `decisions.md`, every finding with its text and state, the standard note, and what `lot approve` would refuse - then
- * opens the pull request's changed files in the browser, where the code is reviewed (`--no-open` names the page only).
- * `--pull --round <n>` brings the pull request's line comments back as findings of round n instead.
+ * opens the change request's changed files in the browser, where the code is reviewed (`--no-open` names the page only).
+ * `--comments --round <n>` brings the change request's line comments back as findings of round n instead.
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -13,11 +13,11 @@ import { resultOf } from '../lib/command-result.ts'
 import { SHORT_SHA_LENGTH } from '../lib/gate-records/gate-records.constants.ts'
 import { readGit } from '../lib/git.ts'
 import { readLanding } from '../lib/handover/land-record.ts'
-import { createHost } from '../lib/host/select-host.ts'
+import { createHost, hostNounsOf } from '../lib/host/select-host.ts'
 import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { readDecisions } from '../lib/review-rounds/decisions-file.ts'
 import { findLedgerTable, tableCells, unescapeCell } from '../lib/review-rounds/findings-ledger.ts'
-import { newCommentFindings, recordCommentFindings } from '../lib/review-rounds/pull-comments.ts'
+import { newCommentFindings, recordCommentFindings } from '../lib/review-rounds/review-comments.ts'
 import { refreshReviewRecord } from '../lib/review-rounds/review-record.ts'
 import { DECISIONS_FILE, LEDGER_FILE } from '../lib/review-rounds/review-rounds.constants.ts'
 import { parseRound, readArguments } from '../lib/review-rounds/round-arguments.ts'
@@ -25,17 +25,22 @@ import { readStandardLine } from '../lib/standard/read-standard-line.ts'
 import { STORE_FILES } from '../lib/store/store.constants.ts'
 import { readTestsRecord } from '../lib/tdd/tests-record.ts'
 import { approvalRefusals } from './lot-approve.ts'
-import { resolveLotPlace } from './lot-pr.ts'
+import { resolveLotPlace } from './lot-describe.ts'
 import { LOT_REVIEW_FLAGS, LOT_REVIEW_LINES, LOT_REVIEW_OPTIONS } from './lot-review.constants.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
-import type { HostAdapter, ChangeRequest, ChangeRequestChecks } from '../lib/host/host.types.ts'
-import type { LotPlace } from './lot-pr.types.ts'
+import type {
+	HostAdapter,
+	HostNouns,
+	ChangeRequest,
+	ChangeRequestChecks,
+} from '../lib/host/host.types.ts'
+import type { LotPlace } from './lot-describe.types.ts'
 
 export function runLotReview(params: {
 	cwd: string
 	argv: string[]
-	/** Where the pull request lives; default: the repository's host. */
+	/** Where the change request lives; default: the repository's host. */
 	host?: HostAdapter
 	now?: Date
 }): CommandResult {
@@ -46,7 +51,7 @@ export function runLotReview(params: {
 	})
 	if (typeof read === 'string' || read.words.length !== 1)
 		return { exitCode: 2, output: renderLotUsage() }
-	const takesComments = read.flags.has('pull')
+	const takesComments = read.flags.has('comments')
 	const round = parseRound(read.values.get('round'))
 	if (takesComments !== read.values.has('round') || (takesComments && round === undefined))
 		return { exitCode: 2, output: renderLotUsage() }
@@ -57,8 +62,15 @@ export function runLotReview(params: {
 		mode: takesComments ? 'write' : 'read',
 	})
 	if ('exitCode' in place) return place
+	const nouns = hostNounsOf({ root: place.worktree })
 	if (round !== undefined)
-		return takeCommentFindings({ place, round, host: params.host, now: params.now ?? new Date() })
+		return takeCommentFindings({
+			place,
+			round,
+			nouns,
+			host: params.host,
+			now: params.now ?? new Date(),
+		})
 	const header = fillMessage({
 		template: LOT_REVIEW_LINES.header,
 		values: { lot: place.lot, state: place.state, branch: place.branch },
@@ -76,7 +88,7 @@ export function runLotReview(params: {
 			exitCode: 0,
 			lines: [
 				header,
-				missingChangeRequestLine({ place, number: landing?.number }),
+				missingChangeRequestLine({ place, nouns, number: landing?.number }),
 				...privateLines(place),
 			],
 		})
@@ -85,7 +97,7 @@ export function runLotReview(params: {
 		exitCode: 0,
 		lines: [
 			header,
-			...changeRequestLines({ place, changeRequest, landed: landing.head, checks }),
+			...changeRequestLines({ place, nouns, changeRequest, landed: landing.head, checks }),
 			...privateLines(place),
 			'',
 			approveLine({ place, changeRequest, landed: landing.head, checks }),
@@ -94,23 +106,31 @@ export function runLotReview(params: {
 	})
 }
 
-/** Why no pull request is shown: the lot never landed (lot land named), or its pull request is gone. */
-function missingChangeRequestLine(params: { place: LotPlace; number: number | undefined }): string {
+/** Why no change request is shown: the lot never landed (lot land named), or its change request is gone. */
+function missingChangeRequestLine(params: {
+	place: LotPlace
+	nouns: HostNouns
+	number: number | undefined
+}): string {
 	return params.number === undefined
-		? fillMessage({ template: LOT_REVIEW_LINES.noChangeRequest, values: { lot: params.place.lot } })
+		? fillMessage({
+				template: LOT_REVIEW_LINES.noChangeRequest,
+				values: { ...params.nouns, lot: params.place.lot },
+			})
 		: fillMessage({
 				template: LOT_REVIEW_LINES.changeRequestGone,
-				values: { number: String(params.number) },
+				values: { ...params.nouns, number: String(params.number) },
 			})
 }
 
 /**
- * `--pull`: the pull request's line comments not pulled yet, as findings of `round`; `review.jsonl` written again
+ * `--comments`: the change request's line comments not pulled yet, as findings of `round`; `review.jsonl` written again
  * when one was added.
  */
 function takeCommentFindings(params: {
 	place: LotPlace
 	round: number
+	nouns: HostNouns
 	host: HostAdapter | undefined
 	now: Date
 }): CommandResult {
@@ -120,7 +140,7 @@ function takeCommentFindings(params: {
 		return resultOf({
 			exitCode: 1,
 			lines: [
-				`${LOT_REVIEW_LINES.prefix}${fillMessage({ template: LOT_REVIEW_LINES.noChangeRequest, values: { lot: place.lot } })}`,
+				`${LOT_REVIEW_LINES.prefix}${fillMessage({ template: LOT_REVIEW_LINES.noChangeRequest, values: { ...params.nouns, lot: place.lot } })}`,
 			],
 		})
 	const host = params.host ?? createHost()
@@ -139,7 +159,10 @@ function takeCommentFindings(params: {
 		return resultOf({
 			exitCode: 0,
 			lines: [
-				fillMessage({ template: LOT_REVIEW_LINES.pulledNone, values: { number: String(number) } }),
+				fillMessage({
+					template: LOT_REVIEW_LINES.pulledNone,
+					values: { ...params.nouns, number: String(number) },
+				}),
 			],
 		})
 	const recorded = recordCommentFindings({
@@ -154,17 +177,7 @@ function takeCommentFindings(params: {
 	return resultOf({
 		exitCode: recorded.refusal === undefined ? 0 : 1,
 		lines: [
-			...findings.slice(0, ids.length).map((finding, index) =>
-				fillMessage({
-					template: LOT_REVIEW_LINES.pulled,
-					values: {
-						id: ids[index],
-						severity: finding.severity,
-						at: finding.at,
-						comment: String(finding.comment),
-					},
-				}),
-			),
+			...pulledLinesOf({ findings: findings.slice(0, ids.length), ids }),
 			...(recorded.refusal === undefined
 				? []
 				: [
@@ -178,9 +191,28 @@ function takeCommentFindings(params: {
 	})
 }
 
-/** The pull request's line, the three heads (pull request, landed, worktree) and its checks. */
+/** One line per finding a comment became: its id, severity, place and the comment it came from. */
+function pulledLinesOf(params: {
+	findings: ReturnType<typeof newCommentFindings>
+	ids: readonly string[]
+}): string[] {
+	return params.findings.map(function pulledLine(finding, index) {
+		return fillMessage({
+			template: LOT_REVIEW_LINES.pulled,
+			values: {
+				id: params.ids[index],
+				severity: finding.severity,
+				at: finding.at,
+				comment: String(finding.comment),
+			},
+		})
+	})
+}
+
+/** The change request's line, the three heads (change request, landed, worktree) and its checks. */
 function changeRequestLines(params: {
 	place: LotPlace
+	nouns: HostNouns
 	changeRequest: ChangeRequest
 	landed: string
 	checks: ChangeRequestChecks | { refusal: string }
@@ -196,11 +228,17 @@ function changeRequestLines(params: {
 	return [
 		fillMessage({
 			template: LOT_REVIEW_LINES.changeRequest,
-			values: { number: String(changeRequest.number), draft: kind, url: changeRequest.url },
+			values: {
+				...params.nouns,
+				number: String(changeRequest.number),
+				draft: kind,
+				url: changeRequest.url,
+			},
 		}),
 		fillMessage({
 			template: LOT_REVIEW_LINES.heads,
 			values: {
+				...params.nouns,
 				pushed: changeRequest.head.slice(0, SHORT_SHA_LENGTH),
 				landed: params.landed.slice(0, SHORT_SHA_LENGTH),
 				head: head.slice(0, SHORT_SHA_LENGTH),

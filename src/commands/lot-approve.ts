@@ -10,6 +10,8 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { prepareChangeRequest } from '../lib/change-request/change-request-sources.ts'
+import { keptPartOf } from '../lib/change-request/compose-change-request.ts'
 import { renderLotUsage } from '../lib/command-map/render-help.ts'
 import { resultOf } from '../lib/command-result.ts'
 import { designGateOf } from '../lib/design/design-gate.ts'
@@ -21,11 +23,9 @@ import { SHORT_SHA_LENGTH } from '../lib/gate-records/gate-records.constants.ts'
 import { readGit } from '../lib/git.ts'
 import { readLanding } from '../lib/handover/land-record.ts'
 import { stackQueueOf } from '../lib/handover/stack-queue.ts'
-import { createHost } from '../lib/host/select-host.ts'
+import { createHost, hostNounsOf } from '../lib/host/select-host.ts'
 import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { readPackageJson } from '../lib/package-json.ts'
-import { prepareChangeRequest } from '../lib/pr/change-request-sources.ts'
-import { keptPartOf } from '../lib/pr/compose-change-request.ts'
 import { forbiddenWordRefusal, isOneLine } from '../lib/review-rounds/option-checks.ts'
 import { openBlockingFindings, refreshReviewRecord } from '../lib/review-rounds/review-record.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
@@ -39,13 +39,19 @@ import {
 	APPROVAL_LINE_SCHEMA,
 	APPROVE_OPTIONS,
 	LOT_APPROVE_LINES,
+	QUEUE_VIA,
 } from './lot-approve.constants.ts'
-import { resolveLotPlace, sendRenderedText } from './lot-pr.ts'
+import { resolveLotPlace, sendRenderedText } from './lot-describe.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
-import type { HostAdapter, ChangeRequest, ChangeRequestChecks } from '../lib/host/host.types.ts'
+import type {
+	HostAdapter,
+	HostRefusal,
+	ChangeRequest,
+	ChangeRequestChecks,
+} from '../lib/host/host.types.ts'
 import type { ApprovalLine } from './lot-approve.types.ts'
-import type { LotPlace } from './lot-pr.types.ts'
+import type { LotPlace } from './lot-describe.types.ts'
 
 export function runLotApprove(params: {
 	cwd: string
@@ -364,6 +370,7 @@ function recordAndQueue(params: {
 	}
 	const warning = refreshReviewRecord({ folder: place.lotFolder })
 	const values = {
+		...hostNounsOf({ root: place.worktree }),
 		lot: place.lot,
 		by: approval.by,
 		head: approval.head.slice(0, SHORT_SHA_LENGTH),
@@ -385,20 +392,48 @@ function recordAndQueue(params: {
 			: route.route === 'stack'
 				? host.queueStack(queueParams)
 				: host.queueChangeRequest(queueParams)
-	const line =
-		queued === undefined
-			? fillMessage({
-					template: already ? LOT_APPROVE_LINES.alreadyApproved : LOT_APPROVE_LINES.approved,
-					values,
-				})
-			: fillMessage({
-					template: LOT_APPROVE_LINES.notQueued,
-					values: { ...values, refusal: queued.refusal },
-				})
+	const line = queuedLineOf({
+		queued,
+		already,
+		values,
+		via: () =>
+			route.route === 'stack'
+				? ''
+				: queueViaOf({ host, root: place.worktree, number: changeRequest.number }),
+	})
 	return resultOf({
 		exitCode: queued === undefined ? 0 : 1,
 		lines: warning === undefined ? [line] : [line, warning],
 	})
+}
+
+/** The approval's line: queued (the queue named by `via`, read only then), or not queued with the host's refusal. */
+function queuedLineOf(params: {
+	queued: HostRefusal | undefined
+	already: boolean
+	values: Record<string, string>
+	via: () => string
+}): string {
+	const { queued, values } = params
+	if (queued !== undefined)
+		return fillMessage({
+			template: LOT_APPROVE_LINES.notQueued,
+			values: { ...values, refusal: queued.refusal },
+		})
+	return fillMessage({
+		template: params.already ? LOT_APPROVE_LINES.alreadyApproved : LOT_APPROVE_LINES.approved,
+		values: { ...values, via: params.via() },
+	})
+}
+
+/**
+ * The queue the host merges the change request through, as the queued line names it: ` (<noun>)`; nothing when it
+ * offers none or the read is refused, so the read never fails an approval and no noun is guessed.
+ */
+function queueViaOf(params: { host: HostAdapter; root: string; number: number }): string {
+	const support = params.host.readQueueKind({ root: params.root, number: params.number })
+	if ('refusal' in support || support.kind === 'none') return ''
+	return fillMessage({ template: QUEUE_VIA, values: { noun: support.noun } })
 }
 
 /** Whether the folder holds this approver's approval of this head of this pull request already. */

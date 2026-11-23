@@ -1,4 +1,5 @@
 /** The host seam's constants, the same for every host. */
+import type { HostNouns } from './host.types.ts'
 
 /** The names of the known host vendors: what the config key `host` is checked against (`config/` imports this, never a vendor). */
 export const HOST_VENDOR_NAMES = ['github'] as const
@@ -27,5 +28,12 @@ export const HOST_READ_METHODS = [
 	'readChangeRequest',
 	'readChecks',
 	'readQueued',
+	'readQueueKind',
 	'probeStacks',
 ] as const
+
+/** The change-request nouns of a repository no vendor serves. */
+export const GENERIC_NOUNS: HostNouns = {
+	changeRequestNoun: 'change request',
+	changeRequestNouns: 'change requests',
+}

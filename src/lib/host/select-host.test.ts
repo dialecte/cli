@@ -5,7 +5,7 @@ import { delimiter, join } from 'node:path'
 import { createConfigWorkspace } from '../../../test/config-workspace.ts'
 import { createScratchRepository, git, temporaryFolder } from '../../../test/scratch-repository.ts'
 import { takeRefusingGhCalls } from '../../../test/suite-guard/refusing-gh.ts'
-import { createHost, hostnameOfSshConfig, vendorOf } from './select-host.ts'
+import { createHost, hostNounsOf, hostnameOfSshConfig, vendorOf } from './select-host.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -233,6 +233,7 @@ describe('createHost', () => {
 			'queueStack',
 			'readChangeRequest',
 			'readChecks',
+			'readQueueKind',
 			'readQueued',
 			'readReviewComments',
 			'retargetChangeRequest',
@@ -337,3 +338,30 @@ function answersOf(params: {
 		params.asked,
 	]
 }
+
+describe('hostNounsOf', () => {
+	it.each([
+		{
+			name: 'a github.com https origin',
+			origin: 'https://github.com/example/repo.git',
+			nouns: { changeRequestNoun: 'pull request', changeRequestNouns: 'pull requests' },
+		},
+		{
+			name: 'a local-path origin',
+			origin: '/srv/git/repo.git',
+			nouns: { changeRequestNoun: 'change request', changeRequestNouns: 'change requests' },
+		},
+		{
+			name: 'no origin',
+			origin: null,
+			nouns: { changeRequestNoun: 'change request', changeRequestNouns: 'change requests' },
+		},
+	])('$name → its nouns, no ssh asked', ({ origin, nouns }) => {
+		const seams = recordedSeams({})
+
+		expect([hostNounsOf({ root: repositoryWith(origin), ...seams }), seams.ssh]).toEqual([
+			nouns,
+			[],
+		])
+	})
+})

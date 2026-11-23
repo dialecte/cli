@@ -1,12 +1,12 @@
 /**
- * `dialecte lot review <id> --pull --round <n>`: the host refusing the pull request or its comments → exit 1 naming
+ * `dialecte lot review <id> --comments --round <n>`: the host refusing the pull request or its comments → exit 1 naming
  * the refusal, nothing written.
  */
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { recordingHost } from '../../test/land-lot.ts'
-import { LOT_NAME } from '../../test/lot-pr.constants.ts'
+import { LOT_NAME } from '../../test/lot-describe.constants.ts'
 import { landedLot } from '../../test/lot-review.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { LEDGER_FILE } from '../lib/review-rounds/review-rounds.constants.ts'
@@ -17,7 +17,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { HostAdapter } from '../lib/host/host.types.ts'
 
-describe('dialecte lot review --pull: host refusals', { timeout: STORE_CASE_TIMEOUT }, () => {
+describe('dialecte lot review --comments: host refusals', { timeout: STORE_CASE_TIMEOUT }, () => {
 	it.each([
 		{
 			label: 'the pull request',
@@ -40,7 +40,7 @@ describe('dialecte lot review --pull: host refusals', { timeout: STORE_CASE_TIME
 
 			const result = runLotReview({
 				cwd: lot.workspace.repository,
-				argv: [LOT_NAME, '--pull', '--round', '2'],
+				argv: [LOT_NAME, '--comments', '--round', '2'],
 				host: { ...host, ...refuse },
 			})
 

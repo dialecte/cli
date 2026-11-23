@@ -9,6 +9,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createBriefWorkspace, writeStoreLot } from '../../test/brief-workspace.ts'
+import { FIXTURE_TEMPLATE_PATH } from '../../test/change-request-template.constants.ts'
 import {
 	landingRepository,
 	landOnOrigin,
@@ -17,9 +18,10 @@ import {
 	recordingHost,
 	stackedRepository,
 } from '../../test/land-lot.ts'
-import { cliTemplate } from '../../test/lot-pr.ts'
+import { cliTemplate } from '../../test/lot-describe.ts'
 import { cloneRepository, git, temporaryFolder, writeFiles } from '../../test/scratch-repository.ts'
 import { SCRATCH_GIT_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
+import { templateFaultOf } from '../lib/change-request/compose-change-request.ts'
 import {
 	findHandoverStore,
 	recordHandoverState,
@@ -28,8 +30,6 @@ import {
 import { landLot } from '../lib/handover/land-lot.ts'
 import { readLanded } from '../lib/landing/landed-record.ts'
 import { STACK_RECORD_DAMAGED } from '../lib/landing/lot-landing.constants.ts'
-import { TEMPLATE_PATH } from '../lib/pr/change-request.constants.ts'
-import { templateFaultOf } from '../lib/pr/compose-change-request.ts'
 import { runLotLand } from './lot-land.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -421,7 +421,7 @@ describe('a stacked lot after its parent merged', { timeout: SCRATCH_GIT_CASE_TI
 function storeStack() {
 	const workspace = createBriefWorkspace()
 	const { repository } = workspace
-	writeFiles({ root: repository, files: { [TEMPLATE_PATH]: cliTemplate() } })
+	writeFiles({ root: repository, files: { [FIXTURE_TEMPLATE_PATH]: cliTemplate() } })
 	git({ root: repository, args: ['add', '-A'] })
 	git({ root: repository, args: ['commit', '-qm', 'chore: the template'] })
 	const origin = join(workspace.workspace, 'origin.git')

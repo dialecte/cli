@@ -1,10 +1,10 @@
+import { reviewerName } from '../change-request/compose-change-request.ts'
 /**
  * A lot's design standing in words (DESIGN-GATE section 4), the same for `lot design`, `lot status`, `lot start`,
  * `lot forecast` and the card: its state, who approved or waived it by kind (never a name), the need's reasons, and
  * what to run next.
  */
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
-import { reviewerName } from '../pr/compose-change-request.ts'
 import {
 	DESIGN_BY_PART,
 	DESIGN_NEED_LINES,

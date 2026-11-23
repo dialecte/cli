@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest'
 import type { PublicPiece, ChangeRequestSources } from './change-request.types.ts'
 
 const PATTERNS = [...GENERIC_REFERENCE_PATTERNS, ...forbiddenWordPatterns(['zorbco'])]
-const TREE_FILES = new Set(['src/x.ts', 'changes/x.md', 'src/lib/pr/x.ts'])
+const TREE_FILES = new Set(['src/x.ts', 'changes/x.md', 'src/lib/change-request/x.ts'])
 
 /** The refusal of one piece of `text` from the summary, plan entry `CI2a` and `ci2a-lot`, the test tree. */
 function refusalOf(text: string) {
@@ -62,7 +62,7 @@ describe('publicRefusalOf refuses what a public body never holds', () => {
 			'Folded from ci2a-lot.',
 			{ record: 'brief.json summary', label: 'plan entry id', word: 'ci2a-lot' },
 		],
-		['a folder of the tree', 'Moves the readers to `src/lib/pr/`.', undefined],
+		['a folder of the tree', 'Moves the readers to `src/lib/change-request/`.', undefined],
 		[
 			'a folder outside the tree',
 			'Moves them to `plans/a/b/`.',
@@ -282,7 +282,7 @@ describe('publicPiecesOf holds the quality lines', () => {
 				duplicates: [],
 				sharedExports: [
 					{
-						file: 'src/lib/pr/x.ts',
+						file: 'src/lib/change-request/x.ts',
 						line: 1,
 						name: 'zorbco',
 						folder: 'src/lib/pr',

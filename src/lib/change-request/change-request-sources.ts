@@ -1,5 +1,5 @@
 /**
- * The gathering half of `lot pr`: the lot's records read for its pull request, then checked as public text
+ * The gathering half of `lot describe`: the lot's records read for its change request, then checked as public text
  * (`prepareChangeRequest`). Every read is of the lot's store folder or of the committed head of its worktree (the tree
  * the pull request lands); a path it names passes only when a commit of the tree holds it. A record missing is undefined, never a guess.
  */
@@ -14,6 +14,8 @@ import { readContribRecord, readGateRecords } from '../gate-records/gate-records
 import { hashStateTree } from '../gate-records/state-hash.ts'
 import { readCommitOrNone, readFilesAtRevision, readGit, tryReadGit } from '../git.ts'
 import { readLanding } from '../handover/land-record.ts'
+import { HOST_VENDORS } from '../host/host-vendors.constants.ts'
+import { vendorOf } from '../host/select-host.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { lotBaseOf } from '../landing/lot-base.ts'
 import { readStackParent } from '../landing/read-stack-parent.ts'
@@ -40,12 +42,13 @@ import {
 	FRAGMENT_PATTERN,
 	HEAD_TREE,
 	CHANGE_REQUEST_LINES,
-	TEMPLATE_PATH,
+	TEMPLATE_PATHS_JOIN,
 } from './change-request.constants.ts'
 import { linesOf, templateFaultOf, titleVersionFault } from './compose-change-request.ts'
 import { publicPiecesOf, publicRefusalOf } from './public-body.ts'
 import { recordValueFault } from './record-values.ts'
 
+import type { HostVendorRecord } from '../host/host.types.ts'
 import type { BodyQuality } from '../quality/quality.types.ts'
 import type { RuleName } from '../rules/check-code-rules.types.ts'
 import type { ReferencePattern } from '../rules/committed-text.types.ts'
@@ -74,8 +77,14 @@ export function prepareChangeRequest(params: {
 	 * (the text it lands), or also the base (an early check of a lot cut before the template changed).
 	 */
 	templateRefs?: readonly string[]
+	/** The vendors whose templates the tree may hold (default: every known vendor). */
+	vendors?: readonly HostVendorRecord[]
 }): PreparedChangeRequest | { refusal: string } {
-	const template = templateOf({ worktree: params.worktree, refs: params.templateRefs ?? ['HEAD'] })
+	const template = templateOf({
+		worktree: params.worktree,
+		refs: params.templateRefs ?? ['HEAD'],
+		vendors: params.vendors ?? HOST_VENDORS,
+	})
 	if ('refusal' in template) return template
 	const sources = readChangeRequestSources(params)
 	if ('refusal' in sources) return sources
@@ -108,27 +117,48 @@ export function prepareChangeRequest(params: {
 }
 
 /**
- * The template of the first ref that holds one with every marker; else the refusal of the first ref: no template, or
- * the template's fault.
+ * The template of the first ref, then the first candidate path, that holds one with every marker; else the refusal of
+ * the first ref: no candidate path holds a template there, or the first one it holds has a fault. The candidates: the
+ * worktree's vendor's own path when it is one of `vendors`, else every vendor's path in list order.
  */
 function templateOf(params: {
 	worktree: string
 	refs: readonly string[]
+	vendors: readonly HostVendorRecord[]
 }): { text: string } | { refusal: string } {
-	const reads = params.refs.map(function templateAt(ref) {
-		const text = tryReadGit({ root: params.worktree, args: ['show', `${ref}:${TEMPLATE_PATH}`] })
-		return { text, fault: text === undefined ? undefined : templateFaultOf(text) }
+	const paths = templatePathsOf({ worktree: params.worktree, vendors: params.vendors })
+	const reads = params.refs.map(function templatesAt(ref) {
+		return paths.flatMap(function templateAt(path) {
+			const text = tryReadGit({ root: params.worktree, args: ['show', `${ref}:${path}`] })
+			return text === undefined ? [] : [{ path, text, fault: templateFaultOf(text) }]
+		})
 	})
-	const usable = reads.find((read) => read.text !== undefined && read.fault === undefined)
-	if (usable?.text !== undefined) return { text: usable.text }
-	const [first] = reads
-	if (first?.text === undefined)
-		return { refusal: CHANGE_REQUEST_LINES.noTemplateFile.replace('{template}', TEMPLATE_PATH) }
+	const usable = reads.flat().find((read) => read.fault === undefined)
+	if (usable !== undefined) return { text: usable.text }
+	const first = reads[0]?.[0]
+	if (first === undefined)
+		return {
+			refusal: fillMessage({
+				template: CHANGE_REQUEST_LINES.noTemplateFile,
+				values: { templates: paths.join(TEMPLATE_PATHS_JOIN) },
+			}),
+		}
 	return {
-		refusal: CHANGE_REQUEST_LINES.noTemplate
-			.replace('{template}', TEMPLATE_PATH)
-			.replace('{fault}', () => first.fault ?? ''),
+		refusal: fillMessage({
+			template: CHANGE_REQUEST_LINES.noTemplate,
+			values: { template: first.path, fault: first.fault ?? '' },
+		}),
 	}
+}
+
+/** The template paths a worktree is read for: its vendor's own when it is one of `vendors`, else every vendor's. */
+function templatePathsOf(params: {
+	worktree: string
+	vendors: readonly HostVendorRecord[]
+}): string[] {
+	const vendor = vendorOf({ root: params.worktree })
+	if (vendor !== undefined && params.vendors.includes(vendor)) return [vendor.changeRequestTemplate]
+	return params.vendors.map((each) => each.changeRequestTemplate)
 }
 
 /** The lot's sources for its pull request; the refusal when its brief does not read or names no commit message. */

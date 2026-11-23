@@ -8,6 +8,7 @@ import { repoKeyOf } from '../config/repo-key-of.ts'
 import { resolveConfig } from '../config/resolve-config.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { HOST_VENDORS } from './host-vendors.constants.ts'
+import { GENERIC_NOUNS } from './host.constants.ts'
 import {
 	GONE_ROOT_REFUSAL,
 	HOST_CONFIG_KEY,
@@ -21,7 +22,7 @@ import {
 	SSH_HOSTNAME_KEY,
 } from './select-host.constants.ts'
 
-import type { HostAdapter, HostRefusal, HostVendorRecord } from './host.types.ts'
+import type { HostAdapter, HostNouns, HostRefusal, HostVendorRecord } from './host.types.ts'
 import type { HostSelection, HostSelectionSeams } from './select-host.types.ts'
 
 /** The `hostname` line of an `ssh -G` output; undefined when it has none. */
@@ -155,6 +156,7 @@ function refusingHostOf(params: { why: string }): HostAdapter {
 		queueChangeRequest: refuse,
 		draftChangeRequest: refuse,
 		readQueued: refuse,
+		readQueueKind: refuse,
 		readChecks: refuse,
 		readReviewComments: refuse,
 		openFiles: refuse,
@@ -236,6 +238,9 @@ function forwardingHost(params: {
 		readQueued(params) {
 			return hostOf(params).readQueued(params)
 		},
+		readQueueKind(params) {
+			return hostOf(params).readQueueKind(params)
+		},
 		readChecks(params) {
 			return hostOf(params).readChecks(params)
 		},
@@ -258,4 +263,9 @@ function forwardingHost(params: {
 			return hostOf(params).retargetChangeRequest(params)
 		},
 	}
+}
+
+/** The change-request nouns printed for the repository at `root`: its vendor's, else the generic ones. */
+export function hostNounsOf(params: { root: string } & HostSelectionSeams): HostNouns {
+	return vendorOf(params)?.nouns ?? GENERIC_NOUNS
 }

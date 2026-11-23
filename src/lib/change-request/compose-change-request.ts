@@ -1,5 +1,5 @@
 /**
- * The pure half of `lot pr`: a lot's pull request text composed from its read records through the repository's one
+ * The pure half of `lot describe`: a lot's change request text composed from its read records through the repository's one
  * template. No file, git or host read here (`change-request-sources.ts` gathers). The body is the lot's final state:
  * each part from the record as it stands, "not recorded" for a record missing, never a guess.
  */

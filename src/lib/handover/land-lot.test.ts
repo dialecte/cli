@@ -5,10 +5,11 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { FIXTURE_TEMPLATE_PATH } from '../../../test/change-request-template.constants.ts'
 import { FIRST_WORD } from '../../../test/forbidden-words-workspace.constants.ts'
 import { configureMachine } from '../../../test/forbidden-words-workspace.ts'
 import { landingRepository, landOnOrigin, recordingHost } from '../../../test/land-lot.ts'
-import { cliTemplate } from '../../../test/lot-pr.ts'
+import { cliTemplate } from '../../../test/lot-describe.ts'
 import {
 	cloneRepository,
 	git,
@@ -16,7 +17,6 @@ import {
 	writeFiles,
 } from '../../../test/scratch-repository.ts'
 import { SCRATCH_GIT_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
-import { TEMPLATE_PATH } from '../pr/change-request.constants.ts'
 import { readStoreEntries, registeredEntryOf } from './handover-store-read.ts'
 import { handoverStoreOf, recordHandoverState, registerHandover } from './handover-store.ts'
 import { landLot } from './land-lot.ts'
@@ -716,7 +716,7 @@ describe(
 			const repository = landingRepository()
 			landOnOrigin({
 				origin: repository.origin,
-				files: { [TEMPLATE_PATH]: '### No markers here\n' },
+				files: { [FIXTURE_TEMPLATE_PATH]: '### No markers here\n' },
 			})
 			const { host, calls } = recordingHost()
 
@@ -797,7 +797,7 @@ describe(
 
 		it("a lot cut before main held the template's markers → its early check reads origin's template, it lands after its rebase", () => {
 			const repository = landingRepository({ template: null })
-			landOnOrigin({ origin: repository.origin, files: { [TEMPLATE_PATH]: cliTemplate() } })
+			landOnOrigin({ origin: repository.origin, files: { [FIXTURE_TEMPLATE_PATH]: cliTemplate() } })
 			const { host, calls } = recordingHost()
 
 			const landed = land({ repository, host })

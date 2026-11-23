@@ -6,7 +6,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { recordingHost } from '../../test/land-lot.ts'
-import { LOT_NAME } from '../../test/lot-pr.constants.ts'
+import { LOT_NAME } from '../../test/lot-describe.constants.ts'
 import {
 	OTHER_HEAD,
 	OTHER_PACKAGE,
@@ -19,7 +19,7 @@ import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { readReviewRecord } from '../lib/review-rounds/review-record.ts'
 import { STORE_FILES } from '../lib/store/store.constants.ts'
 import { runLotApprove } from './lot-approve.ts'
-import { runLotPr } from './lot-pr.ts'
+import { runLotDescribe } from './lot-describe.ts'
 
 import { describe, expect, it } from 'vitest'
 
@@ -99,11 +99,11 @@ describe(
 
 			expect(first.exitCode).toBe(1)
 			expect(first.output).toBe(
-				`lot approve: ${LOT_NAME} approved by ${REVIEWER} on ${lot.head.slice(0, 12)}, pull request #${REVIEW_CHANGE_REQUEST_NUMBER} not queued: gh pr merge: HTTP 502`,
+				`lot approve: ${LOT_NAME} approved by ${REVIEWER} on ${lot.head.slice(0, 12)}, change request #${REVIEW_CHANGE_REQUEST_NUMBER} not queued: gh pr merge: HTTP 502`,
 			)
 			expect(second.exitCode).toBe(0)
 			expect(second.output).toBe(
-				`lot approve: ${LOT_NAME} already approved by ${REVIEWER} on ${lot.head.slice(0, 12)}, pull request #${REVIEW_CHANGE_REQUEST_NUMBER} queued`,
+				`lot approve: ${LOT_NAME} already approved by ${REVIEWER} on ${lot.head.slice(0, 12)}, change request #${REVIEW_CHANGE_REQUEST_NUMBER} queued`,
 			)
 			expect(queuing.calls.at(-1)).toBe(`queue ${REVIEW_CHANGE_REQUEST_NUMBER}`)
 			expect(approvalLines(lot.lotFolder)).toHaveLength(1)
@@ -125,7 +125,10 @@ describe(
 			writeFileSync(join(lot.worktree, 'src', 'x.ts'), 'export const x = 2\n')
 			git({ root: lot.worktree, args: ['commit', '-qam', 'fix(x): two'] })
 
-			const rendered = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME, '--print'] })
+			const rendered = runLotDescribe({
+				cwd: lot.workspace.repository,
+				argv: [LOT_NAME, '--print'],
+			})
 
 			expect(rendered.exitCode).toBe(0)
 			expect(rendered.output).not.toContain('person: approve')

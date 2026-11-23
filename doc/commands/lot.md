@@ -43,8 +43,8 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
   dialecte lot report --kept [--json]
   dialecte lot export <id> <dir> [--json]
   dialecte lot brief <id> --from <brief.json> --by <who> --reason <text>
-  dialecte lot pr <id> [--print] [--json]
-  dialecte lot review <id> [--no-open] | lot review <id> --pull --round <n>
+  dialecte lot describe <id> [--print] [--json]
+  dialecte lot review <id> [--no-open] | lot review <id> --comments --round <n>
   dialecte lot approve <id> --by <who> [--reason <text>]
   dialecte lot design <id> [--from <file> | --from-plan | --approve --by <who> [--reason <text>] | --waive --by <who> --reason <text>] [--json]
   dialecte lot land <id>
@@ -127,23 +127,25 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
           brief and a brief transition records the sha256 of the old and new brief, --by and
           --reason, the state and position kept; the same brief again answers already, nothing
           written; a simulated lot is refused; brief.json edited any other way reads as damage
-  pr - renders the lot's pull request from its records through the repository's
-       .github/pull_request_template.md: the title is the brief's first commit message (changed with
-       lot brief), the body its summary and other commit messages, step titles and behaviours, the
-       changelog fragments the lot adds, tests.json (a part of another tree reads stale),
-       review.jsonl (findings and how each closed, the verdicts by reviewer kind, never a name; a
-       row value its writer never writes refused), the risk class and effort, the overlaps it
-       accepted (the other lot by its index, and why), the issue it closes, and the author's
-       checklist ticked from the records; a missing record reads not recorded; a lot that changes
-       package.json's version is refused when its title does not name the new version (read at the
-       lot's own fork point: a lot started on an open release lot sets none), naming lot brief; the
-       record text is checked first (a reference, a forbidden word, a plan entry id, a link or a
-       path outside the tree refused, naming the word and the record); the open pull request
-       (landing.json's, else the branch's newest) is edited only when its title or body reads
-       otherwise, a person's part after the kept marker kept (a body without that heading holding a
-       person's text refused, never dropped); a damaged lot refused; --print prints and sends
-       nothing; no pull request yet prints the text and names lot land; --json { title, body,
-       changeRequest, head, sent }
+  describe - renders the lot's change request from its records through the repository's
+             change-request template (its host's path; with no host known, the first host template
+             the tree holds): the title is the brief's first commit message (changed with lot
+             brief), the body its summary and other commit messages, step titles and behaviours, the
+             changelog fragments the lot adds, tests.json (a part of another tree reads stale),
+             review.jsonl (findings and how each closed, the verdicts by reviewer kind, never a
+             name; a row value its writer never writes refused), the risk class and effort, the
+             overlaps it accepted (the other lot by its index, and why), the issue it closes, and
+             the author's checklist ticked from the records; a missing record reads not recorded; a
+             lot that changes package.json's version is refused when its title does not name the new
+             version (read at the lot's own fork point: a lot started on an open release lot sets
+             none), naming lot brief; the record text is checked first (a reference, a forbidden
+             word, a plan entry id, a link or a path outside the tree refused, naming the word and
+             the record); the open change request (landing.json's, else the branch's newest) is
+             edited only when its title or body reads otherwise, a person's part after the kept
+             marker kept (a body without that heading holding a person's text refused, never
+             dropped); a damaged lot refused; --print prints and sends nothing; no change request
+             yet prints the text and names lot land; --json { title, body, changeRequest, head, sent
+             }
   review - the private half of the lot's review, read-only (nothing written): the lot's state and
            branch, its pull request (landing.json's) with the head it is at, the head the lot landed
            and the worktree's HEAD, its checks, the brief's goal and steps (title, spec,
@@ -153,12 +155,12 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
            in the browser (--no-open names the page only; an opener that fails is named, never an
            exit); a lot without a landing prints its private half and names lot land <id>, the host
            never asked
-  review --pull - the pull request's line comments come back as findings of round <n> in the lot's
-    findings ledger: a thread's first comment only (replies discuss it), each once
+  review --comments - the change request's line comments come back as findings of round <n> in the
+    lot's findings ledger: a thread's first comment only (replies discuss it), each once
     (pulled-comments.jsonl records the comment and its finding; a second pull answers already), its
     severity from a leading blocking:, should-fix: or nit: (dropped from the text, kept when it is
     all the comment says), else should-fix, at its path:line (the path alone for a comment on the
-    file), its lines joined into one; review.jsonl written again; private points stay off the pull
+    file), its lines joined into one; review.jsonl written again; private points stay off the change
     request: lot finding records them
   approve - a person's approval of the lot's pull request: refused (exit 1, nothing recorded,
             nothing queued) unless the lot is at work, the pull request landing.json names is open
@@ -182,7 +184,9 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
             own lots only (the package named @dialecte/cli), every other package waits for a person
             (exit 2); a forbidden word in --by or --reason, or a --by holding what a public record
             never holds, refused (exit 2) before the host is asked; a lot without a landing names
-            lot land <id>
+            lot land <id>; the queued line names the queue the host answers for the change request's
+            base (queued (merge queue), queued (auto-merge)), nothing when it offers none, the read
+            is refused or the lot is stacked
   design - a lot's design (design before code): --from <file> records it by the sha256 of its bytes,
            appending { schema, at, kind: recorded, file, hash, from } to the lot folder's
            design.jsonl and keeping its copy as design/<hash>.md (the copy rules once the source is
@@ -244,7 +248,7 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
          nothing pushed; with uncommitted tracked changes it is pushed as committed, the rebase left
          for a clean worktree), pushed with a lease, its title and body rendered from the lot's
          records through the repository's .github/pull_request_template.md on the rebased head
-         before the push (as lot pr renders them; records that do not render, or a base branch
+         before the push (as lot describe renders them; records that do not render, or a base branch
          origin does not hold, push nothing), its pull request opened with them as a draft or reused
          (edited when its title or body reads otherwise, a person's part after the kept marker
          kept), never queued: CI runs on every push and lot approve, a person's step, queues it; a
@@ -633,9 +637,9 @@ exit codes:
 e.g. dialecte lot finding ../handover --round 1 --severity nit --at src/a.ts:3 "a finding"
 ```
 
-Verbs: `start`, `status`, `forecast`, `risk`, `wait`, `answer`, `result`, `stop`, `scope`, `keep`, `unkeep`, `station`, `exempt`, `accept`, `revised`, `gone`, `moved`, `mutation`, `finding`, `decide`, `snapshot`, `choice`, `standard`, `delta`, `recap`, `verify`, `report`, `export`, `brief`, `pr`, `review`, `approve`, `design`, `land`, `close`, `prune`
+Verbs: `start`, `status`, `forecast`, `risk`, `wait`, `answer`, `result`, `stop`, `scope`, `keep`, `unkeep`, `station`, `exempt`, `accept`, `revised`, `gone`, `moved`, `mutation`, `finding`, `decide`, `snapshot`, `choice`, `standard`, `delta`, `recap`, `verify`, `report`, `export`, `brief`, `describe`, `review`, `approve`, `design`, `land`, `close`, `prune`
 
-Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`, `--json`, `--on`, `--keep`, `--against`, `--class`, `--timeout`, `--drop`, `--add`, `--step`, `--round`, `--attempt`, `--agent`, `--executor`, `--vendor`, `--model`, `--tier`, `--session`, `--skill`, `--skill-asked`, `--event`, `--run`, `--tokens-in`, `--tokens-out`, `--tokens-cache-read`, `--tokens-cache-write`, `--tokens-total`, `--money`, `--duration`, `--exit`, `--verdict`, `--suite`, `--from`, `--remove`, `--severity`, `--at`, `--beyond-cap`, `--worktree`, `--note`, `--feature`, `--simulated`, `--kept`, `--print`, `--no-open`, `--pull`, `--from-plan`, `--approve`, `--waive`, `--all`, `--yes`
+Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`, `--json`, `--on`, `--keep`, `--against`, `--class`, `--timeout`, `--drop`, `--add`, `--step`, `--round`, `--attempt`, `--agent`, `--executor`, `--vendor`, `--model`, `--tier`, `--session`, `--skill`, `--skill-asked`, `--event`, `--run`, `--tokens-in`, `--tokens-out`, `--tokens-cache-read`, `--tokens-cache-write`, `--tokens-total`, `--money`, `--duration`, `--exit`, `--verdict`, `--suite`, `--from`, `--remove`, `--severity`, `--at`, `--beyond-cap`, `--worktree`, `--note`, `--feature`, `--simulated`, `--kept`, `--print`, `--no-open`, `--comments`, `--from-plan`, `--approve`, `--waive`, `--all`, `--yes`
 <!-- /dialecte-reference -->
 
 - `dialecte lot start <brief.json> [--effort low|medium|high] [--by <who> --reason <text>] [--dry-run] [--simulate <scenario>] [--json]` starts a lot from its brief
@@ -1146,13 +1150,13 @@ Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`
 files stay in the worktree and are named, `uncommitted, not pushed: N files`), rebased onto `origin/<base>` when
 behind it (a conflict undone, its files named, nothing pushed; with a tracked file changed git cannot rebase: the lot
 is pushed as committed, a line saying the rebase waits for a clean worktree; CI tests the merge with the base), pushed
-with a lease, its pull request opened or reused with the title and body `lot pr` renders from the lot's records
+with a lease, its pull request opened or reused with the title and body `lot describe` renders from the lot's records
 through `.github/pull_request_template.md`, on the rebased head before the push: the title is the lot's own message
 (the first commit lot of its brief), never the branch's last commit, so a merge of main never becomes the squash title,
 and the body is the lot's final state, never its commit bodies. The message is changed with `dialecte lot brief`, so a
 re-versioned release lot needs no hand edit of its title. A lot that changes package.json's version (read at the lot's
 own fork point: a lot started on an open release lot sets none of its own) is refused while its title does not name
-the new version, by `lot pr`, `lot land` before anything is pushed and `lot approve` before anything is queued. A
+the new version, by `lot describe`, `lot land` before anything is pushed and `lot approve` before anything is queued. A
 reused pull request whose title or body reads otherwise is edited, a person's part after the template's kept marker
 kept; records that do not render push nothing.
 The pull request is always a draft and `lot land` never queues it: CI runs on every push while the lot goes on, and
@@ -1178,7 +1182,7 @@ record, `decisions.md`, every finding with its text and state, the standard line
 then it opens the Files tab. It writes nothing.
 
 Points that can be public are line comments on the pull request, prefixed `blocking:`, `should-fix:` or `nit:`
-(should-fix when none). `dialecte lot review <id> --pull --round <n>` brings them back as findings of round n, each
+(should-fix when none). `dialecte lot review <id> --comments --round <n>` brings them back as findings of round n, each
 comment once; the lot fixes them as a review round. Private points (the plans, the standard) never go on GitHub: they
 are recorded with `lot finding`.
 

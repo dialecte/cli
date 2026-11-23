@@ -511,7 +511,7 @@ describe('the cli declared list', () => {
 			'src/lib/handover/sync-node-modules.ts',
 			'src/lib/landing/**',
 			'src/lib/gate-records/**',
-			'src/lib/pr/**',
+			'src/lib/change-request/**',
 			'src/lib/plan/**',
 			'src/lib/risk/**',
 			'src/lib/design/**',

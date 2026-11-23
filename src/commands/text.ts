@@ -1,5 +1,5 @@
 /**
- * `dialecte text check <file> [--kind pr|issue|comment|commit]`: checks the human part of a GitHub text
+ * `dialecte text check <file> [--kind change-request|issue|comment|commit]`: checks the human part of a host text
  * before the user posts it - its fixed headings and its word cap.
  */
 import { existsSync, readFileSync } from 'node:fs'

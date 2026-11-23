@@ -153,18 +153,48 @@ function probeViewChecks(params: Parameters<HostProbe<typeof GITHUB_CALLS>>[0]):
 
 /** Whether the pull request is queued. */
 function probeQueuedState(params: Parameters<HostProbe<typeof GITHUB_CALLS>>[0]): HostLine {
+	return probeNumberedRead({
+		params,
+		read: (number) => params.host.readQueued({ root: params.root, number }),
+		template: GITHUB_PROBE_TEXTS.queuedRead,
+		valuesOf: (answer) => ({ queued: String(answer.queued) }),
+	})
+}
+
+/**
+ * One read of the probed pull request by its number: a warning when there is none to probe, an error carrying the
+ * read's refusal, else an ok line from `template` with the number and `valuesOf` the answer.
+ */
+function probeNumberedRead<Answer extends object>(probe: {
+	params: Parameters<HostProbe<typeof GITHUB_CALLS>>[0]
+	read: (number: number) => Answer | HostRefusal
+	template: string
+	valuesOf: (answer: Answer) => Record<string, string>
+}): HostLine {
+	const { params } = probe
 	if (params.changeRequest === undefined) return needsPullRequest(params)
-	const queued = params.host.readQueued({ root: params.root, number: params.changeRequest })
-	if ('refusal' in queued)
-		return { status: 'error', subject: params.subject, detail: queued.refusal }
+	const answer = probe.read(params.changeRequest)
+	if ('refusal' in answer)
+		return { status: 'error', subject: params.subject, detail: answer.refusal }
 	return {
 		status: 'ok',
 		subject: params.subject,
 		detail: fillMessage({
-			template: GITHUB_PROBE_TEXTS.queuedRead,
-			values: { number: String(params.changeRequest), queued: String(queued.queued) },
+			template: probe.template,
+			values: { number: String(params.changeRequest), ...probe.valuesOf(answer) },
 		}),
 	}
+}
+
+// dialecte-allow duplicate-read: both probes share probeNumberedRead; each names its own read and line
+/** The queue the probed pull request's base offers, through the adapter's own read. */
+function probeQueueSettings(params: Parameters<HostProbe<typeof GITHUB_CALLS>>[0]): HostLine {
+	return probeNumberedRead({
+		params,
+		read: (number) => params.host.readQueueKind({ root: params.root, number }),
+		template: GITHUB_PROBE_TEXTS.queueKindRead,
+		valuesOf: (answer) => ({ kind: answer.kind, noun: answer.noun }),
+	})
 }
 
 /** The reference pull request's line comments, through the adapter's own read: one on a line and one reply at least. */
@@ -224,6 +254,7 @@ export const GITHUB_PROBES: Record<
 	viewPullRequest: probeViewPullRequest,
 	viewChecks: probeViewChecks,
 	queuedState: probeQueuedState,
+	queueSettings: probeQueueSettings,
 	reviewComments: probeReviewComments,
 	stackHelp: probeStackHelp,
 }

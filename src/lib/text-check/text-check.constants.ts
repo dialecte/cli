@@ -1,36 +1,37 @@
 /** The kinds, headings, caps and wordings of `dialecte text check`. */
 import type { TextKind } from './text-check.types.ts'
 
-export const TEXT_USAGE = 'text: check <file> [--kind pr|issue|comment|commit]'
+export const TEXT_USAGE = 'text: check <file> [--kind change-request|issue|comment|commit]'
 
-export const TEXT_CHECK_USAGE = 'text check: expected <file> [--kind pr|issue|comment|commit]'
+export const TEXT_CHECK_USAGE =
+	'text check: expected <file> [--kind change-request|issue|comment|commit]'
 
 /** The options `text check` takes followed by a value, without the dashes. */
 export const TEXT_CHECK_OPTIONS = ['kind'] as const
 
-export const DEFAULT_TEXT_KIND: TextKind = 'pr'
+export const DEFAULT_TEXT_KIND: TextKind = 'change-request'
 
 /**
- * The word cap of each kind: a pull request points at its diff; an issue stands alone, so it carries the
- * context a pull request leaves to the code; a comment answers one point; a commit body says the why.
+ * The word cap of each kind: a change request points at its diff; an issue stands alone, so it carries the
+ * context a change request leaves to the code; a comment answers one point; a commit body says the why.
  */
 export const WORD_CAPS: Readonly<Record<TextKind, number>> = {
-	pr: 150,
+	'change-request': 150,
 	issue: 200,
 	comment: 80,
 	commit: 100,
 }
 
-/** The headings a pull request or an issue holds, in their order. */
+/** The headings a change request or an issue holds, in their order. */
 export const REQUIRED_HEADINGS: readonly string[] = ['What changes', 'Why', 'How to check it']
 
 /** The heading that comes last, only when it has something to say. */
 export const OPTIONAL_HEADING = 'Watch out'
 
 /** The kinds that hold the fixed headings; the others hold none. */
-export const HEADED_KINDS: readonly TextKind[] = ['pr', 'issue']
+export const HEADED_KINDS: readonly TextKind[] = ['change-request', 'issue']
 
-/** The longest commit subject: git cuts longer ones in logs, GitHub in its list. */
+/** The longest commit subject: git cuts longer ones in its one-line logs. */
 export const SUBJECT_MAX_LENGTH = 72
 
 /** A line where the recap starts (trimmed): the human part is every line before it. */

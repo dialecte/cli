@@ -5,6 +5,10 @@ export type HostSeamVendor = {
 	name: string
 	/** The cli the vendor runs: its exact literal is the vendor's alone. */
 	tool: string
+	/** Its change-request noun as words of an identifier, lower case: refused outside every vendor's folders. */
+	nounWords: readonly string[]
+	/** Its change-request noun in a file's path: refused outside every vendor's folders. */
+	nounPathPattern: RegExp
 }
 
 /**

@@ -2,18 +2,18 @@
 
 <!-- dialecte-reference: generated from the command map by npm run doc:generate; edit the map, not this block -->
 
-The human part of a GitHub text, before it is posted
+The human part of a host text, before it is posted
 
 ```text
-text - The human part of a GitHub text, before it is posted
+text - The human part of a host text, before it is posted
 
-  dialecte text check <file> [--kind pr|issue|comment|commit]
+  dialecte text check <file> [--kind change-request|issue|comment|commit]
 
-  the lines before <details: headings What changes, Why, How to check it (then Watch out) for pr and
-    issue, none for comment and commit; word cap 150 | 200 | 80 | 100, headings and code blocks not
-    counted; a commit subject of 72 at most
+  the lines before <details: headings What changes, Why, How to check it (then Watch out) for
+    change-request and issue, none for comment and commit; word cap 150 | 200 | 80 | 100, headings
+    and code blocks not counted; a commit subject of 72 at most
 
-e.g. dialecte text check pr.md --kind pr
+e.g. dialecte text check change-request.md
 ```
 
 Verbs: `check`
@@ -27,7 +27,7 @@ Text written with an assistant tends to retell the diff and grow long. The pull 
 an expandable part made from records, and a short human part that is checked before it is posted. Both
 commands only print; the user posts.
 
-- `dialecte text check <file> [--kind pr|issue|comment|commit]` checks every line before the first `<details`
+- `dialecte text check <file> [--kind change-request|issue|comment|commit]` checks every line before the first `<details`
   line (the recap is not checked). A pull request or an issue holds the headings `What changes`, `Why`, `How
   to check it` in this order, then `Watch out` only when it has something to say; each with text under it,
   nothing before the first. A comment or a commit holds no heading; a commit's line 1 is its subject, not

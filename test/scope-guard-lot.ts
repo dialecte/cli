@@ -8,14 +8,14 @@ import { appendFileSync, realpathSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { runLot } from '../src/commands/lot.ts'
-import { TEMPLATE_PATH } from '../src/lib/pr/change-request.constants.ts'
 import { STORE_FILES, STORE_FOLDER } from '../src/lib/store/store.constants.ts'
 import { createBriefWorkspace, writeStoreLot } from './brief-workspace.ts'
+import { FIXTURE_TEMPLATE_PATH } from './change-request-template.constants.ts'
 import { replaceRecord } from './damaged-lot-workspace.ts'
 import { writeLotsFile } from './handover-store-scenario.ts'
 import { commitIn } from './landing-repository.ts'
+import { cliTemplate } from './lot-describe.ts'
 import { startRealLot, writeLotHandover } from './lot-handover-workspace.ts'
-import { cliTemplate } from './lot-pr.ts'
 import { countingStep, createCounter, writeHandoverFolder } from './scratch-checks.ts'
 import { createScratchRepository, git, temporaryFolder, writeFiles } from './scratch-repository.ts'
 
@@ -61,7 +61,7 @@ export function scopeGuardLotOf(
 			}),
 			'src/legacy.ts': 'export const legacy = 1\n',
 			// the pull request template a landing renders its text through
-			[TEMPLATE_PATH]: cliTemplate(),
+			[FIXTURE_TEMPLATE_PATH]: cliTemplate(),
 			...params.baseFiles,
 		},
 		message: 'chore: the package',

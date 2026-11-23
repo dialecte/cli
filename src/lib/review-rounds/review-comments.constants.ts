@@ -1,4 +1,4 @@
-/** `lot review --pull`: how a pull request's line comment becomes a finding. */
+/** `lot review --comments`: how a change request's line comment becomes a finding. */
 
 /** A comment's leading severity word and its colon (`blocking:`, `should-fix:`, `should fix:`, `nit:`), any case. */
 export const COMMENT_SEVERITY_PATTERN = /^\s*(blocking|should[- ]fix|nit)\s*:\s*/i

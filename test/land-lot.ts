@@ -1,8 +1,8 @@
 /** A repository with a bare origin and a lot worktree on its own branch, and a host that records what it is asked. */
 import { join } from 'node:path'
 
-import { TEMPLATE_PATH } from '../src/lib/pr/change-request.constants.ts'
-import { cliTemplate } from './lot-pr.ts'
+import { FIXTURE_TEMPLATE_PATH } from './change-request-template.constants.ts'
+import { cliTemplate } from './lot-describe.ts'
 import { commitEmpty } from './rule-gaps-base-branch.ts'
 import {
 	cloneRepository,
@@ -16,6 +16,8 @@ import type {
 	HostAdapter,
 	ChangeRequest,
 	ChangeRequestChecks,
+	HostRefusal,
+	QueueSupport,
 	ReviewComment,
 } from '../src/lib/host/host.types.ts'
 import type {
@@ -38,7 +40,7 @@ export function landingRepository(
 	const template = params.template === undefined ? cliTemplate() : params.template
 	const root = initializeRepository({
 		root: join(folder, 'repo'),
-		files: template === null ? {} : { [TEMPLATE_PATH]: template },
+		files: template === null ? {} : { [FIXTURE_TEMPLATE_PATH]: template },
 	})
 	git({ root: folder, args: ['init', '-q', '--bare', '-b', 'main', origin] })
 	git({ root, args: ['remote', 'add', 'origin', origin] })
@@ -168,6 +170,8 @@ export function recordingHost(
 		comments?: ReviewComment[]
 		/** The host's refusal of a queue; queued when absent. */
 		queueRefusal?: string
+		/** The queue the change request's base offers, its reads recorded; the read refused, unrecorded, when absent. */
+		queueKind?: QueueSupport | HostRefusal
 		/** Whether the host links stacks; when not, why (the default: no stacks). */
 		stacks?: true | string
 		/** A stack parent's pull request, answered when read by its number or by `parentBranch`. */
@@ -244,6 +248,11 @@ export function recordingHost(
 				(changeRequest) => changeRequest?.number === call.number,
 			)
 			return { queued: known?.queued === true || (params.mergeQueue ?? []).includes(call.number) }
+		},
+		readQueueKind: function readQueueKind(call) {
+			if (params.queueKind === undefined) return { refusal: 'no queue kind in this fake' }
+			calls.push(`queue-kind ${call.number}`)
+			return params.queueKind
 		},
 		readChecks: function readChecks(call) {
 			calls.push(`checks ${call.number}`)

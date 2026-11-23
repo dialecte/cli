@@ -5,6 +5,10 @@ import { createGithubHost } from './github-host.ts'
 import { GITHUB_PROBES, GITHUB_SUBJECT } from './github-probes.ts'
 import {
 	GH_COMMAND,
+	GITHUB_CHANGE_REQUEST_TEMPLATE,
+	GITHUB_NOUN_PATH_PATTERN,
+	GITHUB_NOUN_WORDS,
+	GITHUB_NOUNS,
 	GITHUB_REMOTE_HOSTS,
 	GITHUB_SUBJECT_CALL,
 	GITHUB_VENDOR_NAME,
@@ -22,6 +26,10 @@ export const GITHUB_VENDOR: HostVendor<typeof GITHUB_CALLS, typeof GITHUB_SUBJEC
 	name: GITHUB_VENDOR_NAME,
 	tool: GH_COMMAND,
 	remoteHosts: GITHUB_REMOTE_HOSTS,
+	nouns: GITHUB_NOUNS,
+	changeRequestTemplate: GITHUB_CHANGE_REQUEST_TEMPLATE,
+	nounWords: GITHUB_NOUN_WORDS,
+	nounPathPattern: GITHUB_NOUN_PATH_PATTERN,
 	calls: GITHUB_CALLS,
 	recordedVersions: GITHUB_RECORDED_VERSIONS,
 	subject: GITHUB_SUBJECT,

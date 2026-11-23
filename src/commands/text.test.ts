@@ -5,7 +5,7 @@ import { runText } from './text.ts'
 
 import { describe, expect, it } from 'vitest'
 
-const TEXT_CHECK_USAGE = 'text check: expected <file> [--kind pr|issue|comment|commit]'
+const TEXT_CHECK_USAGE = 'text check: expected <file> [--kind change-request|issue|comment|commit]'
 
 /** `count` distinct words: `<stem>1 <stem>2 ...`. */
 function words(params: { count: number; stem?: string }): string {
@@ -55,7 +55,11 @@ function checkCall(params: { root: string; file?: string; kind?: string }) {
 
 describe('dialecte text check - the word cap', () => {
 	it.each([
-		{ kind: 'pr', cap: 150, body: sectionsBody({ whatChanges: 50, why: 50, howToCheck: 50 }) },
+		{
+			kind: 'change-request',
+			cap: 150,
+			body: sectionsBody({ whatChanges: 50, why: 50, howToCheck: 50 }),
+		},
 		{ kind: 'issue', cap: 200, body: sectionsBody({ whatChanges: 70, why: 70, howToCheck: 60 }) },
 	])(
 		'$kind at its cap of $cap (heading words not counted) → exit 0, the count and headings ok',
@@ -69,12 +73,12 @@ describe('dialecte text check - the word cap', () => {
 		},
 	)
 
-	it('no --kind → pr', () => {
+	it('no --kind → change-request', () => {
 		const root = textFolder({ 'body.md': sectionsBody({ whatChanges: 3, why: 4, howToCheck: 5 }) })
 
 		expect(runText(checkCall({ root }))).toEqual({
 			exitCode: 0,
-			output: 'text check: body.md - pr, 12 of 150 words, headings ok',
+			output: 'text check: body.md - change-request, 12 of 150 words, headings ok',
 		})
 	})
 
@@ -161,14 +165,14 @@ describe('dialecte text check - the word cap', () => {
 
 			expect(runText(checkCall({ root }))).toEqual({
 				exitCode: 0,
-				output: 'text check: body.md - pr, 150 of 150 words, headings ok',
+				output: 'text check: body.md - change-request, 150 of 150 words, headings ok',
 			})
 		},
 	)
 
 	it.each([
 		{
-			kind: 'pr',
+			kind: 'change-request',
 			cap: 150,
 			body: sectionsBody({ whatChanges: 50, why: 50, howToCheck: 51 }),
 			line: 8,
@@ -260,7 +264,7 @@ describe('dialecte text check - what is a heading, where the recap starts', () =
 
 		expect(runText(checkCall({ root }))).toEqual({
 			exitCode: 0,
-			output: 'text check: body.md - pr, 9 of 150 words, headings ok',
+			output: 'text check: body.md - change-request, 9 of 150 words, headings ok',
 		})
 	})
 })
@@ -297,7 +301,10 @@ describe('dialecte text check - the headings of a pr or an issue', () => {
 
 		expect(runText(checkCall({ root }))).toEqual({
 			exitCode: 1,
-			output: ['text check: body.md - pr: 1 problem', 'body.md: missing heading "Why"'].join('\n'),
+			output: [
+				'text check: body.md - change-request: 1 problem',
+				'body.md: missing heading "Why"',
+			].join('\n'),
 		})
 	})
 
@@ -335,7 +342,7 @@ describe('dialecte text check - the headings of a pr or an issue', () => {
 			exitCode: 1,
 			output: expect.stringMatching(
 				new RegExp(
-					`^text check: body\\.md - pr: 1 problem\\nbody\\.md:${line}: \\S[^\\n]* - ${escapeRegExp(text)}$`,
+					`^text check: body\\.md - change-request: 1 problem\\nbody\\.md:${line}: \\S[^\\n]* - ${escapeRegExp(text)}$`,
 				),
 			),
 		})
@@ -375,7 +382,7 @@ describe('dialecte text check - the headings of a pr or an issue', () => {
 
 		expect(runText(checkCall({ root }))).toEqual({
 			exitCode: 0,
-			output: 'text check: body.md - pr, 7 of 150 words, headings ok',
+			output: 'text check: body.md - change-request, 7 of 150 words, headings ok',
 		})
 	})
 
@@ -397,7 +404,7 @@ describe('dialecte text check - the headings of a pr or an issue', () => {
 			output: expect.stringMatching(
 				new RegExp(
 					[
-						'^text check: body\\.md - pr: 3 problems',
+						'^text check: body\\.md - change-request: 3 problems',
 						'body\\.md:4: \\S[^\\n]* - ## Notes',
 						'body\\.md: missing heading "Why"',
 						'body\\.md: 151 words, the cap is 150 \\(cut 1\\)',
@@ -417,7 +424,7 @@ describe('dialecte text check - the headings of a pr or an issue', () => {
 			output: expect.stringMatching(
 				new RegExp(
 					[
-						'^text check: body\\.md - pr: 4 problems',
+						'^text check: body\\.md - change-request: 4 problems',
 						'body\\.md:1: \\S[^\\n]* - Hello there',
 						'body\\.md:2: \\S[^\\n]* - ## Notes',
 						'body\\.md:6: \\S[^\\n]* - ## Why',
@@ -523,6 +530,7 @@ describe('dialecte text - usage', () => {
 	it.each([
 		{ label: 'no file', argv: ['check'] },
 		{ label: 'an unknown kind', argv: ['check', 'body.md', '--kind', 'tweet'] },
+		{ label: 'the retired kind pr', argv: ['check', 'body.md', '--kind', 'pr'] },
 		{ label: 'an unknown option', argv: ['check', 'body.md', '--strict'] },
 		{ label: '--kind without its value', argv: ['check', 'body.md', '--kind'] },
 	])('$label → the check usage, exit 2', ({ argv }) => {

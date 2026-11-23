@@ -2,12 +2,12 @@
  * The gathering half of `lot pr` reads the lot's records and its committed head against the merge base: what main
  * moved since never shows, what the lot deletes still names the tree, what no commit holds never passes.
  */
-import { readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 
 import { writeStoreLot } from '../../../test/brief-workspace.ts'
-import { LOT_NAME } from '../../../test/lot-pr.constants.ts'
-import { changeRequestLot } from '../../../test/lot-pr.ts'
+import { LOT_NAME } from '../../../test/lot-describe.constants.ts'
+import { changeRequestLot } from '../../../test/lot-describe.ts'
 import {
 	CROWDING_INDEX,
 	DOC_PAGE,
@@ -44,6 +44,7 @@ import { git, writeFiles } from '../../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
 import { SOURCE_INDEX_FILE } from '../api/source-functions.constants.ts'
 import { GATE_RECORD_FILE } from '../gate-records/gate-records.constants.ts'
+import { GITHUB_VENDOR } from '../host/github/github-vendor.ts'
 import { writeLanded } from '../landing/landed-record.ts'
 import { STACK_RECORD_DAMAGED } from '../landing/lot-landing.constants.ts'
 import { STACK_FILE, STACK_SCHEMA } from '../store/stack.constants.ts'
@@ -51,7 +52,8 @@ import { prepareChangeRequest, readChangeRequestSources } from './change-request
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { ChangeRequestLot } from '../../../test/lot-pr.types.ts'
+import type { ChangeRequestLot } from '../../../test/lot-describe.types.ts'
+import type { HostVendorRecord } from '../host/host.types.ts'
 
 afterEach(function restoreEnvironment() {
 	vi.unstubAllEnvs()
@@ -822,6 +824,81 @@ describe(
 
 			expect('refusal' in prepared ? prepared : prepared.sources.messages[0]).toBe(
 				'chore(release): @scope/x 0.9.0',
+			)
+		})
+	},
+)
+
+/** A second vendor, on paper: GitHub's record with its own name and template path. */
+const PAPER_VENDOR: HostVendorRecord = {
+	...GITHUB_VENDOR,
+	remoteHosts: ['gitlab.com'],
+	nouns: { changeRequestNoun: 'merge request', changeRequestNouns: 'merge requests' },
+	changeRequestTemplate: '.gitlab/merge_request_templates/Default.md',
+}
+
+/** The lot's head with its template moved to `to`, or removed when `to` is null; the origin set to `origin` when given. */
+function lotWithTemplateAt(params: { to: string | null; origin?: string }) {
+	const lot = changeRequestLot()
+	if (params.to === null)
+		git({ root: lot.worktree, args: ['rm', '-q', GITHUB_VENDOR.changeRequestTemplate] })
+	else {
+		mkdirSync(join(lot.worktree, dirname(params.to)), { recursive: true })
+		git({ root: lot.worktree, args: ['mv', GITHUB_VENDOR.changeRequestTemplate, params.to] })
+	}
+	git({ root: lot.worktree, args: ['commit', '-qm', 'chore: the template moved'] })
+	if (params.origin !== undefined)
+		git({ root: lot.worktree, args: ['remote', 'set-url', 'origin', params.origin] })
+	return lot
+}
+
+describe(
+	'prepareChangeRequest: the template from the vendor, else from the tree',
+	{ timeout: STORE_CASE_TIMEOUT },
+	() => {
+		it("a GitHub origin and only another vendor's template in the tree → refused naming GitHub's path alone", () => {
+			const lot = lotWithTemplateAt({
+				to: PAPER_VENDOR.changeRequestTemplate,
+				origin: 'https://github.com/o/r.git',
+			})
+
+			const prepared = prepareChangeRequest({
+				lotFolder: lot.lotFolder,
+				worktree: lot.worktree,
+				baseRef: 'main',
+				vendors: [GITHUB_VENDOR, PAPER_VENDOR],
+			})
+
+			expect('refusal' in prepared ? prepared.refusal : 'rendered').toBe(
+				"the lot's head holds no .github/pull_request_template.md: copy the cli's template into the repository",
+			)
+		})
+
+		it("no vendor and only another vendor's template in the tree → rendered through it", () => {
+			const lot = lotWithTemplateAt({ to: PAPER_VENDOR.changeRequestTemplate })
+
+			const prepared = prepareChangeRequest({
+				lotFolder: lot.lotFolder,
+				worktree: lot.worktree,
+				baseRef: 'main',
+				vendors: [GITHUB_VENDOR, PAPER_VENDOR],
+			})
+
+			expect('refusal' in prepared ? prepared.refusal : 'rendered').toBe('rendered')
+		})
+
+		it("no vendor and no template → refused naming every vendor's path", () => {
+			const lot = lotWithTemplateAt({ to: null })
+
+			const prepared = prepareChangeRequest({
+				lotFolder: lot.lotFolder,
+				worktree: lot.worktree,
+				baseRef: 'main',
+				vendors: [GITHUB_VENDOR, PAPER_VENDOR],
+			})
+
+			expect('refusal' in prepared ? prepared.refusal : 'rendered').toBe(
+				"the lot's head holds no .github/pull_request_template.md or .gitlab/merge_request_templates/Default.md: copy the cli's template into the repository",
 			)
 		})
 	},

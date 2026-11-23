@@ -1,6 +1,6 @@
 /**
- * The checks of a GitHub text's human part (every line before the recap's `<details`): the fixed headings
- * of a pull request or an issue, no heading in a comment or a commit, a commit's subject line, and the word
+ * The checks of a host text's human part (every line before the recap's `<details`): the fixed headings of a
+ * change request or an issue, no heading in a comment or a commit, a commit's subject line, and the word
  * cap of its kind. Fenced code blocks hold no heading and no counted word: commands to copy are not prose.
  */
 import {

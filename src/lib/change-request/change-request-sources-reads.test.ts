@@ -4,7 +4,7 @@
  */
 import { execFileSync } from 'node:child_process'
 
-import { changeRequestLot } from '../../../test/lot-pr.ts'
+import { changeRequestLot } from '../../../test/lot-describe.ts'
 import {
 	QUALITY_PACKAGE_JSON,
 	SIZE_FILE,
@@ -19,7 +19,7 @@ import { readChangeRequestSources } from './change-request-sources.ts'
 
 import { describe, expect, it } from 'vitest'
 
-import type { ChangeRequestLot } from '../../../test/lot-pr.types.ts'
+import type { ChangeRequestLot } from '../../../test/lot-describe.types.ts'
 
 /** The lot's fragment, kept beside the files a case's commit writes. */
 const FRAGMENT = { 'changes/x.md': '### Added\n\n- `x` answers one.\n' }

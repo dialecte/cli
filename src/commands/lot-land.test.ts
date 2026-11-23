@@ -3,14 +3,14 @@ import { chmodSync, existsSync, readFileSync, symlinkSync, writeFileSync } from 
 import { join } from 'node:path'
 
 import { createBriefWorkspace, writeStoreLot } from '../../test/brief-workspace.ts'
+import { FIXTURE_TEMPLATE_PATH } from '../../test/change-request-template.constants.ts'
 import { recordingHost } from '../../test/land-lot.ts'
-import { cliTemplate } from '../../test/lot-pr.ts'
+import { cliTemplate } from '../../test/lot-describe.ts'
 import { cloneRepository, git, temporaryFolder, writeFiles } from '../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { createRecordingSpawner } from '../../test/worktree-pool.ts'
 import { registeredEntryOf } from '../lib/handover/handover-store-read.ts'
 import { handoverStoreOf } from '../lib/handover/handover-store.ts'
-import { TEMPLATE_PATH } from '../lib/pr/change-request.constants.ts'
 import { runLotClose } from './lot-close.ts'
 import { runLotLand } from './lot-land.ts'
 import { lotStop } from './lot-stop.ts'
@@ -38,7 +38,7 @@ function landableLot(
 	writeFiles({
 		root: workspace.repository,
 		files: {
-			[TEMPLATE_PATH]: cliTemplate(),
+			[FIXTURE_TEMPLATE_PATH]: cliTemplate(),
 			...(release && { 'package.json': `{ "version": "${release.main}" }\n` }),
 		},
 	})
