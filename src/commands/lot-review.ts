@@ -13,6 +13,7 @@ import { resultOf } from '../lib/command-result.ts'
 import { SHORT_SHA_LENGTH } from '../lib/gate-records/gate-records.constants.ts'
 import { readGit } from '../lib/git.ts'
 import { readLanding } from '../lib/handover/land-record.ts'
+import { stackRouteOf } from '../lib/handover/stack-queue.ts'
 import { createHost, hostNounsOf } from '../lib/host/select-host.ts'
 import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { readDecisions } from '../lib/review-rounds/decisions-file.ts'
@@ -24,7 +25,7 @@ import { parseRound, readArguments } from '../lib/review-rounds/round-arguments.
 import { readStandardLine } from '../lib/standard/read-standard-line.ts'
 import { STORE_FILES } from '../lib/store/store.constants.ts'
 import { readTestsRecord } from '../lib/tdd/tests-record.ts'
-import { approvalRefusals } from './lot-approve.ts'
+import { approvalRefusals, queueReadOf } from './lot-approve.ts'
 import { resolveLotPlace } from './lot-describe.ts'
 import { LOT_REVIEW_FLAGS, LOT_REVIEW_LINES, LOT_REVIEW_OPTIONS } from './lot-review.constants.ts'
 
@@ -100,7 +101,7 @@ export function runLotReview(params: {
 			...changeRequestLines({ place, nouns, changeRequest, landed: landing.head, checks }),
 			...privateLines(place),
 			'',
-			approveLine({ place, changeRequest, landed: landing.head, checks }),
+			approveLine({ host, place, changeRequest, landed: landing.head, checks }),
 			filesLine({ host, place, changeRequest, open: !read.flags.has('no-open') }),
 		],
 	})
@@ -390,13 +391,18 @@ function standardLine(folder: string): string {
 
 /** Whether `lot approve` would approve now, else every refusal it would give. */
 function approveLine(params: {
+	host: HostAdapter
 	place: LotPlace
 	changeRequest: ChangeRequest
 	landed: string
 	checks: ChangeRequestChecks | { refusal: string }
 }): string {
-	const { checks } = params
-	const reasons = 'refusal' in checks ? [checks.refusal] : approvalRefusals({ ...params, checks })
+	const { checks, place, changeRequest } = params
+	const route = stackRouteOf({ lot: place.lot, lotFolder: place.lotFolder, changeRequest })
+	const reasons =
+		'refusal' in checks
+			? [checks.refusal]
+			: approvalRefusals({ ...params, checks, queue: queueReadOf({ ...params, route }) })
 	return reasons.length === 0
 		? fillMessage({ template: LOT_REVIEW_LINES.approveReady, values: { lot: params.place.lot } })
 		: fillMessage({

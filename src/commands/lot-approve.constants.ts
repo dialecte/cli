@@ -13,6 +13,8 @@ export const LOT_APPROVE_LINES = {
 	prefix: 'lot approve: ',
 	notApprovable: 'lot approve: {lot} is {state}: only a lot at work is approved',
 	noLanding: 'lot approve: {lot} has no {changeRequestNoun} yet: dialecte lot land {lot} opens it',
+	noQueue:
+		'the host queues no {changeRequestNoun} here: it allows no auto-merge and its base branch has no queue; turn one on, then approve again',
 	noChangeRequest: 'lot approve: {changeRequestNoun} #{number} of {lot} cannot be found',
 	notOpen: '{changeRequestNoun} #{number} is {state}',
 	lotNotApprovable: 'the lot is {state}',
@@ -34,5 +36,5 @@ export const LOT_APPROVE_LINES = {
 		'lot approve: {lot} approved by {by} on {head}, {changeRequestNoun} #{number} not queued: {refusal}',
 } as const
 
-/** How the queue the host answered follows the queued line: ` (<noun>)`; nothing when there is none or it was not read. */
+/** How the queue the host answered follows the queued line: ` (<noun>)`; nothing for a refused read or a stacked lot. */
 export const QUEUE_VIA = ' ({noun})'

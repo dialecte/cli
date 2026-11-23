@@ -29,5 +29,36 @@ describe(
 				`approve: would refuse: change request #${REVIEW_CHANGE_REQUEST_NUMBER} is closed`,
 			)
 		})
+
+		it.each([
+			{
+				answer: 'no queue',
+				queueKind: { kind: 'none', noun: 'no queue' },
+				line: 'approve: would refuse: the host queues no change request here: it allows no auto-merge and its base branch has no queue; turn one on, then approve again',
+			},
+			{
+				answer: 'a refused read',
+				queueKind: { refusal: 'gh api graphql: HTTP 502' },
+				line: `approve: ready: dialecte lot approve ${LOT_NAME} --by <who>`,
+			},
+		] as const)(
+			'green checks, the host answering $answer for the queue → $line',
+			({ queueKind, line }) => {
+				const lot = landedLot()
+				const { host } = recordingHost({
+					existing: lot.changeRequest,
+					checks: { head: lot.head, state: 'green', failing: [], pending: [] },
+					queueKind,
+				})
+
+				const result = runLotReview({
+					cwd: lot.workspace.repository,
+					argv: [LOT_NAME, '--no-open'],
+					host,
+				})
+
+				expect(result.output.split('\n')).toContain(line)
+			},
+		)
 	},
 )

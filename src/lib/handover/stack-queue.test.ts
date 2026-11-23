@@ -3,12 +3,17 @@
  * pull request still merges into its parent's branch queues as a stack only on a host with stacks and only once the
  * parent's pull request is queued (nothing unapproved joins the queue); otherwise refused.
  */
+import { rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 import { parentChangeRequest, recordingHost, stackedRepository } from '../../../test/land-lot.ts'
 import { SCRATCH_GIT_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
-import { stackQueueOf } from './stack-queue.ts'
+import { readIdentity } from '../store/identity.ts'
+import { stackQueueOf, stackRouteOf } from './stack-queue.ts'
 
 import { describe, expect, it } from 'vitest'
 
+import type { StackedRepository } from '../../../test/land-lot.types.ts'
 import type { ChangeRequest } from '../host/host.types.ts'
 
 /** The child's pull request #7, a draft merging into `base`. */
@@ -26,43 +31,105 @@ function childChangeRequest(base: string | undefined): ChangeRequest {
 	}
 }
 
+/** The stacked route of the child of `stack`: its parent and the parent's identity, read from the fixture's records. */
+function stackedOf(params: { stack: StackedRepository }) {
+	const identity = readIdentity({ lotFolder: params.stack.parent.lotFolder })
+	if (identity === undefined) throw new Error('the fixture parent has no identity')
+	return { parent: '0001-repo-x', identity }
+}
+
+describe('stackRouteOf', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
+	it('a lot not stacked → its change request alone', () => {
+		const stack = stackedRepository()
+
+		expect(
+			stackRouteOf({
+				lot: '0001-repo-x',
+				lotFolder: stack.parent.lotFolder,
+				changeRequest: childChangeRequest('main'),
+			}),
+		).toEqual({ route: 'single' })
+	})
+
+	it('a stacked lot retargeted to the base (its parent merged) → its change request alone', () => {
+		const stack = stackedRepository()
+
+		expect(
+			stackRouteOf({
+				lot: '0002-repo-y',
+				lotFolder: stack.child.lotFolder,
+				changeRequest: childChangeRequest('main'),
+			}),
+		).toEqual({ route: 'single' })
+	})
+
+	it("a stacked lot merging into its parent's branch → the parent and its identity", () => {
+		const stack = stackedRepository()
+
+		expect(
+			stackRouteOf({
+				lot: '0002-repo-y',
+				lotFolder: stack.child.lotFolder,
+				changeRequest: childChangeRequest('feat/x'),
+			}),
+		).toEqual({
+			route: 'stacked',
+			parent: '0001-repo-x',
+			identity: expect.objectContaining({ branch: 'feat/x' }),
+		})
+	})
+
+	it('a stacked lot whose change request does not say what it merges into → refused', () => {
+		const stack = stackedRepository()
+
+		expect(
+			stackRouteOf({
+				lot: '0002-repo-y',
+				lotFolder: stack.child.lotFolder,
+				changeRequest: childChangeRequest(undefined),
+			}),
+		).toEqual({
+			refusal: '0002-repo-y stacks on 0001-repo-x and the host does not say what #7 merges into',
+		})
+	})
+
+	it('a torn stack record → refused naming its damage, never the single route', () => {
+		const stack = stackedRepository()
+		writeFileSync(join(stack.child.lotFolder, 'stack.json'), '{"schema":1,"parent":')
+
+		expect(
+			stackRouteOf({
+				lot: '0002-repo-y',
+				lotFolder: stack.child.lotFolder,
+				changeRequest: childChangeRequest('feat/x'),
+			}),
+		).toEqual({ refusal: expect.stringMatching(/^0002-repo-y is damaged: its /) })
+	})
+
+	it("a parent whose identity does not read → refused naming the parent's records", () => {
+		const stack = stackedRepository()
+		rmSync(join(stack.parent.lotFolder, 'identity.json'))
+
+		expect(
+			stackRouteOf({
+				lot: '0002-repo-y',
+				lotFolder: stack.child.lotFolder,
+				changeRequest: childChangeRequest('feat/x'),
+			}),
+		).toEqual({
+			refusal:
+				'0002-repo-y stacks on 0001-repo-x, whose records do not read: dialecte lot status 0001-repo-x says how',
+		})
+	})
+})
+
 describe('stackQueueOf', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
-	it('a lot not stacked → its pull request alone, nothing asked of the host', () => {
-		const stack = stackedRepository()
-		const { host, calls } = recordingHost()
-
-		const route = stackQueueOf({
-			lot: '0001-repo-x',
-			lotFolder: stack.parent.lotFolder,
-			worktree: stack.parent.worktree,
-			host,
-			changeRequest: childChangeRequest('main'),
-		})
-
-		expect({ route, calls }).toEqual({ route: { route: 'single' }, calls: [] })
-	})
-
-	it('a stacked lot retargeted to the base (its parent merged) → its pull request alone', () => {
-		const stack = stackedRepository()
-		const { host } = recordingHost({ stacks: true, parent: parentChangeRequest() })
-
-		const route = stackQueueOf({
-			lot: '0002-repo-y',
-			lotFolder: stack.child.lotFolder,
-			worktree: stack.child.worktree,
-			host,
-			changeRequest: childChangeRequest('main'),
-		})
-
-		expect(route).toEqual({ route: 'single' })
-	})
-
 	it.each([
 		{
 			label: 'host with stacks, the parent queued → the stack queued up to it',
 			stacks: true as const,
 			parent: { ...parentChangeRequest(), queued: true },
-			route: { route: 'stack' },
+			route: undefined,
 		},
 		{
 			label: 'host with stacks, the parent not queued → refused naming the parent',
@@ -98,10 +165,9 @@ describe('stackQueueOf', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 
 		const answered = stackQueueOf({
 			lot: '0002-repo-y',
-			lotFolder: stack.child.lotFolder,
 			worktree: stack.child.worktree,
 			host,
-			changeRequest: childChangeRequest('feat/x'),
+			stacked: stackedOf({ stack }),
 		})
 
 		expect(answered).toEqual(route)
@@ -118,13 +184,12 @@ describe('stackQueueOf', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 
 		const route = stackQueueOf({
 			lot: '0002-repo-y',
-			lotFolder: stack.child.lotFolder,
 			worktree: stack.child.worktree,
 			host,
-			changeRequest: childChangeRequest('feat/x'),
+			stacked: stackedOf({ stack }),
 		})
 
-		expect(route).toEqual({ route: 'stack' })
+		expect(route).toBeUndefined()
 	})
 
 	it("the parent's pull request read by its branch, the parent never recorded a landing → the stack queued up to it", () => {
@@ -137,13 +202,12 @@ describe('stackQueueOf', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 
 		const route = stackQueueOf({
 			lot: '0002-repo-y',
-			lotFolder: stack.child.lotFolder,
 			worktree: stack.child.worktree,
 			host,
-			changeRequest: childChangeRequest('feat/x'),
+			stacked: stackedOf({ stack }),
 		})
 
-		expect(route).toEqual({ route: 'stack' })
+		expect(route).toBeUndefined()
 	})
 
 	it("the parent's branch has no pull request on the host → refused naming the parent", () => {
@@ -152,36 +216,14 @@ describe('stackQueueOf', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 
 		const route = stackQueueOf({
 			lot: '0002-repo-y',
-			lotFolder: stack.child.lotFolder,
 			worktree: stack.child.worktree,
 			host,
-			changeRequest: childChangeRequest('feat/x'),
+			stacked: stackedOf({ stack }),
 		})
 
 		expect(route).toEqual({
 			refusal:
 				'0002-repo-y stacks on 0001-repo-x, whose branch feat/x has no open change request: lot land 0001-repo-x first',
-		})
-	})
-
-	it('a stacked lot whose pull request does not say what it merges into → refused', () => {
-		const stack = stackedRepository()
-		const { host } = recordingHost({
-			stacks: true,
-			parent: parentChangeRequest(),
-			parentBranch: 'feat/x',
-		})
-
-		const route = stackQueueOf({
-			lot: '0002-repo-y',
-			lotFolder: stack.child.lotFolder,
-			worktree: stack.child.worktree,
-			host,
-			changeRequest: childChangeRequest(undefined),
-		})
-
-		expect(route).toEqual({
-			refusal: '0002-repo-y stacks on 0001-repo-x and the host does not say what #7 merges into',
 		})
 	})
 })

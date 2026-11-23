@@ -150,9 +150,10 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
            branch, its change request (landing.json's) with the head it is at, the head the lot
            landed and the worktree's HEAD, its checks, the brief's goal and steps (title, spec,
            behaviours), tests.json's tdd counts and gate run, decisions.md, every finding of the
-           ledger with its text and state, the standard line, and what lot approve would refuse (or
-           the approve command when it would approve); then opens the change request's changed files
-           in the browser (--no-open names the page only; an opener that fails is named, never an
+           ledger with its text and state, the standard line, and what lot approve would refuse, a
+           host offering no queue for a lot queued alone included (the queue kind read once), or the
+           approve command when it would approve; then opens the change request's changed files in
+           the browser (--no-open names the page only; an opener that fails is named, never an
            exit); a lot without a landing prints its private half and names lot land <id>, the host
            never asked
   review --comments - the change request's line comments come back as findings of round <n> in the
@@ -179,14 +180,17 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
             change request, read by the parent's branch, is queued (auto-merge on or in the host's
             queue), refused otherwise before anything is recorded: approve the parent first, or land
             it again once the parent merged); the only verb that queues, lot land never does; a
-            queue the host refuses keeps the approval (exit 1) and the same approval run again
-            answers already approved, writing nothing, and queues; --by orchestrator (in any casing
-            and spacing) approves the cli's own lots only (the package named @dialecte/cli), every
-            other package waits for a person (exit 2); a forbidden word in --by or --reason, or a
-            --by holding what a public record never holds, refused (exit 2) before the host is
-            asked; a lot without a landing names lot land <id>; the queued line names the queue the
-            host answers for the change request's base (queued (<the host's word for its queue>)),
-            nothing when it offers none, the read is refused or the lot is stacked
+            queue the host refuses after that up-front check keeps the approval (exit 1) and the
+            same approval run again answers already approved, writing nothing, and queues; --by
+            orchestrator (in any casing and spacing) approves the cli's own lots only (the package
+            named @dialecte/cli), every other package waits for a person (exit 2); a forbidden word
+            in --by or --reason, or a --by holding what a public record never holds, refused (exit
+            2) before the host is asked; a lot without a landing names lot land <id>; the queued
+            line names the queue the host answers for the change request's base (queued (<the host's
+            word for its queue>)), nothing when the read is refused or the lot is stacked; a lot
+            queued alone whose host offers neither auto-merge nor a queue is refused before anything
+            is recorded or sent, naming what to turn on (the queue kind read once, before the
+            approval; a refused read refuses nothing)
   design - a lot's design (design before code): --from <file> records it by the sha256 of its bytes,
            appending { schema, at, kind: recorded, file, hash, from } to the lot folder's
            design.jsonl and keeping its copy as design/<hash>.md (the copy rules once the source is
@@ -931,7 +935,7 @@ Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`
     (by real path) while the lot is not `committed` nor `canceled`, reason `lot <full name> <state>` (the
     store read once, files only). Before any decision, the landing of every lot the arguments reach is read: the lot
     an argument names (a lot id, name or index, with no registry entry needed), the lot an entry registers, and the
-    open lots naming an entry's worktree and branch. A lot is merged when its tip is on the base branch, when its pull
+    open lots naming an entry's worktree and branch. A lot is merged when its tip is on the base branch, when its change
     request merged (the host is asked for every lot close reads, pushed by `lot land` or not: the one `landing.json`
     names, else the newest change request of its branch whose head the branch reached since the lot was created, so one
     opened by hand counts, its branch deleted on origin after the merge or not, and a branch name reused by a new lot
@@ -1190,8 +1194,10 @@ are recorded with `lot finding`.
 `dialecte lot approve <id> --by <who> [--reason <text>]` is the approval: once the change request is at the head the lot
 landed, its checks are green there and no finding but a nit is open, it records a person's `approve` verdict
 (`approvals.jsonl`, shown in `review.jsonl` and in the body by kind only, for that head: a later commit needs a new
-approval), renders the body again and queues the pull
-request: the only verb that queues. A lot started with `--on` whose change request still merges into its parent's
+approval), renders the body again and queues the change
+request: the only verb that queues. It first asks the host once which queue it offers the change request: a lot queued
+alone whose host allows no auto-merge and has no queue on its base branch is refused before anything is recorded or
+sent, naming what to turn on; a read the host refuses refuses nothing, and the queue goes ahead as before. A lot started with `--on` whose change request still merges into its parent's
 branch queues as a native stack up to it (the host's stack merge), and only once the parent's change request (read by the
 parent's branch) is queued, auto-merge on or in the host's queue, so
 nothing unapproved joins the queue; without native stacks it waits for the parent to merge (then `lot land` it again,

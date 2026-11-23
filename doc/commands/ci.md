@@ -47,8 +47,8 @@ Flags: `--dry-run`
 Every Dialecte package runs the same CI: the `pull_request` run and the merge queue run `ci.yml`, whose one required check
 is `ci-ok`; the queue's merge to main runs `publish.yml`, which builds, publishes a changed version and tags it. The
 cli ships these files as a template, so a package stays in step with the cli version it pins: a bump of the pin runs
-`dialecte ci sync` and commits what it writes in the same change; `_check.yml` runs `dialecte ci check` on every pull
-request, so a hand edit of a written file, or a bump without the sync, fails CI.
+`dialecte ci sync` and commits what it writes in the same change; `_check.yml` runs `dialecte ci check` on every
+`pull_request` run, so a hand edit of a written file, or a bump without the sync, fails CI.
 
 What differs between packages is read, never configured: the jobs come from the scripts the package.json already
 has, the Playwright install from its dependencies, the `mode` passed to the tests from the package's own

@@ -16,7 +16,7 @@ import { runLotApprove } from './lot-approve.ts'
 
 import { describe, expect, it } from 'vitest'
 
-import type { ChangeRequest } from '../lib/host/host.types.ts'
+import type { ChangeRequest, QueueSupport } from '../lib/host/host.types.ts'
 
 const PARENT = '0000-repo-p'
 
@@ -54,7 +54,7 @@ function stackedLandedLot() {
 }
 
 /** Approve the lot as a person, its pull request merging into `feat/p`, the parent `parent`, on a host with stacks. */
-function approveOnParent(params: { parent: ChangeRequest }) {
+function approveOnParent(params: { parent: ChangeRequest; queueKind?: QueueSupport }) {
 	const lot = stackedLandedLot()
 	const recording = recordingHost({
 		existing: { ...lot.changeRequest, base: 'feat/p' },
@@ -62,7 +62,7 @@ function approveOnParent(params: { parent: ChangeRequest }) {
 		stacks: true,
 		parent: params.parent,
 		parentBranch: 'feat/p',
-		queueKind: { kind: 'queue', noun: 'merge queue' },
+		queueKind: params.queueKind ?? { kind: 'queue', noun: 'merge queue' },
 	})
 	const result = runLotApprove({
 		cwd: lot.workspace.repository,
@@ -92,6 +92,19 @@ describe('dialecte lot approve of a stacked lot', { timeout: STORE_CASE_TIMEOUT 
 			queueNamed: true,
 			queueKindRead: false,
 		})
+	})
+
+	it('the parent queued, the host offering no queue → the stack queued all the same, the queue kind never read', () => {
+		const { result, calls } = approveOnParent({
+			parent: { ...parentChangeRequest(), queued: true },
+			queueKind: { kind: 'none', noun: 'no queue' },
+		})
+
+		expect({
+			exitCode: result.exitCode,
+			stackQueued: calls.includes(`stack-queue ${REVIEW_CHANGE_REQUEST_NUMBER}`),
+			queueKindRead: calls.some((call) => call.startsWith('queue-kind')),
+		}).toEqual({ exitCode: 0, stackQueued: true, queueKindRead: false })
 	})
 
 	it('the parent not queued → refused naming the parent, nothing recorded, nothing queued', () => {
