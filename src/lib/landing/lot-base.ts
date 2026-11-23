@@ -3,7 +3,7 @@
  * tip. Cut from the base: the base and the merge-base. Stacked: the parent's landing state decides the ref (the base
  * once the parent merged, else the parent's newest branch tip), and the fork point is the newest commit of the
  * parent's line the lot holds (`git merge-base --fork-point`, reflog-aware, else the plain merge-base), over the
- * parent's local branch and origin's (origin as last fetched: the parent pull request's head is the same commit once
+ * parent's local branch and origin's (origin as last fetched: the parent change request's head is the same commit once
  * fetched, so it is not read). Once the parent merged, the base's own fork point counts too: a child already rebased
  * onto the base forks there.
  */

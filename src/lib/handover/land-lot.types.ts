@@ -7,7 +7,7 @@ export type LandingRecord = {
 	number: number
 	url: string
 	branch: string
-	/** The tip pushed for the pull request. */
+	/** The tip pushed for the change request. */
 	head: string
 	at: string
 }

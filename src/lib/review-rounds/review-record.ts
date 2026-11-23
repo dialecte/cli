@@ -1,5 +1,5 @@
 /**
- * A lot's `review.jsonl` (33CI CI2a): the public rows of its review, what a pull request may render. Derived from its
+ * A lot's `review.jsonl` (33CI CI2a): the public rows of its review, what a change request may render. Derived from its
  * sources and written whole by each verb that changes one - the findings ledger (`lot finding`, `lot decide`), the
  * review stations' ends in `events.jsonl` (`lot station`), `verify.jsonl` (`lot verify`), `approvals.jsonl`
  * (`lot approve`) - so a ledger edited by hand
@@ -361,7 +361,7 @@ export function designRowOf(params: {
  * The record as a render of `head` shows it: a verdict given on another head (an approval before a later commit or a
  * rebase) left out, so no text claims an approval of a head nobody approved.
  *
- * @intent show only the approvals of the head a pull request carries
+ * @intent show only the approvals of the head a change request carries
  * @internal
  */
 export function verdictsAt(params: { record: ReviewRecord; head: string }): ReviewRecord {

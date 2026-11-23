@@ -135,7 +135,7 @@ describe('scanHostSeam: what is not a spawn passes', () => {
 		},
 		{
 			name: 'a refusal text starting with gh',
-			file: "export const REFUSAL = 'gh pr view: no pull request'\nexport const OTHER = `gh pr view: ${'x'}`\n",
+			file: "export const REFUSAL = 'gh pr view: not found'\nexport const OTHER = `gh pr view: ${'x'}`\n",
 		},
 		{
 			name: 'a word that holds the tool',

@@ -180,7 +180,7 @@ function isShown(finding: RecordedFinding<unknown>): boolean {
 
 /**
  * The findings of one kind a list shows: at most ten, then the line saying how many more and the run that lists
- * them all (undefined within the cap). The card and the pull request body cap their lists the same way.
+ * them all (undefined within the cap). The card and the change request body cap their lists the same way.
  *
  * @intent keep a list of base-aware findings short wherever it is shown
  * @internal

@@ -45,7 +45,7 @@ export function runLotClose(params: {
 	scratchRoots?: readonly string[]
 	/** Called once every target is decided, before anything is written or moved (the tests change files there). */
 	afterDecisions?: () => void
-	/** Where lots land through pull requests; default: the repository's host, asked for each lot the close reaches. */
+	/** Where lots land through change requests; default: the repository's host, asked for each lot the close reaches. */
 	host?: HostAdapter
 	/** Reads a pid's start time (a rehearsal marker's owner, `--feature` only); default `processStartTime`. */
 	readStartTime?: (pid: number) => string | undefined

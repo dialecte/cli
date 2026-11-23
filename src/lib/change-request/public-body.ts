@@ -1,5 +1,5 @@
 /**
- * The backstop for public text: the record-sourced free text a pull request body shows (`publicPiecesOf`) checked
+ * The backstop for public text: the record-sourced free text a change request body shows (`publicPiecesOf`) checked
  * before anything is sent (`publicRefusalOf`): no reference of the lists (a ticket, a citation, a declared pattern, a
  * consumer name, a forbidden word), no entry id of the plans that hold the lot, no link and no path the lot's tree does
  * not hold. Pure: the lists and the tree test are read by the caller.

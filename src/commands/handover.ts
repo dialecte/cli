@@ -266,7 +266,7 @@ export function runHandover(params: {
 	const absoluteLotsPath = resolve(cwd, lotsPath)
 	const lotsFile = readLotsFile(absoluteLotsPath)
 	if (typeof lotsFile === 'string') return usage(`handover: ${lotsFile}`)
-	// a CI-first repository lands its lots through their pull requests: no hand-over is written for it
+	// a CI-first repository lands its lots through their change requests: no hand-over is written for it
 	const writeRefusal = flowRefusalOf({
 		root: lotsFile.repository,
 		command: 'handover',
@@ -502,7 +502,7 @@ export async function runHandoverRun(params: {
 		write(textOf([`handover run: ${handover}`]))
 		return 2
 	}
-	// a CI-first repository lands its lots through their pull requests: no hand-over runs, rehearsed or for real
+	// a CI-first repository lands its lots through their change requests: no hand-over runs, rehearsed or for real
 	const runRefusal = flowRefusalOf({
 		root: handover.lotsFile.repository,
 		command: 'handover',

@@ -2,7 +2,7 @@
  * `dialecte lot approve <id> --by <who> [--reason <text>]`: a person's approval of the lot's change request (33CI CI7).
  * Refused, nothing recorded and nothing queued, unless the change request is open at the lot's landed head, its checks
  * are green there and no blocking or should-fix finding is open. Then the approval is appended to the lot folder's `approvals.jsonl`
- * (a person's verdict row of `review.jsonl`), the change request's text rendered again from the records and the pull
+ * (a person's verdict row of `review.jsonl`), the change request's text rendered again from the records and the change
  * request queued (made ready when a draft): the only verb that queues, `lot land` never does. A lot started on another
  * whose change request still merges into its parent's branch queues as a native stack, only behind a queued parent
  * (`stackQueueOf`). `--by orchestrator` approves the cli's own lots only.

@@ -8,9 +8,9 @@ import type { LandingRecord } from './land-lot.types.ts'
 
 /**
  * The landing record of the lot whose store folder is `lotFolder`; undefined without one, one that cannot be read, or
- * one holding only the head a push recorded before any pull request was known.
+ * one holding only the head a push recorded before any change request was known.
  *
- * @intent tell which pull request a lot lands through
+ * @intent tell which change request a lot lands through
  * @internal
  */
 export function readLanding(params: { lotFolder: string }): LandingRecord | undefined {

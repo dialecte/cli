@@ -1,8 +1,8 @@
 /**
  * The landing state of a lot (FIX-ci-loop design, section 1): the one reader every verb asks whether a lot landed.
  * Evidence in order, the first that decides wins: nothing beyond its cut (`empty`); its tip on the base (`ancestor`);
- * the host's merged pull request of the lot (`host`, asked only when a host is given); its work contained in the base
- * (`tree`, a squash read offline). Else unlanded, or closed when the host closed its pull request unmerged. A host
+ * the host's merged change request of the lot (`host`, asked only when a host is given); its work contained in the base
+ * (`tree`, a squash read offline). Else unlanded, or closed when the host closed its change request unmerged. A host
  * that refuses leaves the decision to git, its reason kept on an unlanded state.
  */
 import { ORIGIN_BRANCH_REF_PREFIX } from '../gate/gate-base.constants.ts'
@@ -65,7 +65,7 @@ export function readLandingState(query: LandingQuery): LandingState {
 }
 
 /**
- * The lot may have landed though git alone cannot prove it: no host answered, and it has a recorded pull request or a
+ * The lot may have landed though git alone cannot prove it: no host answered, and it has a recorded change request or a
  * branch on origin (a squash main later edited the same lines of reads unlanded to git).
  */
 function isUnprovenOffline(params: { query: LandingQuery; answered: boolean }): boolean {
@@ -79,7 +79,7 @@ function isUnprovenOffline(params: { query: LandingQuery; answered: boolean }): 
 }
 
 /**
- * The lot's pull request as the host holds it, when a host is given: the one its landing recorded, else the branch's
+ * The lot's change request as the host holds it, when a host is given: the one its landing recorded, else the branch's
  * newest, which is the lot's only when its head is a commit of the lot (beyond its cut, held by its tip or once its
  * branch's tip); the host's refusal when it cannot say.
  */

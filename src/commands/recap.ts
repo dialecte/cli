@@ -1,5 +1,5 @@
 /**
- * `dialecte lot recap <hand-over folder>`: the expandable part of a pull request, built from records only (the
+ * `dialecte lot recap <hand-over folder>`: the expandable part of a change request, built from records only (the
  * commits, the gate and rules records, the findings ledger, the lot declaration, `decisions.md`).
  */
 import { resolve } from 'node:path'

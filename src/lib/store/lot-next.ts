@@ -87,7 +87,7 @@ export function nextCommandsOf(params: {
 	const [firstOpen] = report.openQuestions
 	if (report.state === 'input-required' && firstOpen !== undefined)
 		return { next: answerNextOf({ name, question: firstOpen }), also: [] }
-	// a lot landing through its pull request: landing again says merged (committed) or queues it again
+	// a lot landing through its change request: landing again says merged (committed) or queues it again
 	if (report.state === 'ready' && handover !== undefined && input.landing !== undefined)
 		return {
 			next: NEXT_COMMANDS.land.replace('{name}', name),

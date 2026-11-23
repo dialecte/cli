@@ -1,9 +1,9 @@
 /**
- * How `lot approve` queues a lot (R1-16): its pull request alone, or a native stack up to it. A lot started on another
- * (its stack.json) whose pull request still merges into the parent's branch queues as a stack only on a host with
- * stacks and only once the parent's pull request is queued, so nothing a person has not approved joins the queue; a
- * parent merged, not queued, or a host without stacks is refused. A pull request retargeted to the base queues alone.
- * The parent's pull request is read by its branch (the host's newest of it), so a parent that never recorded a
+ * How `lot approve` queues a lot (R1-16): its change request alone, or a native stack up to it. A lot started on another
+ * (its stack.json) whose change request still merges into the parent's branch queues as a stack only on a host with
+ * stacks and only once the parent's change request is queued, so nothing a person has not approved joins the queue; a
+ * parent merged, not queued, or a host without stacks is refused. A change request retargeted to the base queues alone.
+ * The parent's change request is read by its branch (the host's newest of it), so a parent that never recorded a
  * landing still answers.
  */
 import { dirname, join } from 'node:path'
@@ -18,8 +18,8 @@ import type { HostAdapter, ChangeRequest } from '../host/host.types.ts'
 import type { StackQueueRoute } from './stack-queue.types.ts'
 
 /**
- * The queue route of the lot in `lotFolder` whose pull request is `pullRequest`; the refusal when it cannot queue now.
- * The host is asked only for a stacked lot whose pull request merges into its parent's branch.
+ * The queue route of the lot in `lotFolder` whose change request is `changeRequest`; the refusal when it cannot queue now.
+ * The host is asked only for a stacked lot whose change request merges into its parent's branch.
  *
  * @intent queue a stacked lot only behind a queued parent
  * @internal
@@ -72,7 +72,7 @@ export function stackQueueOf(params: {
 		return refusalOf({ template: STACK_QUEUE_LINES.parentMerged, values })
 	if (!host.probeStacks({ root: params.worktree }).stacks)
 		return refusalOf({ template: STACK_QUEUE_LINES.waits, values })
-	// auto-merge on, else the merge queue asked (a parent queued by a stack merge has no auto-merge)
+	// auto-merge on, else the queue asked (a parent queued by a stack merge has no auto-merge)
 	const parentQueued = parentChangeRequest.queued
 		? { queued: true }
 		: host.readQueued({ root: params.worktree, number: parentChangeRequest.number })

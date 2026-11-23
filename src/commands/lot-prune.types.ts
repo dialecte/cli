@@ -7,7 +7,7 @@ export type LotPruneParams = {
 	cwd: string
 	argv: string[]
 	now?: Date
-	/** Where lots land through pull requests; default: the repository's host, asked for each lot not landed yet. */
+	/** Where lots land through change requests; default: the repository's host, asked for each lot not landed yet. */
 	host?: HostAdapter
 	/** Lists the processes and their working folders; a throw is "not known". Default: the system's. */
 	listProcesses?: () => ProcessFolder[] | string

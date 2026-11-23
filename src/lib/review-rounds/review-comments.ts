@@ -27,7 +27,7 @@ import type { CommentFinding, PulledLine } from './review-comments.types.ts'
  * `path:line` (the path alone for a comment on the file); its lines joined into one (a comment of its severity word
  * alone keeps it as its text).
  *
- * @intent turn a pull request's review comments into a lot's findings
+ * @intent turn a change request's review comments into a lot's findings
  * @internal
  */
 export function newCommentFindings(params: {
@@ -59,7 +59,7 @@ export function newCommentFindings(params: {
  * other: the ids given, in order, and the reason a write failed (the findings after it not written). A finding written
  * whose comment could not be marked is named in that reason: a next pull adds it again.
  *
- * @intent record a pull request's comments as a lot's findings
+ * @intent record a change request's comments as a lot's findings
  * @internal
  */
 export function recordCommentFindings(params: {

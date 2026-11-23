@@ -46,7 +46,7 @@ export function readStack(params: { lotFolder: string }): StackRecord | StackDam
 
 /**
  * The lot's stack record when it reads as one; undefined when it has none or it is damaged (a reader that only shows
- * what a stack adds, such as the pull request's depends-on part).
+ * what a stack adds, such as the change request's depends-on part).
  *
  * @intent read a stack record a reader may skip when damaged
  * @internal
@@ -57,9 +57,9 @@ export function readStackRecord(params: { lotFolder: string }): StackRecord | un
 }
 
 /**
- * How the hand-over card names the lot a lot was started on, files only: `on <parent> (#<pr>)`, its pull request from
- * the parent's `landing.json`, or `on <parent> (no pull request yet)`; the damage of a stack.json that does not read;
- * undefined for a lot not stacked. `lot status` names the pull request's state too, through the one lot reader
+ * How the hand-over card names the lot a lot was started on, files only: `on <parent> (#<pr>)`, its change request from
+ * the parent's `landing.json`, or `on <parent> (no change request yet)`; the damage of a stack.json that does not read;
+ * undefined for a lot not stacked. `lot status` names the change request's state too, through the one lot reader
  * (`statusLandingOf`).
  *
  * @intent show which lot a stacked lot lands on, from files
@@ -75,8 +75,8 @@ export function stackTextOf(params: { lotFolder: string; nouns: HostNouns }): st
 }
 
 /**
- * The stack line's text: `on <parent> (#<pr>, <state>)`, `on <parent> (#<pr>)` without a state, `on <parent> (no pull
- * request yet)` without a pull request.
+ * The stack line's text: `on <parent> (#<pr>, <state>)`, `on <parent> (#<pr>)` without a state, `on <parent> (no change
+ * request yet)` without a change request.
  *
  * @intent write the stack line one way for the card and lot status
  * @internal
@@ -101,9 +101,9 @@ export function stackLineText(params: {
 }
 
 /**
- * A pull request's state as the stack line names it: merged, closed, queued, draft or open.
+ * A change request's state as the stack line names it: merged, closed, queued, draft or open.
  *
- * @intent name where a parent's pull request stands
+ * @intent name where a parent's change request stands
  * @internal
  */
 export function changeRequestStateOf(changeRequest: ChangeRequest): string {

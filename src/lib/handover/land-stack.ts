@@ -1,6 +1,6 @@
 /**
  * The stack step of a landing (33CI CI4, FIX-ci-loop section 1). A lot started on another (`stack.json`, the parent
- * only) lands on its parent: its pull request is based on the parent's branch (and linked to the parent's as a native
+ * only) lands on its parent: its change request is based on the parent's branch (and linked to the parent's as a native
  * stack when the host has stacks), rebased onto the parent's newest tip when the parent moved. Once the parent merged
  * (its landing state), the lot drops the parent's commits: rebased `--onto` origin's base from its fork point, the
  * newest commit of the parent's line it holds (`lotBaseOf`, reflog-aware: an amended, rebased or squashed parent
@@ -33,7 +33,7 @@ import type { StackLanding, StackRefusal } from './land-stack.types.ts'
 
 /**
  * How the stacked lot in `lotFolder` lands now, its rebase done; undefined for a lot that is not stacked; the refusal
- * of a parent whose records or pull request are missing, or of a rebase that conflicts (exit 2). `landing` is the lot's own landing record (the head its last landing pushed).
+ * of a parent whose records or change request are missing, or of a rebase that conflicts (exit 2). `landing` is the lot's own landing record (the head its last landing pushed).
  *
  * @intent land a lot started on another open lot as a stack
  * @internal
@@ -76,7 +76,7 @@ export function prepareStackLanding(params: {
 			lotBase: base,
 			parentChangeRequest: parent.changeRequest,
 		})
-	// the parent is open: its pull request is what the child's stacks on
+	// the parent is open: its change request is what the child's stacks on
 	const parentChangeRequest = parent.changeRequest
 	if (parentChangeRequest === undefined)
 		return {
@@ -102,7 +102,7 @@ export function prepareStackLanding(params: {
 		changeRequestBase: parent.branch,
 		textBase: base.ref,
 		route: support.stacks ? 'native' : 'branch',
-		// a pull request a landing opened on a host with stacks was linked then: the landing refuses otherwise
+		// a change request a landing opened on a host with stacks was linked then: the landing refuses otherwise
 		linked: support.stacks && params.landing?.branch === params.branch,
 		parentMerged: false,
 		parentChangeRequest,
@@ -111,11 +111,11 @@ export function prepareStackLanding(params: {
 }
 
 /**
- * After the pull request is known: a stacked pull request just opened on a host with stacks is linked on its parent's
+ * After the change request is known: a stacked change request just opened on a host with stacks is linked on its parent's
  * (the parent open), and one that merges into another branch than the landing's is retargeted; the lines saying so, or
  * the host's refusal.
  *
- * @intent keep a stacked pull request on the right base
+ * @intent keep a stacked change request on the right base
  * @internal
  */
 export function settleStackedChangeRequest(params: {
@@ -169,7 +169,7 @@ export function settleStackedChangeRequest(params: {
 }
 
 /**
- * The parent lot's branch, its landing state (its landed fact, else git and the host) and its pull request (the one its
+ * The parent lot's branch, its landing state (its landed fact, else git and the host) and its change request (the one its
  * landing state names, else its `landing.json`'s as the host holds it), or the refusal.
  */
 function readParent(params: {

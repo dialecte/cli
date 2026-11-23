@@ -43,8 +43,7 @@ import {
 	STACK_UNREADABLE,
 } from './lot-landing.constants.ts'
 
-import type { HostAdapter } from '../host/host.types.ts'
-import type { HostNouns } from '../host/host.types.ts'
+import type { HostAdapter, HostNouns } from '../host/host.types.ts'
 import type { LotIdentity } from '../store/store.types.ts'
 import type { LandedFact } from './landed-record.types.ts'
 import type { LotLanding, RecordedTips, SettledLot, StatusLanding } from './lot-landing.types.ts'

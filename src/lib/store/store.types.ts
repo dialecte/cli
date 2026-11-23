@@ -109,7 +109,7 @@ export type LotStateInput = {
 	abandonedMarker: { at: string } | undefined
 	/** The run marker of a live process (the reader leaves a dead one out). */
 	runMarker: HandoverRunMarker | undefined
-	/** The pull request the lot lands through when it holds a landing and no written hand-over (`lot land`). */
+	/** The change request the lot lands through when it holds a landing and no written hand-over (`lot land`). */
 	landing?: { number: number; url: string }
 	/** The lot merged (`landed.json`, or the landing state a reader read without writing it): committed. */
 	landed?: { tip: string }

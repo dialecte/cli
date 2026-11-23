@@ -134,7 +134,7 @@ export function lotStop(params: LotStopParams): CommandResult {
 	const target = { folder: lotFolder, registry, lockPath, now }
 	// step 2: the hand-over first; a refusal publishes nothing, the person's run decides
 	const lockLines: string[] = []
-	// a lot landing through its pull request: the pull request closed (out of the queue), its entry abandoned
+	// a lot landing through its change request: the change request closed (out of the queue), its entry abandoned
 	if (pending && input.landing !== undefined) {
 		const closeRoot = identity.worktree ?? dirname(registry)
 		const closed = (params.host ?? createHost()).closeChangeRequest({

@@ -1,6 +1,6 @@
 /**
  * How a repository's lots land (FIX-ci-loop design, section 3), decided in one place. CI-first: its lots land through
- * a pull request and the merge queue, never a hand-over; read from what the repository already has, no config key:
+ * a change request and the queue, never a hand-over; read from what the repository already has, no config key:
  * its `ci.yml` runs on the queue's trigger and holds the job the queue's ruleset requires (a `ci.yml` without the
  * queue's trigger, the workflow before the queue, is not). Every other repository lands through a hand-over.
  */
@@ -25,7 +25,7 @@ import type { LandingFlow, LandingFlowName } from './flow.types.ts'
 /**
  * The flow the repository at `root` lands its lots through.
  *
- * @intent decide once whether a repository lands through pull requests or hand-overs
+ * @intent decide once whether a repository lands through change requests or hand-overs
  * @internal
  */
 export function landingFlowOf(root: string): LandingFlowName {

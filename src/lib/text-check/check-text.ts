@@ -78,7 +78,7 @@ function readHumanPart(text: string): TextLine[] {
 }
 
 /**
- * A pull request's or an issue's headings: `What changes`, `Why`, `How to check it` in this order, then
+ * A change request's or an issue's headings: `What changes`, `Why`, `How to check it` in this order, then
  * `Watch out` when it has something to say; each with text under it; nothing before the first heading.
  */
 function checkHeadings(lines: TextLine[]): TextProblem[] {

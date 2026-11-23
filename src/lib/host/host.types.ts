@@ -9,7 +9,7 @@ export type ChangeRequest = {
 	body: string
 	state: 'open' | 'merged' | 'closed'
 	draft: boolean
-	/** True while the host merges it once its checks pass: auto-merge on, or in the merge queue. */
+	/** True while the host merges it once its checks pass: auto-merge on, or in the queue. */
 	queued: boolean
 	/** The commit its head branch pointed at (the last push). */
 	head: string
@@ -47,7 +47,7 @@ export type ReviewComment = {
 /** How a vendor names its change requests in printed text; the keys are the placeholders a message fills. */
 export type HostNouns = { changeRequestNoun: string; changeRequestNouns: string }
 
-/** How the host merges a change request once its checks pass: a queue (merge queue, merge train), auto-merge, or neither. */
+/** How the host merges a change request once its checks pass: a queue (queue, merge train), auto-merge, or neither. */
 export type QueueKind = 'queue' | 'auto-merge' | 'none'
 
 /** The queue the change request's base offers, and the vendor's word for it. */
@@ -79,7 +79,7 @@ export type HostAdapter = {
 		title: string
 		body: string
 	}): HostRefusal | undefined
-	/** The change request closed: taken out of the merge queue, never merged. */
+	/** The change request closed: taken out of the queue, never merged. */
 	closeChangeRequest(params: { root: string; number: number }): HostRefusal | undefined
 	/** The change request queued: merged by the host once its checks pass (a draft made ready first). */
 	queueChangeRequest(params: {
@@ -98,7 +98,7 @@ export type HostAdapter = {
 		draft: boolean
 	}): HostRefusal | undefined
 	/**
-	 * Whether the host merges the change request once its checks pass: auto-merge on, or in the merge queue (which a
+	 * Whether the host merges the change request once its checks pass: auto-merge on, or in the queue (which a
 	 * change request read cannot say).
 	 */
 	readQueued(params: { root: string; number: number }): { queued: boolean } | HostRefusal
@@ -321,7 +321,7 @@ export type HostToolRun<Calls extends HostCallTable = HostCallTable> = {
 
 /**
  * One live probe of a read call: its line, whose subject is `subject` (the probe's key in the vendor's table);
- * `pullRequest` is the one the vendor's subject probe found, when it did.
+ * `changeRequest` is the one the vendor's subject probe found, when it did.
  */
 export type HostProbe<Calls extends HostCallTable = HostCallTable> = (params: {
 	root: string

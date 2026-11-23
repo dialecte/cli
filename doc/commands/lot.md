@@ -1165,7 +1165,7 @@ The change request is always a draft and `lot land` never queues it: CI runs on 
 whose head to push no person approved (`approvals.jsonl`) is taken back out of the queue before the push (auto-merge
 off, then a draft again), so no refusal after the push leaves an unapproved head queued, and every landing checks,
 so a landing stopped after its push heals on the next one. A rebase that keeps the tree but moves the sha takes it out
-too: the person approves the new head. A change request queued at a head a person approved is left as it is. `--draft`, from when `lot land` queued, is refused (exit 2) naming the change. The merge queue
+too: the person approves the new head. A change request queued at a head a person approved is left as it is. `--draft`, from when `lot land` queued, is refused (exit 2) naming the change. The queue
 runs the full suite on the lot on top of main and the lots ahead of it, then squashes it onto main; nothing reaches
 main another way. The landing is recorded in `<lot folder>/landing.json` (its change request and the head it pushed: the next
 push's lease, and the head a landed lot's final record takes) and as the lot's hand-over entry (`pending`). A lot

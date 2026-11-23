@@ -71,7 +71,7 @@ export function composeChangeRequest(params: {
  * Why the lot's title is refused: the lot sets a version (`bumpedTo`) its title (the first commit message) does not
  * name as a whole token; undefined otherwise.
  *
- * @intent keep a release lot's pull request title on the version it sets
+ * @intent keep a release lot's change request title on the version it sets
  * @internal
  */
 export function titleVersionFault(params: {

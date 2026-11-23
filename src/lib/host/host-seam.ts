@@ -159,7 +159,7 @@ function isTextNode(node: ts.Node): node is ts.StringLiteral | ts.TemplateLitera
 
 // dialecte-allow duplicate-read: it matches printed nouns as whole phrases in text; spellsVendorNoun matches identifier words
 /**
- * Whether a text prints a vendor's change-request noun (`pull request`, `pull requests`) as whole words, in any case;
+ * Whether a text prints a vendor's change-request noun (`change request`, `change requests`) as whole words, in any case;
  * `pull_request` and a noun split across template parts do not.
  */
 function printsVendorNoun(params: { text: string; vendors: readonly HostSeamVendor[] }): boolean {

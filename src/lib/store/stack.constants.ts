@@ -17,7 +17,7 @@ export const STACK_PARENT_REFUSALS = {
 } as const
 
 /**
- * How `lot status` and the card name a lot's stack parent: `{changeRequest}` its change request; `{state}` that pull
+ * How `lot status` and the card name a lot's stack parent: `{changeRequest}` its change request; `{state}` that change
  * request's state as the host holds it (`lot status`), or `{reason}` the host's silence. The card reads files only: no
  * state.
  */

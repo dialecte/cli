@@ -8,7 +8,7 @@ export type LotCloseFeatureParams = {
 	cwd: string
 	argv: string[]
 	now?: Date
-	/** Where lots land through pull requests; default: the repository's host. */
+	/** Where lots land through change requests; default: the repository's host. */
 	host?: HostAdapter
 	/** Lists the processes and their working folders; a throw is "not known". Default: the system's. */
 	listProcesses?: () => ProcessFolder[] | string

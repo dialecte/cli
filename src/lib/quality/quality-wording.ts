@@ -1,5 +1,5 @@
 /**
- * How the base-aware findings and notes are worded, the same in `rules`, on the card and in the pull request body;
+ * How the base-aware findings and notes are worded, the same in `rules`, on the card and in the change request body;
  * which docs entries are findings at a source line. Pure: no file, git or process read here.
  */
 import { QUALITY_MESSAGES, QUALITY_NOTES } from './quality.constants.ts'
