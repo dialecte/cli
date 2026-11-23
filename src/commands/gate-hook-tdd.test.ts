@@ -9,9 +9,10 @@ import { runHookIn } from '../../test/gate-hook.ts'
 import { countRuns, countingStep, createCounter } from '../../test/scratch-checks.ts'
 import { git, writeFiles } from '../../test/scratch-repository.ts'
 import { createVitestPackage } from '../../test/scratch-vitest-package.ts'
+import { runGate } from './gate.ts'
 import { runTdd } from './tdd.ts'
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { GateStep } from '../lib/gate/gate-config.types.ts'
 
@@ -92,7 +93,7 @@ describe('gate --hook: the tdd receipts of the commit', { timeout: 240_000 }, ()
 
 		expect(result.exitCode).toBe(1)
 		expect(result.output.split('\n')).toEqual([
-			'FAIL  tdd  1 case(s) of the lot green before the production changed',
+			'FAIL  tdd  1 case(s) of the lot not proven at the production committed',
 			'gate --hook: failed at tdd',
 			'--- last lines of tdd ---',
 			`stale  ${CASE}`,
@@ -168,7 +169,7 @@ describe('gate --hook: the cases of the whole lot', { timeout: 240_000 }, () => 
 
 		expect(result.exitCode).toBe(1)
 		expect(result.output.split('\n')).toEqual([
-			'FAIL  tdd  1 case(s) of the lot green before the production changed',
+			'FAIL  tdd  1 case(s) of the lot not proven at the production committed',
 			'gate --hook: failed at tdd',
 			'--- last lines of tdd ---',
 			`stale  ${CASE}`,
@@ -279,6 +280,331 @@ describe(
 				'skip  tdd  a merge commit: its cases were proven on their branches, CI runs the merged suite',
 			)
 			expect(countRuns(counter)).toBe(1)
+		})
+	},
+)
+
+describe(
+	'gate --hook: every closed case proven at the production committed',
+	{ timeout: 240_000 },
+	() => {
+		/** Fails the base's first case on its assertion, production untouched. */
+		const FAIL_VARIABLE = 'GATE_HOOK_TDD_FAIL'
+		/** Fails the base's first case on an error of its own, outside any assertion. */
+		const THROW_VARIABLE = 'GATE_HOOK_TDD_THROW'
+		const ONE_PROJECT_CONFIG = [
+			"import { defineConfig } from 'vitest/config'",
+			"export default defineConfig({ test: { projects: [{ test: { name: 'unit', include: ['src/**/*.test.ts'] } }] } })",
+			'',
+		].join('\n')
+		const BASE_TEST = [
+			"import { add } from './add.ts'",
+			"import { expect, it } from 'vitest'",
+			`it('one plus two → three', () => { if (process.env.${THROW_VARIABLE}) throw new Error('boom'); expect(process.env.${FAIL_VARIABLE} ? 0 : add(1, 2)).toBe(3) })`,
+			"it('zero plus zero → zero', () => { expect(add(0, 0)).toBe(0) })",
+			'',
+		].join('\n')
+		const REVISED_TEST = BASE_TEST.replace(
+			'expect(add(0, 0)).toBe(0) })',
+			'expect(add(0, 0)).toBe(0); expect(add(0, 1)).toBe(1) })',
+		)
+		const ACCEPTED_TEXT = "it('two plus two → four', () => { expect(add(2, 2)).toBe(4) })\n"
+		const SUB_STUB =
+			"export function sub(left: number, right: number): number {\n\tthrow new Error('not implemented: sub')\n}\n"
+		const SUB =
+			'export function sub(left: number, right: number): number {\n\treturn left - right\n}\n'
+		const SUB_TEXT = "it('three minus one → two', () => { expect(sub(3, 1)).toBe(2) })\n"
+		/** The label of a case of `src/add.test.ts` in the one project. */
+		function unitCase(name: string): string {
+			return `src/add.test.ts::${name} [unit]`
+		}
+		const UNCHANGED = unitCase('one plus two → three')
+		const REVISED = unitCase('zero plus zero → zero')
+		const ACCEPTED = unitCase('two plus two → four')
+		/** The first line of the hook's tdd failure for `count` cases not proven. */
+		function staleReason(count: number): string {
+			return `FAIL  tdd  ${count} case(s) of the lot not proven at the production committed`
+		}
+
+		/** A package on main holding `add`, its two cases and `files`, its full gate and hook running one counting step. */
+		function basePackage(files: Record<string, string> = {}): string {
+			const check: GateStep = countingStep({ counter: createCounter(), name: 'check' })
+			return createVitestPackage({
+				dialecte: { gate: { full: [check], hook: [check] } },
+				files: { 'src/add.ts': IMPLEMENTED, 'src/add.test.ts': BASE_TEST, ...files },
+			})
+		}
+
+		/** A lot holding an unchanged, a revised and an accepted case of one project, proven by one red at the base's production. */
+		async function testOnlyLot(): Promise<string> {
+			const root = basePackage({ 'vitest.config.ts': ONE_PROJECT_CONFIG })
+			writeFiles({
+				root,
+				files: {
+					'src/add.test.ts': `${REVISED_TEST}${ACCEPTED_TEXT}`,
+					'.dialecte/lot.json': JSON.stringify({
+						revised: [{ case: REVISED, reason: 'the review asked for one more' }],
+						accept: [{ case: ACCEPTED, reason: 'add answers it already' }],
+					}),
+				},
+			})
+			await tdd({ root, argv: ['red'] })
+			return root
+		}
+
+		afterEach(() => {
+			vi.unstubAllEnvs()
+		})
+
+		it('an unchanged, a revised and an accepted case proven before a production change → FAIL tdd naming each stale', async () => {
+			const root = await testOnlyLot()
+			writeFileSync(join(root, 'src/add.ts'), REFACTORED)
+			git({ root, args: ['add', '-A'] })
+
+			const result = await runHookIn({ cwd: root })
+
+			expect(result.output.split('\n')).toEqual([
+				staleReason(3),
+				'gate --hook: failed at tdd',
+				'--- last lines of tdd ---',
+				`stale  ${UNCHANGED}`,
+				`stale  ${REVISED}`,
+				`stale  ${ACCEPTED}`,
+				GREEN_AGAIN_LINE,
+			])
+		})
+
+		it('the same, tdd green run after the production change → the hook passes', async () => {
+			const root = await testOnlyLot()
+			writeFileSync(join(root, 'src/add.ts'), REFACTORED)
+			await tdd({ root, argv: ['green'] })
+			git({ root, args: ['add', '-A'] })
+
+			const result = await runHookIn({ cwd: root })
+
+			expect({ exitCode: result.exitCode, first: result.output.split('\n')[0] }).toEqual({
+				exitCode: 0,
+				first: 'ok    tdd  3 case(s) of the change: 1 unchanged, 1 accepted, 1 revised',
+			})
+		})
+
+		it('a green naming one case → the cases it did not name stay stale', async () => {
+			const root = await testOnlyLot()
+			writeFileSync(join(root, 'src/add.ts'), REFACTORED)
+			await tdd({ root, argv: ['green', 'src/add.test.ts::one plus two → three'] })
+			git({ root, args: ['add', '-A'] })
+
+			const result = await runHookIn({ cwd: root })
+
+			expect(result.output.split('\n')).toEqual([
+				staleReason(2),
+				'gate --hook: failed at tdd',
+				'--- last lines of tdd ---',
+				`stale  ${REVISED}`,
+				`stale  ${ACCEPTED}`,
+				GREEN_AGAIN_LINE,
+			])
+		})
+
+		it('a case refused at green at the production committed → FAIL tdd: its last run refused; a passing green clears it', async () => {
+			const root = await testOnlyLot()
+			writeFileSync(join(root, 'src/add.ts'), REFACTORED)
+			vi.stubEnv(FAIL_VARIABLE, '1')
+			await tdd({ root, argv: ['green'] })
+			vi.unstubAllEnvs()
+			git({ root, args: ['add', '-A'] })
+
+			const refused = await runHookIn({ cwd: root })
+			await tdd({ root, argv: ['green'] })
+			const cleared = await runHookIn({ cwd: root })
+
+			expect({ refused: refused.output.split('\n'), cleared: cleared.exitCode }).toEqual({
+				refused: [
+					staleReason(1),
+					'gate --hook: failed at tdd',
+					'--- last lines of tdd ---',
+					`refused  ${UNCHANGED}  its last run refused`,
+					GREEN_AGAIN_LINE,
+				],
+				cleared: 0,
+			})
+		})
+
+		it('a case red refused (an error of its own) while it keeps its unchanged proof → FAIL tdd: its last run refused', async () => {
+			const root = await testOnlyLot()
+			vi.stubEnv(THROW_VARIABLE, '1')
+			await tdd({ root, argv: ['red'] })
+			vi.unstubAllEnvs()
+			git({ root, args: ['add', '-A'] })
+
+			const result = await runHookIn({ cwd: root })
+
+			expect(result.output.split('\n')).toEqual([
+				staleReason(1),
+				'gate --hook: failed at tdd',
+				'--- last lines of tdd ---',
+				`refused  ${UNCHANGED}  its last run refused`,
+				GREEN_AGAIN_LINE,
+			])
+		})
+
+		it('no production change since the red, no moved file → the hook passes without a green', async () => {
+			const root = await testOnlyLot()
+			git({ root, args: ['add', '-A'] })
+
+			const result = await runHookIn({ cwd: root })
+
+			expect(result.exitCode).toBe(0)
+		})
+
+		it('a case copied to a new file (its red refused it: nothing moved yet), then moved by a later red of its source alone → FAIL tdd: unproven, naming tdd red; a plain green leaves it so; its red clears it', async () => {
+			const root = basePackage()
+			const [imports, , first, second] = BASE_TEST.split('\n')
+			writeFiles({
+				root,
+				files: {
+					'src/more.test.ts': [
+						imports,
+						"import { sub } from './sub.ts'",
+						"import { expect, it } from 'vitest'",
+						second,
+						SUB_TEXT,
+					].join('\n'),
+					'src/sub.ts': SUB_STUB,
+				},
+			})
+			await tdd({ root, argv: ['red'] })
+			writeFiles({
+				root,
+				files: {
+					'src/add.test.ts': [imports, "import { expect, it } from 'vitest'", first, ''].join('\n'),
+				},
+			})
+			await tdd({ root, argv: ['red', 'src/add.test.ts'] })
+			writeFileSync(join(root, 'src/sub.ts'), SUB)
+			await tdd({ root, argv: ['green'] })
+			git({ root, args: ['add', '-A'] })
+
+			const unproven = await runHookIn({ cwd: root })
+			await tdd({ root, argv: ['red'] })
+			const cleared = await runHookIn({ cwd: root })
+
+			expect({ unproven: unproven.output.split('\n'), cleared: cleared.exitCode }).toEqual({
+				unproven: [
+					staleReason(1),
+					'gate --hook: failed at tdd',
+					'--- last lines of tdd ---',
+					'unproven  src/more.test.ts::zero plus zero → zero  run dialecte tdd red',
+				],
+				cleared: 0,
+			})
+		})
+
+		it('a production file no case depends on, changed after the green → every case of the lot stale; one green clears them', async () => {
+			const root = basePackage()
+			writeFiles({
+				root,
+				files: {
+					'src/add.test.ts': `${BASE_TEST}import { sub } from './sub.ts'\n${SUB_TEXT}`,
+					'src/sub.ts': SUB_STUB,
+				},
+			})
+			await tdd({ root, argv: ['red'] })
+			writeFileSync(join(root, 'src/sub.ts'), SUB)
+			await tdd({ root, argv: ['green'] })
+			writeFiles({ root, files: { 'src/other.ts': 'export const other = 1\n' } })
+			git({ root, args: ['add', '-A'] })
+
+			const stale = await runHookIn({ cwd: root })
+			await tdd({ root, argv: ['green'] })
+			const cleared = await runHookIn({ cwd: root })
+
+			expect({ stale: stale.output.split('\n'), cleared: cleared.exitCode }).toEqual({
+				stale: [
+					staleReason(3),
+					'gate --hook: failed at tdd',
+					'--- last lines of tdd ---',
+					'stale  src/add.test.ts::one plus two → three',
+					'stale  src/add.test.ts::zero plus zero → zero',
+					'stale  src/add.test.ts::three minus one → two',
+					GREEN_AGAIN_LINE,
+				],
+				cleared: 0,
+			})
+		})
+
+		it('a lot whose only test change is a file moved with its bytes, production changed → its cases stale until one green; gate --full lists them', async () => {
+			const root = basePackage()
+			git({ root, args: ['mv', 'src/add.test.ts', 'src/sum.test.ts'] })
+			writeFileSync(join(root, 'src/add.ts'), REFACTORED)
+			git({ root, args: ['add', '-A'] })
+
+			const stale = await runHookIn({ cwd: root })
+			const full = await runGate({ cwd: root, argv: ['--full', '--declare', 'src/'] })
+			await tdd({ root, argv: ['green'] })
+			const cleared = await runHookIn({ cwd: root })
+
+			expect({
+				stale: stale.output.split('\n'),
+				full: full.output.split('\n').find((line) => /^(ok|FAIL) +tdd /.test(line)),
+				cleared: cleared.exitCode,
+			}).toEqual({
+				stale: [
+					staleReason(2),
+					'gate --hook: failed at tdd',
+					'--- last lines of tdd ---',
+					'stale  src/sum.test.ts::one plus two → three',
+					'stale  src/sum.test.ts::zero plus zero → zero',
+					GREEN_AGAIN_LINE,
+				],
+				full: 'ok    tdd  2 case(s) of the change: 2 unchanged',
+				cleared: 0,
+			})
+		})
+
+		it('a second step adding only an accepted case, no production change → the unchanged case of that file is stale; one green clears it', async () => {
+			const root = basePackage()
+			const second = "it('three plus three → six', () => { expect(add(3, 3)).toBe(6) })\n"
+			writeFiles({
+				root,
+				files: {
+					'src/add.test.ts': `${BASE_TEST}${ACCEPTED_TEXT}`,
+					'.dialecte/lot.json': JSON.stringify({
+						accept: [{ case: 'src/add.test.ts::two plus two → four', reason: 'add answers it' }],
+					}),
+				},
+			})
+			await tdd({ root, argv: ['red'] })
+			writeFiles({
+				root,
+				files: {
+					'src/add.test.ts': `${BASE_TEST}${ACCEPTED_TEXT}${second}`,
+					'.dialecte/lot.json': JSON.stringify({
+						accept: [
+							{ case: 'src/add.test.ts::two plus two → four', reason: 'add answers it' },
+							{ case: 'src/add.test.ts::three plus three → six', reason: 'add answers it' },
+						],
+					}),
+				},
+			})
+			await tdd({ root, argv: ['red'] })
+			git({ root, args: ['add', '-A'] })
+
+			const stale = await runHookIn({ cwd: root })
+			await tdd({ root, argv: ['green'] })
+			const cleared = await runHookIn({ cwd: root })
+
+			expect({ stale: stale.output.split('\n'), cleared: cleared.exitCode }).toEqual({
+				stale: [
+					staleReason(2),
+					'gate --hook: failed at tdd',
+					'--- last lines of tdd ---',
+					'stale  src/add.test.ts::one plus two → three',
+					'stale  src/add.test.ts::zero plus zero → zero',
+					GREEN_AGAIN_LINE,
+				],
+				cleared: 0,
+			})
 		})
 	},
 )

@@ -49,7 +49,7 @@ import { openProcessLiveOutput } from '../lib/progress/process-live-output.ts'
 import { createStepProgress } from '../lib/progress/step-progress.ts'
 import { createSystemClock } from '../lib/progress/system-clock.ts'
 import { runCaseOnBase, runCasesOnBase, trashBaseRunLeftovers } from '../lib/tdd/base-red.ts'
-import { frozenHashOf } from '../lib/tdd/case-status.ts'
+import { createSkippedAsWrittenReader, frozenHashOf, isProvenNow } from '../lib/tdd/case-status.ts'
 import { firstLine, notARed } from '../lib/tdd/classify-failure.ts'
 import { countingReceipts, isProvenRedThenGreen, receiptsOf } from '../lib/tdd/counting-receipts.ts'
 import { isDataDependency } from '../lib/tdd/data-dependency.ts'
@@ -97,8 +97,11 @@ import {
 import {
 	appendEntries,
 	hashChangedTestCode,
+	hashTestCodeText,
 	isTestFile,
 	listChangedTestFiles,
+	listMovedTestFiles,
+	listTestFilesOfChange,
 	readLedger,
 	resolveBase,
 } from '../lib/tdd/tdd-files.ts'
@@ -113,6 +116,7 @@ import {
 	HELPER_DEPENDENTS_OVER_LIMIT,
 	HELPER_DEPENDENTS_STEP,
 	NO_RED_RECEIPT,
+	NOT_RUN_CASE_STATES,
 	NOTHING_CHANGED_SINCE_RED,
 	ONLY_REFUSAL,
 	PASSES_ON_BASE_TOO,
@@ -134,6 +138,7 @@ import {
 	REVISION_NOT_NEEDED,
 	ROLLBACK_LINE,
 	RUNNER_DISPLAY_NAMES,
+	SKIPPED_AT_THIS_RUN,
 	TEST_CODE_CHANGED_SINCE_RED,
 	UNREAD_SETUP_LINE,
 	UNRESOLVED_IMPORT_HINT,
@@ -289,7 +294,8 @@ function stepEndStateHashOf(root: string): string | null {
 
 /**
  * What a `red` or `green` run reads before it runs, or the refusal that stops it there: test code changed since the
- * last red (`green` only), no test file new or changed, an unreadable lot file.
+ * last red (`green` only), no test file new or changed, an unreadable lot file. A green runs the test files moved with
+ * their bytes too (their cases are the base's: a green proves them passing); a red leaves them out.
  */
 function admitRun(params: {
 	context: TddContext
@@ -315,7 +321,11 @@ function admitRun(params: {
 			}
 	}
 	const changed = listChangedTestFiles(context)
-	const files = targetFiles({ changed, targets: context.targets })
+	const moved = subcommand === 'green' ? listMovedTestFiles(context) : []
+	const files = targetFiles({
+		changed: listTestFilesOfChange({ changed, moved }),
+		targets: context.targets,
+	})
 	const noFileRefusal = {
 		refusal: resultOf({
 			exitCode: 1,
@@ -344,6 +354,7 @@ function admitRun(params: {
 		testCode,
 		changed,
 		files,
+		moved,
 		acceptances,
 		revisions,
 		moves,
@@ -1310,7 +1321,13 @@ async function runGreen(params: {
 }): Promise<CommandResult> {
 	const { context } = params
 	const { root, ledger } = context
-	const { testCode, files, acceptances, revisions } = params.admission
+	const { files, acceptances, revisions } = params.admission
+	const movedFiles = new Set(params.admission.moved.map((file) => file.file))
+	// green's own map: a moved file's hash read from its text, as the hook reads it; red's map stays as admitted
+	const testCode = new Map(params.admission.testCode)
+	for (const file of params.admission.moved)
+		testCode.set(file.file, hashTestCodeText({ file: file.file, text: file.text }))
+	const texts = new Map(files.map((file) => [file.file, file.text]))
 	const modules = await announcedRun({
 		context,
 		subcommand: 'green',
@@ -1344,7 +1361,8 @@ async function runGreen(params: {
 				root,
 				configs: params.admission.configs,
 				modules,
-				files,
+				// a file moved with its bytes holds the base's cases: never a file of the change that ran none
+				files: files.filter((file) => !movedFiles.has(file.file)),
 				unlisted,
 				collectOnly: false,
 			}),
@@ -1352,19 +1370,42 @@ async function runGreen(params: {
 	)
 	const duplicates = findDuplicateCaseIds(cases)
 	const memberReasons = memberReasonsOf({ duplicates, cases, files })
-	const verdicts = cases
-		.filter((testCase) => isJudgedByRun({ testCase, context }))
-		.map(function judgeCase(testCase) {
-			// the last proof the read rule counts: a stale acceptance or revision never stands in for the red
-			const proof = countingReceipts({ ledger, testCase: idOf(testCase), acceptances, revisions })
-				.counting.filter((receipt) => PROOF_KINDS.includes(receipt.kind))
-				.at(-1)
-			// a member of a duplicate group is refused whatever its receipts: they name no single case
-			const refusal =
-				memberReasons.get(caseLabel(testCase)) ??
-				greenRefusal({ testCase, proof, ledger, testCode, productionHash })
-			return { testCase, proof, refusal }
-		})
+	// each file's source parsed once; a pytest case's skip mark from what the run reported
+	const isSkippedAsWritten = createSkippedAsWrittenReader({ root, texts, modules })
+	/** A case of a file moved with its bytes that the run skipped though its source does not (`skipIf(<env>)`). */
+	function isSkippedAtThisRun(testCase: RunCase): boolean {
+		return (
+			movedFiles.has(testCase.file) &&
+			NOT_RUN_CASE_STATES.includes(testCase.state) &&
+			!isSkippedAsWritten(testCase)
+		)
+	}
+	/** The case is one this green judges: run and targeted; of a moved file, run or skipped only at this run. */
+	function isJudgedByGreen(testCase: RunCase): boolean {
+		if (!movedFiles.has(testCase.file)) return isJudgedByRun({ testCase, context })
+		return (
+			isTargeted({ testCase, targets: context.targets }) &&
+			(!NOT_RUN_CASE_STATES.includes(testCase.state) || isSkippedAtThisRun(testCase))
+		)
+	}
+	const verdicts = cases.filter(isJudgedByGreen).map(function judgeCase(testCase) {
+		const movedFile = movedFiles.has(testCase.file)
+		const testFileHash = testCode.get(testCase.file) ?? ''
+		// the last proof the read rule counts: a stale acceptance or revision never stands in for the red
+		const counted = countingReceipts({ ledger, testCase: idOf(testCase), acceptances, revisions })
+			.counting.filter((receipt) => PROOF_KINDS.includes(receipt.kind))
+			.at(-1)
+		// a case of a file moved with its bytes holds the base's proof, unless its own stands at the file's bytes now
+		const proof =
+			movedFile && counted?.testFileHash !== testFileHash
+				? movedFileProofOf({ testCase, testFileHash, productionHash })
+				: counted
+		// a member of a duplicate group is refused whatever its receipts: they name no single case
+		const refusal =
+			memberReasons.get(caseLabel(testCase)) ??
+			greenRefusal({ testCase, proof, ledger, testCode, productionHash, movedFile })
+		return { testCase, proof, refusal }
+	})
 	const proven = verdicts
 		.filter(({ proof, refusal }) => refusal === undefined && !isTestOnlyProof(proof))
 		.map(({ testCase }) => ({ ...idOf(testCase), caseHash: testCase.caseHash }))
@@ -1383,9 +1424,27 @@ async function runGreen(params: {
 		if (refusal) {
 			entries.push({ ...base, kind: 'refused', reason: refusal })
 			lines.push(statusLine({ label: 'refused', id: caseLabel(testCase), detail: refusal }))
-		} else if (proof && isTestOnlyProof(proof))
-			lines.push(statusLine({ label: proof.kind, id: caseLabel(testCase), detail: '' }))
-		else {
+		} else if (proof && isTestOnlyProof(proof)) {
+			// a pass needing no red: recorded again when the production or the test file moved on since its last run
+			if (
+				!isProvenNow({
+					ledger,
+					testCase: idOf(testCase),
+					testFileHash: base.testFileHash,
+					acceptances,
+					revisions,
+					productionHash,
+				})
+			)
+				entries.push({ ...base, kind: proof.kind, ...(proof.reason && { reason: proof.reason }) })
+			lines.push(
+				statusLine({
+					label: proof.kind,
+					id: caseLabel(testCase),
+					detail: NOT_RUN_CASE_STATES.includes(testCase.state) ? SKIPPED_AT_THIS_RUN : '',
+				}),
+			)
+		} else {
 			entries.push({ ...base, kind: 'green', ...(flags.length && { flags }) })
 			lines.push(
 				statusLine({
@@ -1399,10 +1458,7 @@ async function runGreen(params: {
 	// the members the run leaves unjudged (skipped, not targeted): listed, no receipt (they still fail the run)
 	lines.push(
 		...cases
-			.filter(
-				(testCase) =>
-					memberReasons.has(caseLabel(testCase)) && !isJudgedByRun({ testCase, context }),
-			)
+			.filter((testCase) => memberReasons.has(caseLabel(testCase)) && !isJudgedByGreen(testCase))
 			.map((testCase) => duplicateLine({ testCase, memberReasons })),
 	)
 	appendEntries({ root, entries, production })
@@ -1503,28 +1559,59 @@ function isTestOnlyProof(proof: TddReceipt | undefined): boolean {
 	return proof?.kind === 'unchanged' || proof?.kind === 'accepted' || proof?.kind === 'revised'
 }
 
-/** Why a case cannot be green now, or undefined when its green is earned. */
+/**
+ * The proof a case of a file moved with its bytes holds when it has none of its own at the file's bytes now: the
+ * base's, as an `unchanged` receipt would hold it (no receipt is read for it; one is recorded when it passes).
+ */
+function movedFileProofOf(params: {
+	testCase: RunCase
+	testFileHash: string
+	productionHash: string
+}): TddReceipt {
+	const { testCase } = params
+	return {
+		...idOf(testCase),
+		kind: 'unchanged',
+		testFileHash: params.testFileHash,
+		caseHash: testCase.caseHash,
+		productionHash: params.productionHash,
+		at: '',
+	}
+}
+
+/**
+ * Why a case cannot be green now, or undefined when its green is earned: no proof; its test code edited since the red
+ * that froze it (never for a file moved with its bytes: its bytes are the base's); then, whatever its proof, a run
+ * that did not pass it (a pass needing no red the run did not run is none); last, a red proof with nothing changed in
+ * production since.
+ */
 function greenRefusal(params: {
 	testCase: RunCase
 	proof: TddReceipt | undefined
 	ledger: TddContext['ledger']
 	testCode: Map<string, string>
 	productionHash: string
+	/** The case's file is moved with its bytes: a freeze of its path at other bytes says nothing now. */
+	movedFile: boolean
 }): string | undefined {
 	const { testCase, proof } = params
 	if (!proof) return NO_RED_RECEIPT
-	const testFileHash = params.testCode.get(testCase.file)
-	const frozen = frozenHashOf({ ledger: params.ledger, file: testCase.file })
-	// as frozen; a file never frozen (a case of it refused) as its red saw it
-	const fileUntouched =
-		frozen === testFileHash || (frozen === undefined && proof.testFileHash === testFileHash)
-	if (!fileUntouched || proof.caseHash !== testCase.caseHash) return FROZEN_AFTER_RED
-	if (proof.kind === 'unchanged' || proof.kind === 'accepted' || proof.kind === 'revised')
-		return undefined
+	if (!params.movedFile) {
+		const testFileHash = params.testCode.get(testCase.file)
+		const frozen = frozenHashOf({ ledger: params.ledger, file: testCase.file })
+		// as frozen; a file never frozen (a case of it refused) as its red saw it
+		const fileUntouched =
+			frozen === testFileHash || (frozen === undefined && proof.testFileHash === testFileHash)
+		if (!fileUntouched || proof.caseHash !== testCase.caseHash) return FROZEN_AFTER_RED
+	}
+	// a pass needing no red the run did not run (a moved file's case skipped only now, a node:test todo): it did not
+	// fail, and nothing else can prove it
+	if (isTestOnlyProof(proof) && NOT_RUN_CASE_STATES.includes(testCase.state)) return undefined
 	if (testCase.state !== 'passed')
 		return testCase.failure
 			? `still fails: ${testCase.failure.kind}: ${firstLine(testCase.failure.message)}`
 			: `${testCase.state}: the run did not pass it`
+	if (isTestOnlyProof(proof)) return undefined
 	if (proof.productionHash === params.productionHash) return NOTHING_CHANGED_SINCE_RED
 	return undefined
 }

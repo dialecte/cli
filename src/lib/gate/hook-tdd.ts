@@ -2,13 +2,17 @@
  * The tdd step of `gate --hook` (a package declaring `dialecte.gate.hook`): the receipts prove the commit, so the hook
  * runs no test. A first commit and a merge commit skip it. Otherwise it fails when the working files are not the
  * commit for a path tdd reads (the receipts were taken on the working files), when a case of the lot (measured from
- * the lot base, as `gate --full` measures it) lacks its red then green, or when a case's newest green was taken before
- * the production changed: a commit of production alone can make an earlier commit's green stale.
+ * the lot base, as `gate --full` measures it) lacks its red then green, or when a closed case (green, unchanged,
+ * accepted, revised) is not proven passing at the production committed (`isProvenNow`): its last run at its test file
+ * now refused it, none ran it there, or it ran at another production. A commit of production alone can make an earlier
+ * commit's proof stale.
  */
 import { computeStateTree } from '../gate-records/state-hash.ts'
 import { readGit, tryReadGit } from '../git.ts'
+import { isProvenNow, lastRunOf } from '../tdd/case-status.ts'
 import { checkTddReceipts } from '../tdd/check-tdd-receipts.ts'
-import { caseLabel } from '../tdd/select-cases.ts'
+import { countingReceipts } from '../tdd/counting-receipts.ts'
+import { readAcceptances, readRevisions } from '../tdd/lot-declaration.ts'
 import {
 	hashProduction,
 	isPackageTestCode,
@@ -23,14 +27,18 @@ import {
 	HOOK_TDD_NOT_THE_COMMIT_HINT,
 	HOOK_TDD_NOT_THE_COMMIT_REASON,
 	HOOK_TDD_PATH_SEPARATOR,
+	HOOK_TDD_PROVEN_STATUSES,
+	HOOK_TDD_REFUSED_LINE,
 	HOOK_TDD_STALE_LINE,
 	HOOK_TDD_STALE_REASON,
+	HOOK_TDD_UNPROVEN_LINE,
 } from './hook-tdd.constants.ts'
 import { tddStepResultOf } from './tdd-step.ts'
 
 import type { PackageJson } from '../package-json.types.ts'
-import type { TddBase, TddLedger, TddReceipt } from '../tdd/tdd.types.ts'
+import type { JudgedCase, TddBase } from '../tdd/tdd.types.ts'
 import type { StepResult } from './gate.types.ts'
+import type { StaleCase } from './hook-tdd.types.ts'
 
 /**
  * The hook's tdd step for the commit of `tree` (the index git hands the hook) in the package at `cwd`.
@@ -55,26 +63,27 @@ export async function runHookTddStep(params: {
 			),
 			tail: HOOK_TDD_NOT_THE_COMMIT_HINT,
 		})
-	// the whole lot: a commit of production alone can make an earlier commit's green stale
+	// the whole lot: a commit of production alone can make an earlier commit's proof stale
 	const { base } = params
 	if ('failure' in base) return failed({ reason: base.failure })
 	const check = await checkTddReceipts({ root: cwd, packageJson, ref: base.commit })
 	const result = tddStepResultOf(check)
 	if (result.status !== 'passed') return result
-	const greens = (result.cases ?? [])
-		.filter((judged) => judged.status === 'green')
-		.map((judged) => judged.label)
-	const stale = listStaleGreens({ cwd, packageJson, labels: greens })
-	if (stale.length === 0) return result
-	// the passing count no longer stands: the reason says what is stale instead
-	const { note: _passedNote, ...judged } = result
+	const unproven = listStaleCases({ cwd, packageJson, cases: check.cases ?? [] })
+	if (unproven.length === 0) return result
+	// the passing count and its evidence no longer stand: the reason and the tail say what is not proven instead (the
+	// base line stays, for the record)
+	const { note: _passedNote, details: _passedDetails, ...judged } = result
+	// a green clears a stale or refused case; an unproven one needs its red first
+	const greenAgain = unproven.some((stale) => !stale.needsRed)
 	return {
 		...judged,
 		status: 'failed',
-		reason: HOOK_TDD_STALE_REASON.replace('{count}', () => String(stale.length)),
+		...(check.baseNote && { details: [check.baseNote] }),
+		reason: HOOK_TDD_STALE_REASON.replace('{count}', () => String(unproven.length)),
 		tail: [
-			...stale.map((label) => HOOK_TDD_STALE_LINE.replace('{label}', () => label)),
-			HOOK_TDD_GREEN_AGAIN_LINE,
+			...unproven.map((stale) => stale.line),
+			...(greenAgain ? [HOOK_TDD_GREEN_AGAIN_LINE] : []),
 		].join('\n'),
 	}
 }
@@ -145,25 +154,50 @@ function listDifferingTddPaths(params: {
 		.sort()
 }
 
-/** The cases among `labels` whose newest green receipt was taken at another production than now, in order. */
-function listStaleGreens(params: {
+/**
+ * The line of each closed case not proven passing at the production now (`isProvenNow`), in order: `unproven` when it
+ * holds no proof receipt and its file is not moved with its bytes (a red gives it one), `refused` when its last run at
+ * its test file now refused it, `stale` otherwise. A case skipped as written is never judged.
+ */
+function listStaleCases(params: {
 	cwd: string
 	packageJson: PackageJson
-	labels: readonly string[]
-}): string[] {
-	if (params.labels.length === 0) return []
-	const ledger = readLedger(params.cwd)
-	// the step passed: its ledger was read
-	if ('failure' in ledger) return []
-	const now = hashProduction({ root: params.cwd, packageJson: params.packageJson })
-	return params.labels.filter((label) => newestGreenOf({ ledger, label })?.productionHash !== now)
-}
-
-/** The newest green receipt of the case `label`. */
-function newestGreenOf(params: { ledger: TddLedger; label: string }): TddReceipt | undefined {
-	return params.ledger.entries
-		.filter(
-			(entry): entry is TddReceipt => entry.kind === 'green' && caseLabel(entry) === params.label,
+	cases: readonly JudgedCase[]
+}): StaleCase[] {
+	const closed = params.cases.filter(
+		(judged) => HOOK_TDD_PROVEN_STATUSES.includes(judged.status) && !judged.skippedAsWritten,
+	)
+	if (closed.length === 0) return []
+	const { cwd } = params
+	const ledger = readLedger(cwd)
+	const acceptances = readAcceptances(cwd)
+	const revisions = readRevisions(cwd)
+	// the step passed: its ledger and lot file were read
+	if ('failure' in ledger || 'failure' in acceptances || 'failure' in revisions) return []
+	const productionHash = hashProduction({ root: cwd, packageJson: params.packageJson })
+	return closed.flatMap(function staleCaseOf(judged): StaleCase[] {
+		const testCase = {
+			file: judged.file ?? '',
+			name: judged.name ?? '',
+			project: judged.project ?? '',
+		}
+		const asked = {
+			ledger,
+			testCase,
+			testFileHash: judged.testFileHash ?? '',
+			acceptances,
+			revisions,
+		}
+		if (isProvenNow({ ...asked, productionHash })) return []
+		const holdsProof = countingReceipts(asked).counting.some(
+			(receipt) => receipt.kind !== 'refused',
 		)
-		.at(-1)
+		const needsRed = !holdsProof && !judged.movedFile
+		const template = needsRed
+			? HOOK_TDD_UNPROVEN_LINE
+			: lastRunOf(asked)?.kind === 'refused'
+				? HOOK_TDD_REFUSED_LINE
+				: HOOK_TDD_STALE_LINE
+		return [{ line: template.replace('{label}', () => judged.label), needsRed }]
+	})
 }

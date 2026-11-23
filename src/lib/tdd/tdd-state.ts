@@ -9,7 +9,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { isWrittenAsString } from './case-of-change.ts'
-import { caseStatusOf, flagsOf, frozenHashOf } from './case-status.ts'
+import { caseStatusOf, createSkippedAsWrittenReader, flagsOf, frozenHashOf } from './case-status.ts'
 import { countingReceipts, describeSkippedReceipts } from './counting-receipts.ts'
 import { findDuplicateCaseIds, isDuplicateMember } from './duplicate-case-ids.ts'
 import {
@@ -32,9 +32,11 @@ import { runTestCases } from './run-test-cases.ts'
 import { caseLabel, readRunCases } from './select-cases.ts'
 import {
 	hashChangedTestCode,
+	hashTestCodeText,
 	listChangedTestFiles,
 	listDeletedTestFiles,
 	listMovedTestFiles,
+	listTestFilesOfChange,
 	readAtBase,
 } from './tdd-files.ts'
 import { SKIPPED_RECEIPTS_LABEL, UNTITLED_CALL_GONE } from './tdd.constants.ts'
@@ -80,9 +82,7 @@ export async function readTddState(params: {
 	// a test file moved with its bytes: its cases listed, unchanged, with no receipt to hold
 	const moved = listMovedTestFiles({ root, base, presence })
 	// in path order, as the changed files are listed
-	const listed = [...changed, ...moved].sort((one, other) =>
-		one.file < other.file ? -1 : one.file > other.file ? 1 : 0,
-	)
+	const listed = listTestFilesOfChange({ changed, moved })
 	if (listed.length === 0)
 		return {
 			cases: [],
@@ -116,6 +116,15 @@ export async function readTddState(params: {
 		collectOnly: true,
 	})
 	const movedFiles = new Set(moved.map((file) => file.file))
+	const isSkippedAsWritten = createSkippedAsWrittenReader({
+		root,
+		texts: new Map(listed.map((file) => [file.file, file.text])),
+		modules: reported,
+	})
+	// a moved file's hash read from its text, as a green records it (the changed files' map leaves moved files out)
+	const movedHashes = new Map(
+		moved.map((file) => [file.file, hashTestCodeText({ file: file.file, text: file.text })]),
+	)
 	const duplicates = findDuplicateCaseIds(cases)
 	// cases moved out of a deleted or shrunk test file keep the base's proof (no receipt needed); a name two
 	// cases share names no single case to move
@@ -149,7 +158,18 @@ export async function readTddState(params: {
 	return {
 		cases: cases.map(function statusLine(testCase): CaseStatusLine {
 			const id = { file: testCase.file, name: testCase.name, project: testCase.project }
-			if (movedFiles.has(testCase.file)) return { ...id, status: 'unchanged' as const, flags: [] }
+			const shown = {
+				testFileHash: movedHashes.get(testCase.file) ?? testCode.get(testCase.file) ?? '',
+				...(isSkippedAsWritten(testCase) && { skippedAsWritten: true as const }),
+			}
+			if (movedFiles.has(testCase.file))
+				return {
+					...id,
+					status: 'unchanged' as const,
+					flags: [],
+					...shown,
+					movedFile: true as const,
+				}
 			const { skipped } = countingReceipts({ ledger, testCase: id, acceptances, revisions })
 			const status = caseStatusOf({
 				root,
@@ -168,6 +188,7 @@ export async function readTddState(params: {
 					status === 'missing receipt' && movedCases.has(caseLabel(id)) ? 'unchanged' : status,
 				flags: flagsOf({ ledger, testCase: id }),
 				...(skipped.length && { skipped }),
+				...shown,
 			}
 		}),
 		duplicates,

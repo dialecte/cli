@@ -3,6 +3,7 @@ import { join } from 'node:path'
 
 import { closestNames } from '../closest-names.ts'
 import { listRepositoryFiles, readHeadOrNone } from '../git.ts'
+import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { shellWord } from '../shell-quote.ts'
 import { shortMessage } from './classify-failure.ts'
 import { writtenLinesOf } from './duplicate-case-ids.ts'
@@ -44,6 +45,9 @@ import {
 	listChangedTestFiles,
 	listDeletedSince,
 	listDeletedTestFiles,
+	listMovedTestFilePairs,
+	listMovedTestFiles,
+	listRenamedTestFilePairs,
 	readAtBase,
 	readLedger,
 } from './tdd-files.ts'
@@ -52,6 +56,7 @@ import {
 	DUPLICATE_GATE_REASON,
 	DUPLICATE_LABEL,
 	DUPLICATE_LINES_DETAIL,
+	MOVED_ENTRY_NOT_NEEDED,
 	TDD_BASE_LINE,
 	TDD_NEXT_STEPS,
 	UNUSED_ENTRY_CLOSEST,
@@ -65,7 +70,7 @@ import { readVitestConfigs } from './vitest-configs.ts'
 import { zeroCaseLines } from './zero-case-verdict.ts'
 
 import type { PackageJson } from '../package-json.types.ts'
-import type { TddBase, TddCheck, TddState, VitestConfigs } from './tdd.types.ts'
+import type { JudgedCase, TddBase, TddCheck, TddState, VitestConfigs } from './tdd.types.ts'
 import type { TestCodePresence } from './test-code-presence.types.ts'
 
 export async function checkTddReceipts(params: {
@@ -135,8 +140,13 @@ async function judgeTddReceipts(params: {
 	const moves = readMovedEntries(root)
 	if ('failure' in moves) return { status: 'failed', reason: moves.failure }
 	const testCode = hashChangedTestCode({ root, base, presence, packageJson })
-	// a change that only deletes test files still lists their cases, as deleted
-	if (testCode.size === 0 && listDeletedTestFiles({ root, base, presence }).length === 0)
+	// a change that only deletes test files still lists their cases, as deleted; one that only moves them with their
+	// bytes lists theirs, as the base's (the hook proves them at the production committed)
+	if (
+		testCode.size === 0 &&
+		listDeletedTestFiles({ root, base, presence }).length === 0 &&
+		listMovedTestFiles({ root, base, presence }).length === 0
+	)
 		return { status: 'passed', cases: [], note: 'no test code new or changed since the base' }
 	const state = await readTddState({ root, packageJson, ledger, base, presence })
 	if ('failure' in state)
@@ -145,7 +155,16 @@ async function judgeTddReceipts(params: {
 			reason: state.failure,
 			...(state.tail && { lines: [...state.tail] }),
 		}
-	const cases = state.cases.map((line) => ({ label: caseLabel(line), status: line.status }))
+	const cases = state.cases.map((line): JudgedCase => ({
+		label: caseLabel(line),
+		status: line.status,
+		file: line.file,
+		name: line.name,
+		project: line.project,
+		testFileHash: line.testFileHash,
+		...(line.movedFile && { movedFile: line.movedFile }),
+		...(line.skippedAsWritten && { skippedAsWritten: line.skippedAsWritten }),
+	}))
 	// the grouped moved lines, kept in the gate record for the hand-over card
 	const moved = state.moves ? movedLines(state.moves).grouped : []
 	const open = state.cases.filter(
@@ -178,6 +197,7 @@ async function judgeTddReceipts(params: {
 			.map((line) => `flag  ${caseLabel(line)}  ${line.flags.join(', ')}`),
 	]
 	const labels = state.cases.map((line) => caseLabel(line))
+	const movePairs = pairedMovesOf({ root, base, presence })
 	const files = [...new Set(state.cases.map((line) => line.file))]
 	const revisedCases = state.cases.filter((line) => line.status === 'revised')
 	evidence.push(
@@ -243,15 +263,30 @@ async function judgeTddReceipts(params: {
 					),
 			)
 			.map((entry) =>
-				unusedEntryLine({
-					head: 'unused moved entry',
-					list: 'moved',
-					entry: entry.to,
-					removeWords: [entry.from, entry.to],
-					why: `no case of the change carries a red from ${entry.from}`,
-					reason: entry.reason,
-					candidates: namesOneCase(entry.to) ? labels : files,
-				}),
+				isPairedMove({ entry, pairs: movePairs })
+					? fillMessage({
+							template: MOVED_ENTRY_NOT_NEEDED,
+							values: {
+								from: entry.from,
+								to: entry.to,
+								remove: fillMessage({
+									template: UNUSED_ENTRY_REMOVE,
+									values: {
+										list: 'moved',
+										entry: [entry.from, entry.to].map((word) => shellWord(word)).join(' '),
+									},
+								}),
+							},
+						})
+					: unusedEntryLine({
+							head: 'unused moved entry',
+							list: 'moved',
+							entry: entry.to,
+							removeWords: [entry.from, entry.to],
+							why: `no case of the change carries a red from ${entry.from}`,
+							reason: entry.reason,
+							candidates: namesOneCase(entry.to) ? labels : files,
+						}),
 			),
 	)
 	const zeroCases = state.zeroCases ?? []
@@ -331,6 +366,28 @@ async function judgeTddReceipts(params: {
 		...(evidence.length && { details: evidence }),
 		...(moved.length && { moved }),
 	}
+}
+
+/** The test file moves tdd pairs itself, new path → old path: the renames git pairs and the files moved with their bytes. */
+function pairedMovesOf(params: {
+	root: string
+	base: string
+	presence: TestCodePresence
+}): Map<string, string> {
+	return new Map([...listMovedTestFilePairs(params), ...listRenamedTestFilePairs(params)])
+}
+
+/** A file-level `moved` entry naming a pair tdd matches itself (`pairedMovesOf`). */
+function isPairedMove(params: {
+	entry: { from: string; to: string }
+	pairs: ReadonlyMap<string, string>
+}): boolean {
+	const { entry } = params
+	return (
+		!namesOneCase(entry.from) &&
+		!namesOneCase(entry.to) &&
+		params.pairs.get(entry.to) === entry.from
+	)
 }
 
 function countStatus(params: { state: TddState; status: string }): number {

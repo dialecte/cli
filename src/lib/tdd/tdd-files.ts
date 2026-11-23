@@ -29,7 +29,7 @@ import {
 	TEST_FILE_PATTERN,
 	TEST_FOLDER_PATTERN,
 } from './tdd.constants.ts'
-import { presentTextOf } from './test-code-presence.ts'
+import { listRenames, presentTextOf } from './test-code-presence.ts'
 import { testCodeTokens } from './test-code-tokens.ts'
 
 import type { PackageJson } from '../package-json.types.ts'
@@ -270,38 +270,90 @@ function testFileKindIn(root: string): (file: string) => string | undefined {
 
 /**
  * The test files changed since the base (new ones included, deleted ones left out), with both texts; a test
- * file moved with its bytes as at the base is no change (`listMovedTestFiles`).
+ * file moved with its bytes as at the base is no change (`listMovedTestFiles`). A test file git reports renamed from a
+ * test file is read at the base at its old path (`baseFile`): its untouched cases are the base's.
  */
 export function listChangedTestFiles(params: ChangeQuery): ChangedTestFile[] {
 	const { root, base, presence } = params
 	const moved = listMovedFiles({ ...params, kindOf: testFileKindIn(root) })
+	const renamed = listRenamedTestFilePairs(params)
 	return listChangedSince(params)
 		.filter((file) => isTestFile({ root, file }) && !moved.has(file))
-		.map((file) => ({
-			file,
-			text: presentTextOf({ root, presence, file }) ?? '',
-			baseText: readAtBase({ root, base, file }),
-		}))
+		.map(function changedTestFile(file) {
+			const baseFile = renamed.get(file)
+			return {
+				file,
+				text: presentTextOf({ root, presence, file }) ?? '',
+				baseText: readAtBase({ root, base, file: baseFile ?? file }),
+				...(baseFile !== undefined && { baseFile }),
+			}
+		})
+}
+
+/**
+ * The test files git reports renamed from a test file, new path → old path (`listRenames` of the presence map): tdd
+ * reads each at the base at its old path.
+ *
+ * @intent pair each renamed test file with its old path, as tdd reads it
+ * @internal
+ */
+export function listRenamedTestFilePairs(params: {
+	root: string
+	presence: ChangeQuery['presence']
+}): Map<string, string> {
+	const { root } = params
+	return new Map(
+		[...listRenames(params.presence)].filter(
+			([file, from]) => isTestFile({ root, file }) && isTestFile({ root, file: from }),
+		),
+	)
+}
+
+/**
+ * The changed test files (`listChangedTestFiles`) and the test files moved with their bytes (`listMovedTestFiles`),
+ * in path order: every test file whose cases tdd lists.
+ *
+ * @intent list every test file of the change whose cases tdd reads, moved ones included
+ * @internal
+ */
+export function listTestFilesOfChange(params: {
+	changed: readonly ChangedTestFile[]
+	moved: readonly ChangedTestFile[]
+}): ChangedTestFile[] {
+	return [...params.changed, ...params.moved].sort((one, other) =>
+		one.file < other.file ? -1 : one.file > other.file ? 1 : 0,
+	)
 }
 
 /** The test files moved since the base with their bytes (R100): their text is the base text of the old path. */
 export function listMovedTestFiles(params: ChangeQuery): ChangedTestFile[] {
 	const { presence } = params
-	return [...listMovedFiles({ ...params, kindOf: testFileKindIn(params.root) }).keys()]
-		.sort()
-		.map(function movedTestFile(file) {
-			const text = presentTextOf({ root: params.root, presence, file }) ?? ''
-			return { file, text, baseText: text }
-		})
+	return [...listMovedTestFilePairs(params).keys()].sort().map(function movedTestFile(file) {
+		const text = presentTextOf({ root: params.root, presence, file }) ?? ''
+		return { file, text, baseText: text }
+	})
 }
 
 /**
- * The test files of the base that the change deletes (a test file moved with its bytes is not deleted), each
- * judged by the package's pytest configuration as it is now.
+ * The test files moved since the base with their bytes (R100), new path → old path (`listMovedFiles` over test files).
+ *
+ * @intent pair each test file moved with its bytes with its old path
+ * @internal
+ */
+export function listMovedTestFilePairs(params: ChangeQuery): Map<string, string> {
+	return listMovedFiles({ ...params, kindOf: testFileKindIn(params.root) })
+}
+
+/**
+ * The test files of the base that the change deletes (a test file moved with its bytes, or renamed to a test file git
+ * pairs, is not deleted: it lives on at its new path), each judged by the package's pytest configuration as it is now.
  */
 export function listDeletedTestFiles(params: ChangeQuery): string[] {
 	const { root } = params
-	const sources = new Set(listMovedFiles({ ...params, kindOf: testFileKindIn(root) }).values())
+	const sources = new Set([
+		...listMovedTestFilePairs(params).values(),
+		...listRenamedTestFilePairs(params).values(),
+	])
 	return listDeletedSince(params).filter((file) => isTestFile({ root, file }) && !sources.has(file))
 }
 

@@ -252,18 +252,32 @@ export function everyTestCallSkipped(params: {
 	/** The locations of the cases the run reports for the file (undefined: the run gave none). */
 	locations: ReadonlyArray<SourceLocation | undefined>
 }): boolean {
+	const isSkippedAt = skippedAsWrittenReader(params)
+	return params.locations.length > 0 && params.locations.every(isSkippedAt)
+}
+
+/**
+ * Whether the case at a location goes through `.skip` / `.todo` / `.skipIf(true)`, itself or through a suite call
+ * around it (it cannot fail anywhere), the file parsed once for every location asked. A location mapping to no test
+ * call (a helper's registration), or none, is not known skipped; a case skipped only at run time (`skipIf(<env>)`,
+ * `ctx.skip()`) is not skipped as written.
+ *
+ * @intent tell a case that never runs by its source from one the run skipped
+ * @internal
+ */
+export function skippedAsWrittenReader(params: {
+	text: string
+	file: string
+}): (location: SourceLocation | undefined) => boolean {
 	const source = parseTestSource({ text: params.text, kind: scriptKindOf(params.file) })
 	const nodes = testCallNodesOf(source)
 	const index = testCallIndexOf({ source, nodes })
 	const nodeByStart = new Map(nodes.map((node) => [node.getStart(source), node]))
-	return (
-		params.locations.length > 0 &&
-		params.locations.every(function reportedSkipped(location) {
-			const call = location === undefined ? undefined : testCallSpanning({ index, location })
-			const node = call === undefined ? undefined : nodeByStart.get(call.start)
-			return node !== undefined && isSkippedAsWritten(node)
-		})
-	)
+	return function isSkippedAt(location) {
+		const call = location === undefined ? undefined : testCallSpanning({ index, location })
+		const node = call === undefined ? undefined : nodeByStart.get(call.start)
+		return node !== undefined && isSkippedAsWritten(node)
+	}
 }
 
 /** The test call goes through `.skip` / `.todo`, itself or through a suite call whose arguments hold it. */

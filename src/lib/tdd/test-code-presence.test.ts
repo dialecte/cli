@@ -7,10 +7,12 @@ import { join } from 'node:path'
 
 import { createScratchRepository, git, writeFiles } from '../../../test/scratch-repository.ts'
 import { SCRATCH_GIT_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
-import { changedTestCodeOf } from './test-code-presence.ts'
+import { LEDGER_VERSION } from './tdd.constants.ts'
+import { changedTestCodeOf, declaredPathRefusalOf } from './test-code-presence.ts'
 
 import { describe, expect, it } from 'vitest'
 
+import type { LotGoneEntry, LotMovedEntry, TddLedger } from './tdd.types.ts'
 import type { TestCodePath } from './test-code-presence.types.ts'
 
 const KEPT = "it('kept', () => {})\n"
@@ -114,4 +116,77 @@ describe('changedTestCodeOf', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 			Object.fromEntries(changedTestCodeOf({ root: join(root, 'pkg'), base: 'HEAD' }).paths),
 		).toEqual({ 'src/a.test.ts': { state: 'modified', text: EDITED } })
 	})
+})
+
+describe('declaredPathRefusalOf: a rename git pairs', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
+	/** A ledger holding one receipt of a case of `file`. */
+	function ledgerWithReceiptOf(file: string): TddLedger {
+		return {
+			version: LEDGER_VERSION,
+			entries: [
+				{
+					kind: 'unchanged',
+					file,
+					name: 'moved',
+					project: '',
+					testFileHash: 'hash',
+					caseHash: 'hash',
+					productionHash: 'hash',
+					at: '2026-11-23T12:00:00.000Z',
+				},
+			],
+		}
+	}
+	const EMPTY_LEDGER: TddLedger = { version: LEDGER_VERSION, entries: [] }
+
+	const ROWS: Array<{
+		name: string
+		ledger: TddLedger
+		gone: LotGoneEntry[]
+		moved: LotMovedEntry[]
+		expected: string | undefined
+	}> = [
+		{
+			name: 'a moved entry naming the old and the new path of a rename → no refusal',
+			ledger: EMPTY_LEDGER,
+			gone: [],
+			moved: [{ from: 'src/moved.test.ts', to: 'src/other.test.ts', reason: 'a rename' }],
+			expected: undefined,
+		},
+		{
+			name: 'a moved entry naming an old path no rename pairs, gone, without receipts → still refused as unknown',
+			ledger: EMPTY_LEDGER,
+			gone: [],
+			moved: [{ from: 'src/never.test.ts', to: 'src/other.test.ts', reason: 'a rename' }],
+			expected:
+				'moved entry src/never.test.ts: no such test file at the base, in the change or in the receipts; drop it: dialecte lot moved --remove src/never.test.ts src/other.test.ts',
+		},
+		...[
+			{ receipts: 'without receipts', ledger: EMPTY_LEDGER },
+			{ receipts: 'with receipts', ledger: ledgerWithReceiptOf('src/moved.test.ts') },
+		].map(({ receipts, ledger }) => ({
+			name: `a gone entry naming the old path of a rename, ${receipts} → refused, naming the new path`,
+			ledger,
+			gone: [{ file: 'src/moved.test.ts', reason: 'a case removed' }],
+			moved: [],
+			expected:
+				'gone entry src/moved.test.ts: git reports it renamed to src/other.test.ts; declare a case removed in the rename as gone src/other.test.ts; drop it: dialecte lot gone --remove src/moved.test.ts',
+		})),
+	]
+
+	for (const { name, ledger, gone, moved, expected } of ROWS)
+		it(name, () => {
+			const root = baseRepository()
+			git({ root, args: ['mv', 'src/moved.test.ts', 'src/other.test.ts'] })
+
+			expect(
+				declaredPathRefusalOf({
+					root,
+					presence: changedTestCodeOf({ root, base: 'HEAD' }),
+					ledger,
+					gone,
+					moved,
+				}),
+			).toBe(expected)
+		})
 })

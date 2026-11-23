@@ -14,8 +14,15 @@ tdd - Receipts that each new test failed on an assertion before the code, then p
   red - every case of the changed test files must fail on an assertion (or a stub's 'not
         implemented' inside an asserting expect); a passing new case, a missing export, a type or
         syntax error, a timeout, a .only is refused; the files without a refusal are frozen
-  green - each case with a red receipt, its test code as frozen, production changed since its red,
-          passes; records a green receipt
+  green - runs every case of the changed test files and of the test files moved with their bytes;
+          each case it runs must pass whatever its proof, else refused (a refused receipt, exit 1);
+          a case with a red receipt, its test code as frozen, production changed since its red,
+          records a green receipt; a case proven without a red (unchanged, accepted, revised, the
+          base's case of a moved file) records its proof again when its last run is not at this
+          production and its test file now; a case proven without a red that the run did not run (a
+          moved file's skipIf skipped only at this run, a node:test todo reported pending) passes
+          and is recorded again the same way, its line ending skipped at this run; a case skipped as
+          written is not judged
   status - per case red, green, unchanged, missing receipt, test edited after red, flags
   base - the change is measured from the lot base: HEAD's fork point from the base branch (the newer
          of the local branch and origin's), or from an open stack parent's line; HEAD only when no
@@ -24,7 +31,11 @@ tdd - Receipts that each new test failed on an assertion before the code, then p
   declarations - a gone or moved entry of the lot file naming a path the change leaves unchanged, or
                  one known nowhere (not at the base, not now, not in the receipts), is refused
                  before any run, naming its lot gone --remove or lot moved --remove; a test file
-                 deleted on disk is a deleted file, never read
+                 deleted on disk is a deleted file, never read; a test file git reports renamed is
+                 read at the base at its old path (its untouched cases unchanged), a moved entry may
+                 name that old path, a gone entry naming it is refused (a case removed in the rename
+                 is gone at the new path), and a file-level moved entry on a pair tdd matches itself
+                 is listed not needed, never unused
   --legend - the tdd terms of the hand-over card
 
 e.g. dialecte tdd green
@@ -160,10 +171,14 @@ Flags: `--base`, `--json`, `--flags`, `--legend`
   - A test-code file moved with its bytes as at the base (git's R100: a deleted path and a new one,
     added or untracked, holding the same blob) is no change: a moved test file's cases are `unchanged`
     with no receipt to hold, its old path lists no deleted case, a moved helper or fixture waits for no
-    freeze. A move stays within one kind (a test file to a test file, other test code to other test code;
+    freeze. `tdd red` leaves such a file out; `tdd green` runs it, refuses a case that fails and records a
+    passing one `unchanged` at the production now, and the hook proves its cases at the production committed.
+    A move stays within one kind (a test file to a test file, other test code to other test code;
     an empty file never pairs): a test file renamed off (`a.test.ts.off`) lists its cases deleted, one
-    renamed on is a new file. A move with an edit is a new file and a deleted one. A change that only
-    deletes test files lists their cases `deleted` in the gate's `tdd` step.
+    renamed on is a new file. A move with an edit git still pairs as a rename is a changed file read at the
+    base at its old path: its untouched cases are `unchanged`, an edited one needs its red, a case removed in
+    the rename is deleted at the new path. A move with an edit git does not pair is a new file and a deleted
+    one. A change that only deletes test files lists their cases `deleted` in the gate's `tdd` step.
   - Cases moved out of a test file (a file split in several, a case cut out into another file) keep the
     base's proof with no declaration. A case of a new or changed test file is `moved` when its test call,
     by tokens (those its case hash reads), under the same describe path, is in the base text of a test
@@ -210,8 +225,8 @@ Flags: `--base`, `--json`, `--flags`, `--legend`
     local branch and origin's), or, for a store lot started on another open lot (`lot start --on`), from that
     parent's line (`lot land` takes the base once the parent merged). A rebase onto the base's new commits
     moves the base with it, so a green taken before the rebase still counts after it, and a plain `tdd green`
-    proves the lot's committed cases again after a production change (the hook's stale-green refusal names the
-    base all the same). `--base <ref>` measures from where HEAD leaves `<ref>` instead. With no base branch
+    proves the lot's committed cases again after a production change, whatever their proof (the hook's refusal
+    of a case not proven at the production committed names the base all the same). `--base <ref>` measures from where HEAD leaves `<ref>` instead. With no base branch
     found and none configured, the change is measured from HEAD; a configured base branch that names no branch,
     or a lot base git cannot read, fails the command. The first details line of the gate's tdd step (none when
     the step is skipped) reads `tdd base: <short sha> (<source>)`, the source one of `--base`,

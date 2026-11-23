@@ -72,8 +72,10 @@ export function isDeletedIn(params: { presence: TestCodePresence; file: string }
 
 /**
  * The refusal of the first `gone` or `moved` entry naming a path the change leaves unchanged and present, or one known
- * nowhere (not at the base, not now, not in the receipts); undefined when every entry names a path the change touches,
- * one with receipts, or a glob. One line, naming the verb that removes the entry.
+ * nowhere (not at the base, not now, not in the receipts), or of a `gone` entry naming the old path of a rename git
+ * pairs (the case removed in the rename is gone at the new path); undefined when every entry names a path the change
+ * touches, the old path of such a rename (a `moved` entry), one with receipts, or a glob. One line, naming the verb that
+ * removes the entry.
  *
  * @intent refuse a stale lot declaration before tdd reads the path it names
  * @internal
@@ -102,24 +104,46 @@ export function declaredPathRefusalOf(params: {
 			removeWords: [entry.from, entry.to],
 		})),
 	]
+	// the old path of each rename git pairs, to its new path
+	const renamedTo = new Map(
+		[...listRenames(params.presence)].map(([file, from]) => [from, file] as const),
+	)
 	for (const { list, paths, removeWords } of declared)
 		for (const path of paths) {
+			const remove = fillMessage({
+				template: UNUSED_ENTRY_REMOVE,
+				values: { list, entry: removeWords.map((word) => shellWord(word)).join(' ') },
+			})
+			const to = renamedTo.get(path)
+			if (to !== undefined && list === 'gone')
+				return fillMessage({
+					template: DECLARED_PATH_REFUSALS.renamed,
+					values: { list, path, to, remove },
+				})
+			if (to !== undefined) continue
 			if (GLOB_MAGIC_PATTERN.test(path) || params.presence.paths.has(path)) continue
 			const present = existsSync(join(params.root, path))
 			if (!present && receipts.has(path)) continue
 			return fillMessage({
 				template: present ? DECLARED_PATH_REFUSALS.present : DECLARED_PATH_REFUSALS.unknown,
-				values: {
-					list,
-					path,
-					remove: fillMessage({
-						template: UNUSED_ENTRY_REMOVE,
-						values: { list, entry: removeWords.map((word) => shellWord(word)).join(' ') },
-					}),
-				},
+				values: { list, path, remove },
 			})
 		}
 	return undefined
+}
+
+/**
+ * Every rename git pairs in the presence map, new path → old path.
+ *
+ * @intent read the renames of a change once, from its presence map
+ * @internal
+ */
+export function listRenames(presence: TestCodePresence): Map<string, string> {
+	return new Map(
+		[...presence.paths].flatMap(([file, path]) =>
+			path.state === 'renamed' ? [[file, path.from] as const] : [],
+		),
+	)
 }
 
 /**
