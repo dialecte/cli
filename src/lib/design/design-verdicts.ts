@@ -13,14 +13,17 @@ import {
 	REVIEW_DESIGN_KEY,
 	REVIEW_EMPHASIS,
 	REVIEW_EXTENSION,
-	REVIEW_FENCES,
+	REVIEW_FENCE_CLOSING,
+	REVIEW_FENCE_MAX_INDENT,
+	REVIEW_FENCE_OPENING,
 	REVIEW_HASH_LENGTHS,
 	REVIEW_HASH_SPOILER,
 	REVIEW_HEX_RUN,
 	REVIEW_LEADING_EMPHASIS,
-	REVIEW_QUOTE,
+	REVIEW_LINE_MARKERS,
 	REVIEW_TRAILING_EMPHASIS,
 	REVIEW_VERDICT_KEY,
+	VERDICT_DISAGREE,
 	VERDICT_NOT_READY,
 	VERDICT_READY,
 	VERDICT_READY_FOLLOWERS,
@@ -32,6 +35,9 @@ import type {
 	DesignFileContent,
 	DesignFileRefusal,
 	DesignReviews,
+	FenceLine,
+	OpenFence,
+	ReadVerdictLine,
 	VerdictFile,
 	VerdictRead,
 	VerdictStanding,
@@ -39,32 +45,46 @@ import type {
 } from './design.types.ts'
 
 /**
- * What a review's text says: every hash prefix its `Design:` lines name, and its last `Verdict:` line read as ready,
- * not ready or unrecognized. Fenced and quoted lines are never read; a fence left open makes the verdict unrecognized.
+ * What a review's text says: every hash prefix its `Design:` lines name, and its verdict: the word of its `Verdict:`
+ * lines when they all agree, unrecognized when two disagree or a fence is left open, none when its only READY lines
+ * are quoted. Lines inside a fence are never read; quote, heading and list markers are stripped before the key.
  *
  * @intent read which design a saved review read and whether it passed it
  * @internal
  */
 export function verdictOfText(params: { text: string }): VerdictRead {
 	const designs: string[] = []
-	let verdict: VerdictRead['verdict']
-	let fenced = false
+	const verdicts: ReadVerdictLine[] = []
+	let fence: OpenFence | undefined
 	for (const raw of params.text.split('\n')) {
-		const line = raw.trim()
-		if (isFenceLine(line)) {
-			fenced = !fenced
+		const fenceLine = fenceLineOf(raw)
+		if (fence !== undefined) {
+			if (closesFence({ fence, line: fenceLine })) fence = undefined
 			continue
 		}
-		if (fenced || line.startsWith(REVIEW_QUOTE)) continue
-		const pair = keyValueOf(line)
+		const opened = openedFenceOf(fenceLine)
+		if (opened !== undefined) {
+			fence = opened
+			continue
+		}
+		const bare = unmarkedLineOf(raw.trim())
+		const pair = keyValueOf(bare.line)
 		if (pair === undefined) continue
 		if (pair.key === REVIEW_DESIGN_KEY) {
 			const named = hashPrefixOf(pair.value)
 			if (named !== undefined) designs.push(named)
 		}
-		if (pair.key === REVIEW_VERDICT_KEY) verdict = verdictOfValue(pair.value)
+		if (pair.key === REVIEW_VERDICT_KEY)
+			verdicts.push({ ...verdictOfValue(pair.value), quoted: bare.quoted })
 	}
-	if (fenced) verdict = { word: 'unrecognized', written: VERDICT_UNCLOSED_FENCE }
+	const verdict =
+		fence === undefined
+			? verdictOfLines(verdicts)
+			: {
+					word: 'unrecognized' as const,
+					written: VERDICT_UNCLOSED_FENCE,
+					cause: 'open-fence' as const,
+				}
 	return verdict === undefined ? { designs } : { designs, verdict }
 }
 
@@ -106,11 +126,8 @@ export function readVerdictFolder(params: {
 /**
  * The review files a person named, each read once, and the refusal of each that cannot be read, is empty, is not UTF-8
  * or lies in a scratch or temporary folder.
- *
- * @intent read the reviews a person points at
- * @internal
  */
-export function readNamedVerdictFiles(params: {
+function readNamedVerdictFiles(params: {
 	files: readonly string[]
 	cwd: string
 	sharedTemporaryRoots: readonly string[]
@@ -236,13 +253,8 @@ export function designReviewsOf(params: {
 	}
 }
 
-/**
- * Whether a review names `hash`: one of its `Design:` lines holds a prefix of it.
- *
- * @intent tell whether a review read these exact bytes
- * @internal
- */
-export function namesHash(params: { read: VerdictRead; hash: string }): boolean {
+/** Whether a review names `hash`: one of its `Design:` lines holds a prefix of it. */
+function namesHash(params: { read: VerdictRead; hash: string }): boolean {
 	const hash = params.hash.toLowerCase()
 	return params.read.designs.some(function isPrefix(prefix) {
 		return hash.startsWith(prefix)
@@ -270,10 +282,72 @@ function folderEntriesOf(folder: string): string[] | undefined {
 	}
 }
 
-function isFenceLine(line: string): boolean {
-	return REVIEW_FENCES.some(function opens(fence) {
-		return line.startsWith(fence)
-	})
+/** A raw line as a fence reads it: its indentation in spaces (a tab counts four) and the rest. */
+function fenceLineOf(raw: string): FenceLine {
+	const rest = raw.trimStart()
+	const indent = raw
+		.slice(0, raw.length - rest.length)
+		.split('')
+		.reduce(function widthOf(width, character) {
+			return width + (character === '\t' ? 4 : 1)
+		}, 0)
+	return { indent, rest: rest.trimEnd() }
+}
+
+/** The fence a line opens: 0 to 3 spaces, a run of 3+ backticks or tildes, an info string with no backtick after backticks. */
+function openedFenceOf(line: FenceLine): OpenFence | undefined {
+	if (line.indent > REVIEW_FENCE_MAX_INDENT) return undefined
+	const match = REVIEW_FENCE_OPENING.exec(line.rest)
+	if (match === null) return undefined
+	const run = match[1] ?? ''
+	const character = run.charAt(0)
+	if (character === '`' && (match[2] ?? '').includes('`')) return undefined
+	return { character, length: run.length }
+}
+
+/** Whether a line closes the open fence: 0 to 3 spaces, a run of its character at least as long, nothing after. */
+function closesFence(params: { fence: OpenFence; line: FenceLine }): boolean {
+	const { fence, line } = params
+	if (line.indent > REVIEW_FENCE_MAX_INDENT) return false
+	const run = REVIEW_FENCE_CLOSING.exec(line.rest)?.[1]
+	return run !== undefined && run.charAt(0) === fence.character && run.length >= fence.length
+}
+
+/** A trimmed line with its quote, heading and list markers stripped, repeatedly; whether a quote marker was among them. */
+function unmarkedLineOf(line: string): { line: string; quoted: boolean } {
+	let rest = line
+	let quoted = false
+	for (;;) {
+		const quote = REVIEW_LINE_MARKERS.quote.exec(rest)
+		const marker =
+			quote ?? REVIEW_LINE_MARKERS.heading.exec(rest) ?? REVIEW_LINE_MARKERS.list.exec(rest)
+		if (marker === null) return { line: rest, quoted }
+		if (quote !== null) quoted = true
+		rest = rest.slice(marker[0].length)
+	}
+}
+
+/**
+ * The verdict of a review's read `Verdict:` lines: none without one; unrecognized when two disagree; none when they
+ * all say READY from quotes only (a quote never passes a file alone); else the last line's.
+ */
+function verdictOfLines(lines: readonly ReadVerdictLine[]): VerdictRead['verdict'] {
+	const last = lines.at(-1)
+	if (last === undefined) return undefined
+	const words = new Set(lines.map(wordOf))
+	if (words.size > 1) return { word: 'unrecognized', written: VERDICT_DISAGREE, cause: 'disagree' }
+	if (last.word === 'ready' && lines.every(isQuoted)) return undefined
+	return last.word === 'unrecognized'
+		? { word: last.word, written: last.written, cause: 'word' }
+		: { word: last.word, written: last.written }
+}
+
+function wordOf(line: ReadVerdictLine): VerdictWord {
+	return line.word
+}
+
+function isQuoted(line: ReadVerdictLine): boolean {
+	return line.quoted
 }
 
 /** A line's key (emphasis stripped around it, lower case) and its value (every emphasis character removed, trimmed). */

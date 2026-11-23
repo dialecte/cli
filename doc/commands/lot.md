@@ -210,25 +210,28 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
            (repeatable, added to the folder, which is read whenever it exists; one unreadable,
            empty, not UTF-8, under a scratch or temporary folder, naming another hash or holding no
            Verdict: line refused), each read once; a review names a hash by a line Design: <12 to 64
-           hex characters> (a prefix of the sha256) and says its verdict on its last Verdict: line
-           (READY, alone or before notes, a stop or a dash; NOT READY; anything else unrecognized),
-           fenced and quoted lines never read, a fence left open unrecognized; the approval needs a
-           READY review naming the hash and none naming it with another verdict (a READY of an
-           earlier recorded hash never carries over: a review of the new bytes is needed), every
-           refusal at once (exit 2, nothing written): no review naming it (the folder, the hash, the
-           two lines to save, --verdict and --waive named, then ! a READY review of an earlier
-           revision and ! a review naming it without a Verdict: line), each review that does not
-           pass it, the folder gone with nothing named, more reviews than one line holds; the
-           approved line records reviews: [{ name, hash }] and each review passing it is copied
-           whole as design-reviews/<sha256>.md from the bytes checked, before the line; a review
-           edited after the approval changes nothing; --waive --by <who> --reason <text> appends a
-           waiver with the current need, refused on a lot that needs no design and has none
-           recorded; both refused from the lot's own worktree or its review throwaway (approve from
-           the main checkout), and on a --by or --reason holding a forbidden word or a --by holding
-           what a public record never holds (exit 2); the orchestrator in any casing is recorded as
-           orchestrator; a lot no longer at work is refused (exit 1); without an option it prints
-           design <state>[ by <kind>][ · <reasons>], while not approved the verdict line of the
-           folder's reviews (verdict READY in <names>, verdict missing: ... with its ! hints,
+           hex characters> (a prefix of the sha256) and says its verdict on its Verdict: lines
+           (READY, alone or before notes, a stop or a dash; NOT READY; anything else unrecognized):
+           lines that disagree read unrecognized, a READY from quoted lines only reads none, lines
+           inside a code fence (CommonMark: closed only by a run of the same character at least as
+           long) are never read, quote, heading and list markers are stripped before the key, and a
+           fence left open reads unrecognized; the approval needs a READY review naming the hash and
+           none naming it with another verdict (a READY of an earlier recorded hash never carries
+           over: a review of the new bytes is needed), every refusal at once (exit 2, nothing
+           written): no review naming it (the folder, the hash, the two lines to save, --verdict and
+           --waive named, then ! a READY review of an earlier revision and ! a review naming it
+           without a Verdict: line), each review that does not pass it (its own line for lines that
+           disagree and for an open fence), the folder gone with nothing named, more reviews than
+           one line holds; the approved line records reviews: [{ name, hash }] and each review
+           passing it is copied whole as design-reviews/<sha256>.md from the bytes checked, before
+           the line; a review edited after the approval changes nothing; --waive --by <who> --reason
+           <text> appends a waiver with the current need, refused on a lot that needs no design and
+           has none recorded; both refused from the lot's own worktree or its review throwaway
+           (approve from the main checkout), and on a --by or --reason holding a forbidden word or a
+           --by holding what a public record never holds (exit 2); the orchestrator in any casing is
+           recorded as orchestrator; a lot no longer at work is refused (exit 1); without an option
+           it prints design <state>[ by <kind>][ · <reasons>], while not approved the verdict line
+           of the folder's reviews (verdict READY in <names>, verdict missing: ... with its ! hints,
            verdict <verdict> in <name> for each review that does not pass, or the folder gone), and
            the next command; --from prints the same verdict line after recording; --json { required,
            reasons, state, by, uncovered, verdict } (by the kind, never a name; verdict { state:
@@ -1246,9 +1249,14 @@ Design: <the first 12 characters of the hash lot design printed, or more>
 Verdict: READY
 ```
 
-The last `Verdict:` line is the review's verdict. It reads READY when it is `READY` alone or `READY` followed by notes,
-a stop or a dash. It reads NOT READY when it starts with `NOT READY`. Anything else is unrecognized, and fenced or
-quoted lines are never read. The approval needs one READY review naming the recorded hash, and no review naming that
+A `Verdict:` line reads READY when it is `READY` alone or `READY` followed by notes, a stop or a dash. It reads
+NOT READY when it starts with `NOT READY`, and anything else is unrecognized. All of a review's `Verdict:` lines must
+agree. If two disagree, the review is unrecognized and blocks, so a reviewer who changes their mind writes a new
+review file.
+
+Lines inside a code fence are never read. The fence closes only on a run of the same character at least as long as
+the one that opened it, and a fence left open makes the review unrecognized. Quote, heading and list markers are
+stripped before the key, so a quoted or listed sample counts. A READY that only quoted lines give passes nothing. The approval needs one READY review naming the recorded hash, and no review naming that
 hash with another verdict.
 
 A READY review of an earlier revision does not carry over. After folding fixes, record the design again and have a

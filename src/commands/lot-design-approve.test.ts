@@ -38,6 +38,7 @@ import { configureMachine } from '../../test/forbidden-words-workspace.ts'
 import { linkLot } from '../../test/lot-stores.ts'
 import { git } from '../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
+import { designGateOf } from '../lib/design/design-gate.ts'
 import { STORE_FILES } from '../lib/store/store.constants.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -336,6 +337,47 @@ describe('lot design --approve - the saved reviews', { timeout: STORE_CASE_TIMEO
 		})
 	})
 
+	it("--verdict naming another lot's READY review -> exit 2, it names no design of this lot", () => {
+		const lot = recordedLot()
+		const otherDesign = join(lot.reviewFolder, 'DESIGN.md')
+		writeFileSync(otherDesign, '# Another lot\n\nIts own design.\n')
+		const named = saveVerdict({ designFile: otherDesign, folder: lot.reviewFolder })
+
+		expect(design({ lot, words: ['--approve', '--by', APPROVER, '--verdict', named] })).toEqual({
+			exitCode: 2,
+			output: `lot design: ${named} names no design ${DESIGN_HASH.slice(0, 12)} of ${lot.name}; nothing written`,
+		})
+		expect(designLinesOf(lot)).toHaveLength(1)
+	})
+
+	it('a review of the hash whose Verdict lines disagree -> exit 2, its own line', () => {
+		const lot = recordedLot()
+		saveVerdict({
+			designFile: lot.designFile,
+			name: 'critic-2.md',
+			verdict: `${NOT_READY_VERDICT_LINE}\n\n    Verdict: READY`,
+		})
+
+		expect(design({ lot, words: ['--approve', '--by', APPROVER] })).toEqual({
+			exitCode: 2,
+			output: `lot design: critic-2.md holds Verdict: lines that disagree for design ${DESIGN_HASH.slice(0, 12)} of ${lot.name}: a changed verdict goes in a new review file; nothing written`,
+		})
+	})
+
+	it('a review of the hash that leaves a code fence open -> exit 2, its own line', () => {
+		const lot = recordedLot()
+		saveVerdict({
+			designFile: lot.designFile,
+			name: 'critic-2.md',
+			verdict: 'Verdict: READY\n\n```\nsample',
+		})
+
+		expect(design({ lot, words: ['--approve', '--by', APPROVER] })).toEqual({
+			exitCode: 2,
+			output: `lot design: critic-2.md leaves a code fence open, so its verdict is not read, for design ${DESIGN_HASH.slice(0, 12)} of ${lot.name}: close the fence; nothing written`,
+		})
+	})
+
 	it('two reviews of the hash that do not pass it -> exit 2, both named, in the order of their names', () => {
 		const lot = recordedLot()
 		saveVerdict({
@@ -616,6 +658,11 @@ describe('lot design --waive', { timeout: STORE_CASE_TIMEOUT }, () => {
 		const shown = design({ lot, words: [] }).output
 		expect(shown).toMatch(/^design waived by person/)
 		expect(shown).not.toMatch(/^verdict/m)
+		const base = git({ root: lot.cwd, args: ['rev-parse', 'HEAD'] }).trim()
+		expect(
+			designGateOf({ lotFolder: lot.lotFolder, root: lot.cwd, base, touched: [], verb: 'tddRed' })
+				.refusal,
+		).toBeUndefined()
 	})
 
 	it('a lot that needs a design -> exit 0, a waived line with the need', () => {

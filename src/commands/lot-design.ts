@@ -74,6 +74,7 @@ import type {
 	DesignRecordedLine,
 	DesignReviews,
 	DesignStanding,
+	VerdictFile,
 	VerdictStanding,
 } from '../lib/design/design.types.ts'
 import type {
@@ -467,7 +468,14 @@ function approvalRefusalsOf(params: {
 			...named,
 			...standing.blocking.map(function blockingLine(file) {
 				return fillMessage({
-					template: LOT_DESIGN_LINES.reviewBlocking,
+					template: blockingTemplateOf({
+						file,
+						templates: {
+							disagree: LOT_DESIGN_LINES.reviewDisagree,
+							'open-fence': LOT_DESIGN_LINES.reviewOpenFence,
+							other: LOT_DESIGN_LINES.reviewBlocking,
+						},
+					}),
 					values: { name: file.name, verdict: file.read.verdict?.written ?? '', hash, lot },
 				})
 			}),
@@ -534,7 +542,14 @@ function verdictLinesOf(params: { reviews: DesignReviews; standing: DesignStandi
 	if (verdicts.state === 'blocked')
 		return verdicts.blocking.map(function blockingLine(review) {
 			return fillMessage({
-				template: LOT_DESIGN_LINES.verdictBlocking,
+				template: blockingTemplateOf({
+					file: review,
+					templates: {
+						disagree: LOT_DESIGN_LINES.verdictDisagree,
+						'open-fence': LOT_DESIGN_LINES.verdictOpenFence,
+						other: LOT_DESIGN_LINES.verdictBlocking,
+					},
+				}),
 				values: { verdict: review.read.verdict?.written ?? '', name: review.name },
 			})
 		})
@@ -544,6 +559,17 @@ function verdictLinesOf(params: { reviews: DesignReviews; standing: DesignStandi
 		fillMessage({ template: LOT_DESIGN_LINES.verdictMissing, values: { folder, hash } }),
 		...hintLines({ standing: verdicts, hash }),
 	]
+}
+
+/** The template of a review that does not pass: its own for lines that disagree or an open fence, else the one naming the verdict. */
+function blockingTemplateOf(params: {
+	file: VerdictFile
+	templates: { disagree: string; 'open-fence': string; other: string }
+}): string {
+	const cause = params.file.read.verdict?.cause
+	return cause === 'disagree' || cause === 'open-fence'
+		? params.templates[cause]
+		: params.templates.other
 }
 
 /** The reviews' verdict as `--json` gives it: the state and the files that decide it. */

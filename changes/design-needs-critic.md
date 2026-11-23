@@ -1,6 +1,6 @@
 ### Changed
 
-- **Breaking:** `dialecte lot design --approve` used to approve any recorded design without reading a review. It now refuses (exit 2, nothing written) unless a saved review passes exactly the recorded design. A review is a `*.md` file in the design's folder, or one named with `--verdict`, that holds `Design: <hash prefix>` and `Verdict: READY`. A READY of an earlier revision does not carry over, and a review of the same hash that does not pass it blocks the approval. The refusal names the folder, the hash, the two lines to save, `--verdict` and `--waive`.
+- **Breaking:** `dialecte lot design --approve` used to approve any recorded design without reading a review. It now refuses (exit 2, nothing written) unless a saved review passes exactly the recorded design. A review is a `*.md` file in the design's folder, or one named with `--verdict`, that holds `Design: <hash prefix>` and `Verdict: READY`. Its `Verdict:` lines must agree, and a quoted, listed or headed sample counts while a fenced one is never read. A READY of an earlier revision does not carry over, and a review of the same hash that does not pass it blocks the approval. The refusal names the folder, the hash, the two lines to save, `--verdict` and `--waive`.
 - `dialecte lot design --waive` also covers a design recorded on a lot that needs none, which used to stay stuck until approved.
 
 ### Added

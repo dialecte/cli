@@ -23,6 +23,16 @@ const EARLIER_HASH = '66f378ffbfc4'.padEnd(64, '1')
 const PREFIX = HASH.slice(0, 12)
 const EARLIER_PREFIX = EARLIER_HASH.slice(0, 12)
 const FENCE = '```'
+const DISAGREE = {
+	word: 'unrecognized',
+	written: 'Verdict: lines that disagree',
+	cause: 'disagree',
+} as const
+const OPEN_FENCE = {
+	word: 'unrecognized',
+	written: 'an unclosed code fence',
+	cause: 'open-fence',
+} as const
 
 type ReadCase = { name: string; text: string; expected: VerdictRead }
 
@@ -73,23 +83,34 @@ const verdictCases: ReadCase[] = [
 		text: `Design: ${PREFIX}\nVerdict: **READY WITH LOCAL FIXES** - x\n`,
 		expected: {
 			designs: [PREFIX],
-			verdict: { word: 'unrecognized', written: 'READY WITH LOCAL FIXES - x' },
+			verdict: { word: 'unrecognized', written: 'READY WITH LOCAL FIXES - x', cause: 'word' },
 		},
 	},
 	{
 		name: 'Verdict: ready-ish -> unrecognized, the words in upper case only',
 		text: `Design: ${PREFIX}\nVerdict: ready-ish\n`,
-		expected: { designs: [PREFIX], verdict: { word: 'unrecognized', written: 'ready-ish' } },
+		expected: {
+			designs: [PREFIX],
+			verdict: { word: 'unrecognized', written: 'ready-ish', cause: 'word' },
+		},
 	},
 	{
 		name: 'a verdict as written longer than 60 characters -> cut at 60',
 		text: `Design: ${PREFIX}\nVerdict: ${'X'.repeat(80)}\n`,
-		expected: { designs: [PREFIX], verdict: { word: 'unrecognized', written: 'X'.repeat(60) } },
+		expected: {
+			designs: [PREFIX],
+			verdict: { word: 'unrecognized', written: 'X'.repeat(60), cause: 'word' },
+		},
 	},
 	{
-		name: 'two Verdict lines -> the last one is the verdict',
+		name: 'two Verdict lines that disagree -> unrecognized, they disagree',
 		text: `Design: ${PREFIX}\nVerdict: NOT READY\n\nRound 2.\n\nVerdict: READY\n`,
-		expected: { designs: [PREFIX], verdict: { word: 'ready', written: 'READY' } },
+		expected: { designs: [PREFIX], verdict: DISAGREE },
+	},
+	{
+		name: 'two Verdict lines that agree -> that verdict',
+		text: `Design: ${PREFIX}\nVerdict: READY\n\nStill.\n\nVerdict: READY (no change)\n`,
+		expected: { designs: [PREFIX], verdict: { word: 'ready', written: 'READY (no change)' } },
 	},
 	{
 		name: 'a fenced Verdict line after a real READY -> ready, the fence never read',
@@ -102,16 +123,16 @@ const verdictCases: ReadCase[] = [
 		expected: { designs: [PREFIX], verdict: { word: 'ready', written: 'READY' } },
 	},
 	{
-		name: 'a quoted Verdict line after a real READY -> ready, the quote never read',
+		name: 'a quoted NOT READY after a real READY -> unrecognized, they disagree',
 		text: `Design: ${PREFIX}\nVerdict: READY\n\n> Verdict: NOT READY\n`,
-		expected: { designs: [PREFIX], verdict: { word: 'ready', written: 'READY' } },
+		expected: { designs: [PREFIX], verdict: DISAGREE },
 	},
 	{
 		name: 'a fence left open at the end -> unrecognized',
 		text: `Design: ${PREFIX}\nVerdict: READY\n\n${FENCE}\nVerdict: NOT READY\n`,
 		expected: {
 			designs: [PREFIX],
-			verdict: { word: 'unrecognized', written: 'an unclosed code fence' },
+			verdict: OPEN_FENCE,
 		},
 	},
 	{
@@ -132,7 +153,10 @@ const verdictCases: ReadCase[] = [
 	{
 		name: 'READY followed by a word -> unrecognized',
 		text: `Design: ${PREFIX}\nVerdict: READY now\n`,
-		expected: { designs: [PREFIX], verdict: { word: 'unrecognized', written: 'READY now' } },
+		expected: {
+			designs: [PREFIX],
+			verdict: { word: 'unrecognized', written: 'READY now', cause: 'word' },
+		},
 	},
 	{
 		name: '__Verdict__: READY -> ready, the underscores stripped around the key',
@@ -143,6 +167,86 @@ const verdictCases: ReadCase[] = [
 		name: 'a backtick fence indented under a list item -> a fence too, its lines never read',
 		text: `Design: ${PREFIX}\nVerdict: READY\n\n- sample:\n  ${FENCE}\n  Verdict: NOT READY\n  ${FENCE}\n`,
 		expected: { designs: [PREFIX], verdict: { word: 'ready', written: 'READY' } },
+	},
+	{
+		name: 'NOT READY, then an indented READY sample -> unrecognized, they disagree',
+		text: `Design: ${PREFIX}\nVerdict: NOT READY\n\n    Verdict: READY\n`,
+		expected: { designs: [PREFIX], verdict: DISAGREE },
+	},
+	{
+		name: 'NOT READY, then a finding line quoting a READY in backticks -> unrecognized, they disagree',
+		text: `Design: ${PREFIX}\nVerdict: NOT READY\n\n\`Verdict: READY\` is what a pass would say.\n`,
+		expected: { designs: [PREFIX], verdict: DISAGREE },
+	},
+	{
+		name: 'NOT READY, then a four-backtick fence around a three-backtick one holding READY -> not ready',
+		text: `Design: ${PREFIX}\nVerdict: NOT READY\n\n\`\`\`\`md\n${FENCE}\nVerdict: READY\n${FENCE}\n\`\`\`\`\n`,
+		expected: { designs: [PREFIX], verdict: { word: 'not-ready', written: 'NOT READY' } },
+	},
+	{
+		name: 'NOT READY, then a READY inside an HTML comment -> unrecognized, they disagree',
+		text: `Design: ${PREFIX}\nVerdict: NOT READY\n\n<!--\nVerdict: READY\n-->\n`,
+		expected: { designs: [PREFIX], verdict: DISAGREE },
+	},
+	{
+		name: 'a NOT READY as a heading, then a READY -> unrecognized, they disagree',
+		text: `Design: ${PREFIX}\n## Verdict: NOT READY\n\nVerdict: READY\n`,
+		expected: { designs: [PREFIX], verdict: DISAGREE },
+	},
+	{
+		name: 'a NOT READY as a list item, then a READY -> unrecognized, they disagree',
+		text: `Design: ${PREFIX}\n- Verdict: NOT READY\n\nVerdict: READY\n`,
+		expected: { designs: [PREFIX], verdict: DISAGREE },
+	},
+	{
+		name: 'a NOT READY as a numbered item, then a READY -> unrecognized, they disagree',
+		text: `Design: ${PREFIX}\n1. Verdict: NOT READY\n\nVerdict: READY\n`,
+		expected: { designs: [PREFIX], verdict: DISAGREE },
+	},
+	{
+		name: 'a NOT READY quoted inside a list item, then a READY -> unrecognized, they disagree',
+		text: `Design: ${PREFIX}\n- > Verdict: NOT READY\n\nVerdict: READY\n`,
+		expected: { designs: [PREFIX], verdict: DISAGREE },
+	},
+	{
+		name: 'a lone READY as a list item -> ready',
+		text: `Design: ${PREFIX}\n- Verdict: READY\n`,
+		expected: { designs: [PREFIX], verdict: { word: 'ready', written: 'READY' } },
+	},
+	{
+		name: 'a lone quoted READY -> no verdict: a quote never passes a file alone',
+		text: `Design: ${PREFIX}\n> Verdict: READY\n`,
+		expected: { designs: [PREFIX] },
+	},
+	{
+		name: 'a fence left open and no Verdict line -> unrecognized, an open fence',
+		text: `Design: ${PREFIX}\n\n${FENCE}\nsample\n`,
+		expected: { designs: [PREFIX], verdict: OPEN_FENCE },
+	},
+	{
+		name: 'a tilde fence a backtick run does not close -> unrecognized, an open fence',
+		text: `Design: ${PREFIX}\nVerdict: READY\n\n~~~\nsample\n${FENCE}\n`,
+		expected: { designs: [PREFIX], verdict: OPEN_FENCE },
+	},
+	{
+		name: 'a closing run with text after it closes nothing -> unrecognized, an open fence',
+		text: `Design: ${PREFIX}\nVerdict: READY\n\n${FENCE}\nsample\n${FENCE} end\n`,
+		expected: { designs: [PREFIX], verdict: OPEN_FENCE },
+	},
+	{
+		name: 'a shorter closing run closes nothing -> unrecognized, an open fence',
+		text: `Design: ${PREFIX}\nVerdict: READY\n\n\`\`\`\`\nsample\n${FENCE}\n`,
+		expected: { designs: [PREFIX], verdict: OPEN_FENCE },
+	},
+	{
+		name: 'a fence indented four spaces is no fence: a NOT READY after it is read -> unrecognized, they disagree',
+		text: `Design: ${PREFIX}\nVerdict: READY\n\n    ${FENCE}\nVerdict: NOT READY\n    ${FENCE}\n`,
+		expected: { designs: [PREFIX], verdict: DISAGREE },
+	},
+	{
+		name: 'a backtick run whose info string holds a backtick is no fence -> unrecognized, they disagree',
+		text: `Design: ${PREFIX}\nVerdict: READY\n\n${FENCE} a\`b\nVerdict: NOT READY\n`,
+		expected: { designs: [PREFIX], verdict: DISAGREE },
 	},
 ]
 
@@ -188,8 +292,13 @@ const designCases: ReadCase[] = [
 		expected: { designs: [] },
 	},
 	{
-		name: 'a Design key inside a list item or a heading -> names nothing',
-		text: `- Design: ${PREFIX}\n## Pass 1: Design: ${PREFIX}\n`,
+		name: 'a Design key in a list item -> names the prefix, the marker stripped',
+		text: `- Design: ${PREFIX}\n`,
+		expected: { designs: [PREFIX] },
+	},
+	{
+		name: 'a Design key after other words of a heading -> names nothing',
+		text: `## Pass 1: Design: ${PREFIX}\n`,
 		expected: { designs: [] },
 	},
 ]

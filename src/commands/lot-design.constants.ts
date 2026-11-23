@@ -43,6 +43,10 @@ export const LOT_DESIGN_LINES = {
 		'lot design: no saved verdict names design {hash} of {lot} in {folder}: save the review there with the lines "Design: {hash}" and "Verdict: READY", or name it with --verdict <file>, or waive: dialecte lot design {lot} --waive --by <who> --reason <text>; nothing written',
 	reviewBlocking:
 		'lot design: {name} says {verdict} for design {hash} of {lot}: record a new revision, or waive; nothing written',
+	reviewDisagree:
+		'lot design: {name} holds Verdict: lines that disagree for design {hash} of {lot}: a changed verdict goes in a new review file; nothing written',
+	reviewOpenFence:
+		'lot design: {name} leaves a code fence open, so its verdict is not read, for design {hash} of {lot}: close the fence; nothing written',
 	reviewFolderGone:
 		'lot design: {folder} is gone: name the review with --verdict <file>, or waive; nothing written',
 	reviewNamesOther: 'lot design: {file} names no design {hash} of {lot}; nothing written',
@@ -61,6 +65,8 @@ export const LOT_DESIGN_LINES = {
 	verdictMissing:
 		'verdict missing: a review saved in {folder} names it with "Design: {hash}" and "Verdict: READY"',
 	verdictBlocking: 'verdict {verdict} in {name}',
+	verdictDisagree: 'verdict with lines that disagree in {name}',
+	verdictOpenFence: 'verdict behind an open code fence in {name}',
 	verdictFolderGone: 'verdict: {folder} is gone: name the review with --verdict <file>, or waive',
 } as const
 

@@ -322,6 +322,34 @@ describe('lot design <id> - the standing', { timeout: STORE_CASE_TIMEOUT }, () =
 		)
 	})
 
+	it('the standing of a design not approved with a review whose lines disagree -> the verdict line says so', () => {
+		const lot = designLot({ declared: true })
+		expect(design({ lot, words: ['--from', lot.designFile] }).exitCode).toBe(0)
+		saveVerdict({
+			designFile: lot.designFile,
+			name: 'critic-2.md',
+			verdict: 'Verdict: NOT READY\n\n- Verdict: READY',
+		})
+
+		expect(design({ lot, words: [] }).output.split('\n')).toContain(
+			'verdict with lines that disagree in critic-2.md',
+		)
+	})
+
+	it('the standing of a design not approved with a review leaving a fence open -> the verdict line says so', () => {
+		const lot = designLot({ declared: true })
+		expect(design({ lot, words: ['--from', lot.designFile] }).exitCode).toBe(0)
+		saveVerdict({
+			designFile: lot.designFile,
+			name: 'critic-2.md',
+			verdict: 'Verdict: READY\n\n~~~',
+		})
+
+		expect(design({ lot, words: [] }).output.split('\n')).toContain(
+			'verdict behind an open code fence in critic-2.md',
+		)
+	})
+
 	it('the standing of a missing design -> no verdict line', () => {
 		const lot = designLot({ declared: true })
 

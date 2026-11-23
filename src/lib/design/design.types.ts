@@ -3,6 +3,7 @@ import type {
 	DESIGN_FILE_REFUSALS,
 	DESIGN_GATE_VERBS,
 	DESIGN_STATES,
+	VERDICT_CAUSES,
 	VERDICT_STANDING_STATES,
 	VERDICT_WORDS,
 } from './design.constants.ts'
@@ -115,8 +116,12 @@ export type VerdictWord = (typeof VERDICT_WORDS)[number]
 export type VerdictRead = {
 	/** Each named hash prefix, lower case. */
 	designs: string[]
-	verdict?: { word: VerdictWord; written: string }
+	/** The verdict; an unrecognized one says why (`cause`). */
+	verdict?: { word: VerdictWord; written: string; cause?: VerdictCause }
 }
+
+/** Why a review's verdict is unrecognized: its lines disagree, a fence is left open, or its word is neither. */
+export type VerdictCause = (typeof VERDICT_CAUSES)[number]
 
 /** A review file read once: its real path, basename, the sha256 and text of the bytes read, and what it says. */
 export type VerdictFile = {
@@ -155,3 +160,12 @@ export type DesignReviews = {
 	namedNoVerdict: string[]
 	standing: VerdictStanding
 }
+
+/** A raw review line as a fence reads it: its indentation in spaces and the rest, trimmed. */
+export type FenceLine = { indent: number; rest: string }
+
+/** The fence a review holds open: its character and the length of its opening run. */
+export type OpenFence = { character: string; length: number }
+
+/** One read `Verdict:` line of a review: its word, its value as written, and whether a quote marker led it. */
+export type ReadVerdictLine = { word: VerdictWord; written: string; quoted: boolean }
