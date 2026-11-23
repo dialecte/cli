@@ -1091,6 +1091,18 @@ describe(
 			])
 		})
 
+		it('a committed hand-over folder no link reaches, the processes not listable → kept with the processes text, no move command', async () => {
+			const { workspace, worktrees } = createPruneWorkspace()
+			const handover = commitPendingHandover({ workspace, pending: worktrees.pending })
+
+			const lines = await planLinesOf({ workspace, listProcesses: throwingLister })
+
+			const handoverLines = lines.filter((line) => line.includes(handover))
+			expect(handoverLines).toEqual([
+				`  keep    hand-over  ${handover}  (the processes are not known (lsof failed): nothing is moved)`,
+			])
+		})
+
 		it('a committed hand-over folder planned to go, a process entering it at confirm → ✗ kept naming the pid, the folder left, exit 1', async () => {
 			const { workspace, worktrees } = createPruneWorkspace()
 			const handover = commitPendingHandover({ workspace, pending: worktrees.pending })

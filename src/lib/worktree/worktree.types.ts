@@ -160,8 +160,9 @@ export type PrunePlanParams = {
 	/** The clock a pool left-over's age, a scratch folder's and `--reclaim`'s idleness are read against; default: now. */
 	now?: Date
 	/**
-	 * Lists the processes and their working folders, for every keep rule that reads them (the tests stand in for it); a
-	 * lister that throws reads as the processes not known. Default: the system's.
+	 * Lists the processes and their working folders, for every keep rule that reads them (the tests stand in for it).
+	 * `worktree prune` reads it through `readProcesses`: a lister that throws reads as the processes not known.
+	 * `--reclaim` calls it as it is: a lister that throws ends the run. Default: the system's.
 	 */
 	listProcesses?: () => ProcessFolder[] | string
 	/** Reads a pid's start time for a rehearsal clone's run (the tests stand in for it); default `processStartTime`. */
