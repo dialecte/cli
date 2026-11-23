@@ -26,7 +26,7 @@ describe(
 			})
 
 			expect(result.output.split('\n')).toContain(
-				`approve: would refuse: pull request #${REVIEW_CHANGE_REQUEST_NUMBER} is closed`,
+				`approve: would refuse: change request #${REVIEW_CHANGE_REQUEST_NUMBER} is closed`,
 			)
 		})
 	},

@@ -49,11 +49,11 @@ Tests first, red before green, co-located with the code.
 - Every step: `node src/cli.ts tdd red` then `node src/cli.ts tdd green` for its cases, the tests related to
   the touched files, `npm run check`, and `node src/cli.ts rules` on the touched files.
 - Every behaviour: `node src/cli.ts gate --fast`.
-- Every lot: the full suite runs on CI, on every push of its pull request; a commit's hook runs no test: the tdd
+- Every lot: the full suite runs on CI, on every push of its change request; a commit's hook runs no test: the tdd
   receipts of the lot (every case red then green, its green taken at the production as committed: after a change of
   production, `node src/cli.ts tdd green --base <lot base>` again), then `check` and `rules` on the touched files
   (`dialecte.gate.hook`). A local hand-over of a plain lot asks for a `node src/cli.ts gate --full` record
-  (a merge lot too: under the fast hook its hook record proves no full suite); a lot landed through a pull request
+  (a merge lot too: under the fast hook its hook record proves no full suite); a lot landed through a change request
   needs none (`node src/cli.ts gate --help` prints the configured steps).
 - A change to a command, a flag or a visible behaviour also updates the command's help (the command map), its page
   `doc/commands/<command>.md` (the block at its top regenerates from the map: `npm run doc:generate`; the text under

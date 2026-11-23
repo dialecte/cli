@@ -1,5 +1,5 @@
 /**
- * `readReviewRecord` (33CI CI2a): the rows of a folder's `review.jsonl` as its readers (`lot pr`, `lot review`) take
+ * `readReviewRecord` (33CI CI2a): the rows of a folder's `review.jsonl` as its readers (`lot describe`, `lot review`) take
  * them; a line it cannot read as a row is skipped, a folder without the file has no record.
  */
 import { writeFileSync } from 'node:fs'

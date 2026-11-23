@@ -9,7 +9,7 @@ export const GIT_READ_ENVIRONMENT = { GIT_OPTIONAL_LOCKS: '0' } as const
 /** The header `git cat-file --batch` writes before an object's content: `<oid> <type> <size>`. */
 export const CAT_FILE_HEADER_PATTERN = /^[0-9a-f]+ (?<type>\w+) (?<size>\d+)$/
 
-/** The remote a fetch reads: the host where the merge queue lands. */
+/** The remote a fetch reads: the host where the queue lands. */
 export const ORIGIN_REMOTE = 'origin'
 
 /** How long a fetch of origin may take before the last known refs are used instead. */

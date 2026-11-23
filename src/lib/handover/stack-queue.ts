@@ -8,6 +8,7 @@
  */
 import { dirname, join } from 'node:path'
 
+import { hostNounsOf } from '../host/select-host.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { readIdentity } from '../store/identity.ts'
 import { readStack } from '../store/stack.ts'
@@ -59,7 +60,12 @@ export function stackQueueOf(params: {
 	if (parentChangeRequest === undefined || parentChangeRequest.state === 'closed')
 		return refusalOf({
 			template: STACK_QUEUE_LINES.noParentChangeRequest,
-			values: { lot, parent, branch: identity.branch },
+			values: {
+				...hostNounsOf({ root: params.worktree }),
+				lot,
+				parent,
+				branch: identity.branch,
+			},
 		})
 	const values = { lot, parent, number: String(parentChangeRequest.number) }
 	if (parentChangeRequest.state === 'merged')

@@ -14,6 +14,7 @@ import { dirname, join } from 'node:path'
 import { SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { ORIGIN_BRANCH_REF_PREFIX } from '../gate/gate-base.constants.ts'
 import { isAncestorCommit, readCommitOrNone, readGit } from '../git.ts'
+import { hostNounsOf } from '../host/select-host.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { lotBaseOf } from '../landing/lot-base.ts'
 import { readLotLanding, recordLanded } from '../landing/lot-landing.ts'
@@ -80,10 +81,7 @@ export function prepareStackLanding(params: {
 	if (parentChangeRequest === undefined)
 		return {
 			exitCode: 1,
-			refusal: fillMessage({
-				template: STACK_LANDING_LINES.noParentChangeRequest,
-				values: { lot: params.lot, parent: record.parent },
-			}),
+			refusal: noParentRefusal({ ...params, parent: record.parent }),
 		}
 	const support = params.host.probeStacks({ root: params.worktree })
 	const restacked = onParentTip({ ...params, base, parentBranch: parent.branch })
@@ -159,7 +157,11 @@ export function settleStackedChangeRequest(params: {
 		lines.push(
 			fillMessage({
 				template: STACK_LANDING_LINES.retargeted,
-				values: { number: String(changeRequest.number), base: stack.changeRequestBase },
+				values: {
+					...hostNounsOf({ root: params.worktree }),
+					number: String(changeRequest.number),
+					base: stack.changeRequestBase,
+				},
 			}),
 		)
 	}
@@ -475,4 +477,12 @@ function rebaseOnto(params: {
 		exitCode: STACK_CONFLICT_EXIT,
 		refusal: fillMessage({ template: STACK_LANDING_LINES.conflict, values }),
 	}
+}
+
+/** Why a stacked lot cannot land yet: its parent has no change request; lot land the parent first. */
+function noParentRefusal(params: { worktree: string; lot: string; parent: string }): string {
+	return fillMessage({
+		template: STACK_LANDING_LINES.noParentChangeRequest,
+		values: { ...hostNounsOf({ root: params.worktree }), lot: params.lot, parent: params.parent },
+	})
 }

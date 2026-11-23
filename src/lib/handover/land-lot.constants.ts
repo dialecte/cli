@@ -1,6 +1,6 @@
 /** `lot land`: the landing record and the lines it prints; `{…}` placeholders filled. */
 
-/** The landing record in the lot's store folder: the pull request it lands through. */
+/** The landing record in the lot's store folder: the change request it lands through. */
 export const LANDING_FILE = 'landing.json'
 export const LANDING_SCHEMA = 1
 
@@ -8,7 +8,7 @@ export const LANDING_SCHEMA = 1
 export const PUSH_REJECTED_PATTERN = /!\s*\[(rejected|remote rejected)\].*$/m
 
 export const LANDING_LINES = {
-	updated: 'pull request #{number} updated from the lot records',
+	updated: '{changeRequestNoun} #{number} updated from the lot records',
 	unrendered: 'lot land: {reason}',
 	noBase: 'lot land: origin holds no branch {base} to land on: nothing pushed',
 	notOnBranch:
@@ -36,11 +36,12 @@ export const LANDING_LINES = {
 	closeWhenMerged: 'once merged: dialecte lot close {entry} (or lot land {lot} again)',
 	// a lot kept on purpose: its close would keep every item, landing again records the merge (KEEP 3.8)
 	closeWhenMergedKept: 'once merged: dialecte lot land {lot} again (it records the merge; {kept})',
-	opened: 'pull request #{number} opened: {url}',
-	existing: 'pull request #{number}: {url}',
+	opened: '{changeRequestNoun} #{number} opened: {url}',
+	existing: '{changeRequestNoun} #{number}: {url}',
 	draft:
 		'a draft: CI runs on every push; dialecte lot approve {lot} --by <who> queues it once its checks pass',
-	drafted: 'pull request #{number} back to a draft, out of the queue: an approval is for one head',
+	drafted:
+		'{changeRequestNoun} #{number} back to a draft, out of the queue: an approval is for one head',
 	hostRefused: 'lot land: {reason}',
 	committed: 'the lot is committed, nothing pushed: {landed}',
 	workSince: 'the lot holds {work}: they land in a new lot',

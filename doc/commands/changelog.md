@@ -21,7 +21,7 @@ changelog - Changelog fragments (changes/<lot>.md): check them, or fold them int
           reads it), the Unreleased part of CHANGELOG.md, then its released sections: none altered
           against the base branch and where the change left it (rules: released-changelog); --base
           <revision> judges against that commit alone, the one the change goes onto (the CI check
-          step hands the merge queue's base, or a pull request merge ref's first parent)
+          step hands the merge queue's base, or a `pull_request` merge ref's first parent)
   release - writes ## [<x.y.z>] - <date> (default today, local) under an emptied ## [Unreleased]
             (written above the first version when missing): the Unreleased summary and entries
             first, then each fragment in file name order, section by section, each section's

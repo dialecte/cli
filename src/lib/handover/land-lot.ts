@@ -1,14 +1,14 @@
 /**
- * A lot lands through its pull request (33CI CI3). The worktree is on the lot's branch; origin is fetched (a failure
+ * A lot lands through its change request (33CI CI3). The worktree is on the lot's branch; origin is fetched (a failure
  * stops the landing). A push carries only commits: the committed head lands, work in progress stays where it is and is
  * named (with a tracked file changed, git cannot rebase: the lot is pushed as committed, the line saying so). A lot
- * already merged (its pull request merged, or its tip or its work in the base: the landing state) is committed: its
+ * already merged (its change request merged, or its tip or its work in the base: the landing state) is committed: its
  * landed fact written, nothing pushed, the close line printed. Otherwise the lot is rebased onto origin's base branch when behind (a conflict undone and named), pushed
  * with a lease pinned to the head its last landing pushed (a branch it never pushed must not exist on origin), its open
- * pull request reused or a new one opened (its title and body rendered from the lot's records, `lot describe`'s template; a reused one edited when it
+ * change request reused or a new one opened (its title and body rendered from the lot's records, `lot describe`'s template; a reused one edited when it
  * reads otherwise), always a draft and never queued (`lot approve`, a person's step, queues it; a push that moves a
- * reused pull request's head takes it back out of the queue as a draft) - and the landing recorded: `landing.json` in the lot's folder, and
- * the lot's hand-over entry (state pending; committed once its pull request merged) that `lot status`, `plan next` and
+ * reused change request's head takes it back out of the queue as a draft) - and the landing recorded: `landing.json` in the lot's folder, and
+ * the lot's hand-over entry (state pending; committed once its change request merged) that `lot status`, `plan next` and
  * `lot close` read.
  */
 import { spawnSync } from 'node:child_process'
@@ -32,6 +32,7 @@ import { designGateOf } from '../design/design-gate.ts'
 import { SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { ORIGIN_BRANCH_REF_PREFIX } from '../gate/gate-base.constants.ts'
 import { fetchOrigin, isAncestorCommit, listLotChangePaths, readGit, tryReadGit } from '../git.ts'
+import { hostNounsOf } from '../host/select-host.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { LANDED_SCHEMA } from '../landing/landed-record.constants.ts'
 import { writeLanded } from '../landing/landed-record.ts'
@@ -75,11 +76,11 @@ import type { StackLanding } from './land-stack.types.ts'
  * Lands the lot on `branch` checked out in `worktree` into `base` through `host` as a draft, never queued (CI runs on
  * every push while the lot goes on; `lot approve` queues it). Never throws for a refusal: its line, exit 1.
  *
- * @intent land a lot through its pull request and the merge queue
+ * @intent land a lot through its change request and the queue
  * @internal
  */
 export function landLot(params: {
-	/** The lot's name, as its pull request body and the next line name it. */
+	/** The lot's name, as its change request body and the next line name it. */
 	lot: string
 	worktree: string
 	branch: string
@@ -97,7 +98,7 @@ export function landLot(params: {
 	const known = readKnownChangeRequest({ worktree, branch, landing, host })
 	if ('refusal' in known)
 		return refused(LANDING_LINES.hostRefused.replace('{reason}', () => known.refusal))
-	// a lot already merged is committed: its pull request merged, or its tip or work in the base (git alone)
+	// a lot already merged is committed: its change request merged, or its tip or work in the base (git alone)
 	const merged = mergedFactOf({ ...params, changeRequest: known.changeRequest })
 	if (merged !== undefined) return landedLot({ ...params, fact: merged })
 	// read, never written, before any refusal: a lot committed by a local hand-over gets the registry's committed answer
@@ -110,7 +111,7 @@ export function landLot(params: {
 	const stack = prepareStackLanding({ ...params, landing })
 	if (stack !== undefined && 'refusal' in stack)
 		return { exitCode: stack.exitCode, lines: [stack.refusal] }
-	// a branch the base already holds has nothing to land: refused before any entry, push or pull request
+	// a branch the base already holds has nothing to land: refused before any entry, push or change request
 	const empty = nothingBeyondBase({ worktree, branch, base })
 	if (empty !== undefined) return refused(empty)
 	const forecast = landingForecast({
@@ -170,7 +171,7 @@ export function landLot(params: {
 }
 
 /**
- * The push of a landing: a reused pull request whose head to push no person approved taken out of the queue first (an
+ * The push of a landing: a reused change request whose head to push no person approved taken out of the queue first (an
  * approval is for one head: no refusal after the push leaves an unapproved head queued), then the committed head
  * pushed with its lease and recorded; the head pushed and the lines so far with what it said, or the refusal.
  */
@@ -221,7 +222,7 @@ function dequeueAndPush(params: {
 							.replace('{reason}', () => pushProblem),
 			],
 		}
-	// kept at once: a host that refuses to open the pull request must not make the next landing's push "outside"
+	// kept at once: a host that refuses to open the change request must not make the next landing's push "outside"
 	recordPushedHead({ lotFolder: params.lotFolder, branch, head })
 	return {
 		head,
@@ -235,9 +236,9 @@ function dequeueAndPush(params: {
 }
 
 /**
- * A reused pull request queued or ready whose head to push no person approved (`approvals.jsonl`): taken back out of
+ * A reused change request queued or ready whose head to push no person approved (`approvals.jsonl`): taken back out of
  * the queue as a draft, before the push, its line; the host's refusal; undefined when nothing is to take back (no
- * pull request, a draft not queued, or the head a person approved: that approval stands). Every landing checks, so a
+ * change request, a draft not queued, or the head a person approved: that approval stands). Every landing checks, so a
  * landing stopped after its push heals on the next one.
  */
 function dequeueUnapproved(params: {
@@ -248,14 +249,14 @@ function dequeueUnapproved(params: {
 	head: string
 }): { line: string } | HostRefusal | undefined {
 	const { changeRequest } = params
-	// a draft never joins the merge queue: auto-merge alone can queue it
+	// a draft never joins the queue: auto-merge alone can queue it
 	if (changeRequest === undefined || (changeRequest.draft && !changeRequest.queued))
 		return undefined
 	if (
 		approvedHeadsOf({ lotFolder: params.lotFolder, number: changeRequest.number }).has(params.head)
 	)
 		return undefined
-	// a ready one may sit in the merge queue without auto-merge (a stack merge): asked only when auto-merge is off
+	// a ready one may sit in the queue without auto-merge (a stack merge): asked only when auto-merge is off
 	const queued = changeRequest.queued
 		? { queued: true }
 		: params.host.readQueued({ root: params.worktree, number: changeRequest.number })
@@ -267,11 +268,16 @@ function dequeueUnapproved(params: {
 		draft: changeRequest.draft,
 	})
 	return (
-		drafted ?? { line: LANDING_LINES.drafted.replace('{number}', String(changeRequest.number)) }
+		drafted ?? {
+			line: fillMessage({
+				template: LANDING_LINES.drafted,
+				values: { ...hostNounsOf({ root: params.worktree }), number: String(changeRequest.number) },
+			}),
+		}
 	)
 }
 
-/** The heads a person approved for pull request `number`, from the lot folder's `approvals.jsonl`; none when absent. */
+/** The heads a person approved for change request `number`, from the lot folder's `approvals.jsonl`; none when absent. */
 function approvedHeadsOf(params: { lotFolder: string; number: number }): Set<string> {
 	const file = join(params.lotFolder, STORE_FILES.approvals)
 	if (!existsSync(file)) return new Set()
@@ -376,7 +382,7 @@ function fetchRefusal(params: { worktree: string; base: string }): string | unde
 
 /**
  * Why the lot cannot land yet, before anything is asked of the host or pushed: its worktree is not on its branch,
- * origin cannot be fetched or holds no base branch, or its records do not render a public pull request text
+ * origin cannot be fetched or holds no base branch, or its records do not render a public change request text
  * (`prepareChangeRequest`, the template of its head or of the base).
  */
 function unreadyRefusal(params: {
@@ -408,7 +414,7 @@ function unreadyRefusal(params: {
 }
 
 /**
- * After the push: the lot's pull request, its text rendered on the pushed head (`lot describe`'s template), reused or opened
+ * After the push: the lot's change request, its text rendered on the pushed head (`lot describe`'s template), reused or opened
  * with it, the landing recorded at once (the next push's lease needs its head, whatever the host
  * answers next), a reused one edited when its title or body reads otherwise; never queued. `lines` holds
  * what the landing said so far.
@@ -427,7 +433,7 @@ function publishLanding(params: {
 	head: string
 	entry: string
 	lines: string[]
-	/** The stack step's answer: the base the pull request merges into, how it queues. */
+	/** The stack step's answer: the base the change request merges into, how it queues. */
 	stack: StackLanding | undefined
 	keep?: KeepDecision
 }): LandingResult {
@@ -440,11 +446,7 @@ function publishLanding(params: {
 			exitCode: 1,
 			lines: [...lines, LANDING_LINES.hostRefused.replace('{reason}', () => changeRequest.refusal)],
 		}
-	lines.push(
-		(known ? LANDING_LINES.existing : LANDING_LINES.opened)
-			.replace('{number}', String(changeRequest.number))
-			.replace('{url}', () => changeRequest.url),
-	)
+	lines.push(openedLineOf({ known: known !== undefined, changeRequest, worktree: params.worktree }))
 	writeLanding({
 		lotFolder: params.lotFolder,
 		changeRequest: changeRequest,
@@ -531,7 +533,7 @@ function registerLotEntry(params: {
 }
 
 /**
- * The pull request the lot lands through, as the host holds it now: the one its landing recorded (by number), else
+ * The change request the lot lands through, as the host holds it now: the one its landing recorded (by number), else
  * the branch's open one; a closed one is none (a new one is opened).
  */
 function readKnownChangeRequest(params: {
@@ -545,13 +547,13 @@ function readKnownChangeRequest(params: {
 	const read = params.host.readChangeRequest({ root: params.worktree, ref })
 	if (read !== undefined && 'refusal' in read) return read
 	if (read === undefined || read.state === 'closed') return { changeRequest: undefined }
-	// a merged pull request of the branch name that this lot never recorded is another lot's: a new one is opened
+	// a merged change request of the branch name that this lot never recorded is another lot's: a new one is opened
 	if (read.state === 'merged' && ref === params.branch) return { changeRequest: undefined }
 	return { changeRequest: read }
 }
 
 /**
- * The landed fact of a lot already merged: its pull request merged (the host's), else its tip or its work in origin's
+ * The landed fact of a lot already merged: its change request merged (the host's), else its tip or its work in origin's
  * base (git alone); undefined while it is not merged.
  */
 function mergedFactOf(params: {
@@ -622,7 +624,10 @@ function landedLot(params: {
 	return {
 		exitCode: 0,
 		lines: [
-			fillMessage({ template: LANDING_LINES.committed, values: { landed: landedLineOf(fact) } }),
+			fillMessage({
+				template: LANDING_LINES.committed,
+				values: { landed: landedLineOf({ fact, nouns: hostNounsOf({ root: params.worktree }) }) },
+			}),
 			...(since.length === 0
 				? []
 				: [
@@ -751,7 +756,7 @@ function nothingBeyondBase(params: {
 /**
  * The head the push's lease expects on origin: the one the lot's last push recorded (`landing.json`, written right
  * after each push), else origin's branch when origin's base holds it (it carries no work: an earlier push of a
- * landing that opened no pull request), else none (the branch must not exist on origin).
+ * landing that opened no change request), else none (the branch must not exist on origin).
  */
 function leaseOf(params: {
 	worktree: string
@@ -778,7 +783,7 @@ function leaseOf(params: {
 
 /**
  * The head just pushed kept in `landing.json`, whole or not at all: its other fields kept for the same branch, dropped
- * for another (a pull request number and its url of another branch are not this landing's).
+ * for another (a change request number and its url of another branch are not this landing's).
  */
 function recordPushedHead(params: { lotFolder: string; branch: string; head: string }): void {
 	const existing = readRawLanding({ lotFolder: params.lotFolder })
@@ -824,7 +829,7 @@ function pushLot(params: {
 	)
 }
 
-/** A new pull request of the lot, a draft, with its text (titled with the lot's message). */
+/** A new change request of the lot, a draft, with its text (titled with the lot's message). */
 function openLot(params: {
 	worktree: string
 	branch: string
@@ -862,13 +867,13 @@ function renderedText(params: {
 	const kept =
 		params.kept === undefined
 			? { kept: undefined }
-			: keptPartOf({ template: prepared.template, body: params.kept })
+			: keptPartOf({ template: prepared.template, body: params.kept, nouns: prepared.nouns })
 	if ('refusal' in kept) return kept
 	return composeChangeRequest({ ...prepared, kept: kept.kept })
 }
 
 /**
- * The lot's pull request given `text`: one whose title or body reads otherwise (opened before, renamed or edited by
+ * The lot's change request given `text`: one whose title or body reads otherwise (opened before, renamed or edited by
  * hand, or records changed since) is edited, its line saying so; one that reads the same is not asked of the host.
  */
 function editLot(params: {
@@ -886,7 +891,12 @@ function editLot(params: {
 		...text,
 	})
 	if (refused !== undefined) return refused
-	return { line: LANDING_LINES.updated.replace('{number}', String(changeRequest.number)) }
+	return {
+		line: fillMessage({
+			template: LANDING_LINES.updated,
+			values: { ...hostNounsOf({ root: params.worktree }), number: String(changeRequest.number) },
+		}),
+	}
 }
 
 /** The landing record of the lot (`landing.json` in its store folder). */
@@ -954,4 +964,20 @@ function landingScopeRefusalOf(params: {
 
 function refused(line: string): LandingResult {
 	return { exitCode: 1, lines: [line] }
+}
+
+/** The line naming the change request a landing reused (`known`) or opened, in the host's noun. */
+function openedLineOf(params: {
+	known: boolean
+	changeRequest: ChangeRequest
+	worktree: string
+}): string {
+	return fillMessage({
+		template: params.known ? LANDING_LINES.existing : LANDING_LINES.opened,
+		values: {
+			...hostNounsOf({ root: params.worktree }),
+			number: String(params.changeRequest.number),
+			url: params.changeRequest.url,
+		},
+	})
 }

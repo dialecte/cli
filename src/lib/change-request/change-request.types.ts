@@ -1,4 +1,5 @@
 import type { ChangelogSection } from '../changelog/changelog.types.ts'
+import type { HostNouns } from '../host/host.types.ts'
 import type { BodyQuality } from '../quality/quality.types.ts'
 import type { DesignRow, ReviewRecord } from '../review-rounds/review-record.types.ts'
 import type { Effort, RiskClass } from '../risk/risk.types.ts'
@@ -12,7 +13,7 @@ export type ChangeRequestChangelog =
 	| { kind: 'entries'; entries: { section: ChangelogSection; text: string; file: string }[] }
 	| { kind: 'none'; reason: string; file: string }
 
-/** Everything a pull request is rendered from, read from the lot's records; a source absent is undefined. */
+/** Everything a change request is rendered from, read from the lot's records; a source absent is undefined. */
 export type ChangeRequestSources = {
 	/** The commit messages of the brief's lots, in order: the first is the title. */
 	messages: string[]
@@ -21,7 +22,7 @@ export type ChangeRequestSources = {
 	issue?: number
 	changelog?: ChangeRequestChangelog
 	tests?: TestsRecord
-	/** The state hash of the tree the pull request lands (its committed head): a tests part of another tree is stale. */
+	/** The state hash of the tree the change request lands (its committed head): a tests part of another tree is stale. */
 	treeHash: string
 	review?: ReviewRecord
 	/** The lot's design row from its live standing; the review record's row when absent. */
@@ -30,7 +31,7 @@ export type ChangeRequestSources = {
 	/** The overlaps the lot accepted: the other lot (shown by its index) and why, never the met paths or who. */
 	overlaps?: { lot: string; reason: string }[]
 	effort?: Effort
-	/** The pull request of the lot's stack parent (33CI CI4); undefined for a lot not stacked or a parent not landed. */
+	/** The change request of the lot's stack parent (33CI CI4); undefined for a lot not stacked or a parent not landed. */
 	dependsOn?: number
 	/** Whether the newest gate run of the lot's tree passed its docs step; undefined when none ran it. */
 	docsPassed?: boolean
@@ -42,7 +43,7 @@ export type ChangeRequestSources = {
 	quality?: BodyQuality
 }
 
-/** A pull request's text: the title (the lot's message) and the body rendered from the template. */
+/** A change request's text: the title (the lot's message) and the body rendered from the template. */
 export type ChangeRequestText = { title: string; body: string }
 
 /** A piece of record-sourced free text the body shows, and the record it comes from (named by a refusal). */
@@ -59,5 +60,10 @@ export type PublicRefusal = { record: string; label: string; word?: string }
 /** A path the lot's commits change since the merge base, with git's status letter (`A`, `M`, `D`). */
 export type ChangedFile = { status: string; path: string }
 
-/** A pull request ready to compose: the template checked and the sources read and checked as public text. */
-export type PreparedChangeRequest = { template: string; sources: ChangeRequestSources }
+/** A change request ready to compose: the template checked and the sources read and checked as public text. */
+/** A change request ready to compose: its template, its read sources and the host's nouns for its printed lines. */
+export type PreparedChangeRequest = {
+	template: string
+	sources: ChangeRequestSources
+	nouns: HostNouns
+}

@@ -68,7 +68,7 @@ describe(
 			})
 
 			expect(result.exitCode).toBe(1)
-			expect(result.output).toContain('the pull request body holds text the render would drop')
+			expect(result.output).toContain('the change request body holds text the render would drop')
 			expect(calls).not.toContain(`queue ${REVIEW_CHANGE_REQUEST_NUMBER}`)
 			expect(approvalLines(lot.lotFolder)).toEqual([])
 		})

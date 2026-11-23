@@ -59,11 +59,11 @@ function faultOf(value: unknown): string | undefined {
 	if (typeof fact.base !== 'string' || fact.base === '') return 'base is no branch'
 	if (typeof fact.at !== 'string' || Number.isNaN(Date.parse(fact.at))) return 'at is no time'
 	if (fact.changeRequest !== undefined && !isChangeRequest(fact.changeRequest))
-		return 'changeRequest is no pull request'
+		return 'changeRequest is not a change request record'
 	return undefined
 }
 
-/** A pull request as the fact keeps it: its number and url. */
+/** A change request as the fact keeps it: its number and url. */
 function isChangeRequest(value: unknown): boolean {
 	if (typeof value !== 'object' || value === null) return false
 	const changeRequest = value as Record<string, unknown>

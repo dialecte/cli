@@ -120,7 +120,7 @@ export const QUALITY_CARD_TEXTS = {
 	place: '{place}  ',
 } as const
 
-/** The words of the pull request body's quality lines, in the risk part; `{short}` the base, `{why}` a reason. */
+/** The words of the change request body's quality lines, in the risk part; `{short}` the base, `{why}` a reason. */
 export const QUALITY_BODY_TEXTS = {
 	judged: 'Quality: {counts} (since {short})',
 	notJudged: 'Quality: not judged ({why})',
@@ -133,5 +133,5 @@ export const QUALITY_BODY_TEXTS = {
 	noBase: 'base {base}: no such commit',
 } as const
 
-/** Where a quality line of the pull request body comes from, as a refusal names it: the file holding it, or the notes. */
+/** Where a quality line of the change request body comes from, as a refusal names it: the file holding it, or the notes. */
 export const QUALITY_PIECE_NOTES = 'the quality notes'

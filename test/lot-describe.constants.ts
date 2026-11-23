@@ -1,4 +1,4 @@
-/** The lot `lot pr` renders in its tests: its name, messages, public text and records. */
+/** The lot `lot describe` renders in its tests: its name, messages, public text and records. */
 
 export const LOT_NAME = '0001-repo-x'
 

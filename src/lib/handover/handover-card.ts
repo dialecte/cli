@@ -42,6 +42,7 @@ import {
 } from '../gate-records/gate-records.ts'
 import { computeStateTree, hashStateTree } from '../gate-records/state-hash.ts'
 import { mainCheckoutOf } from '../git.ts'
+import { GENERIC_NOUNS } from '../host/host.constants.ts'
 import { PACKAGE_MANIFEST_FILE } from '../package-json.constants.ts'
 import { readPackageJson } from '../package-json.ts'
 import { readProfile } from '../profile/profile.ts'
@@ -1149,7 +1150,7 @@ function optionalSection(params: { name: string; text: string | undefined }): Ca
  * @internal
  */
 export function buildStackCardLine(params: { folder: string }): CardGateLine | undefined {
-	const detail = stackTextOf({ lotFolder: params.folder })
+	const detail = stackTextOf({ lotFolder: params.folder, nouns: GENERIC_NOUNS })
 	if (detail === undefined) return undefined
 	const read = readStack({ lotFolder: params.folder })
 	const damaged = read !== undefined && 'damage' in read

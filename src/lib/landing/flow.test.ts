@@ -126,7 +126,7 @@ describe('landingFlow', () => {
 
 /** The CI-first refusal of `<command> <verb>` in `root`. */
 function ciFirstRefusal(params: { command: string; verb: string; root: string }): string {
-	return `${params.command} ${params.verb}: ${params.root} is CI-first (.github/workflows/ci.yml runs on merge_group and holds the ci-ok job): a lot lands through its pull request, never a hand-over; commit on the lot branch through the hook, then lot land <id>; nothing written`
+	return `${params.command} ${params.verb}: ${params.root} is CI-first (.github/workflows/ci.yml runs on merge_group and holds the ci-ok job): a lot lands through its change request, never a hand-over; commit on the lot branch through the hook, then lot land <id>; nothing written`
 }
 
 /** The hand-over refusal of `<command> <verb>` in `root`. */

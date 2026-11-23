@@ -1,3 +1,4 @@
+import { GENERIC_NOUNS } from '../host/host.constants.ts'
 /**
  * `planLotPrune`: pure (design 3.2, tests 7-19). Hand-written facts, one case at a time: every item of every lot
  * decided before anything moves, the first keep reason winning, an item two lots reach decided once.
@@ -83,6 +84,7 @@ function factsOf(params: {
 				main: MAIN,
 				baseBranch: 'main',
 				mainBranch: 'main',
+				nouns: GENERIC_NOUNS,
 				processes: 'known',
 				holders: params.holders ?? holdersOf(),
 				lots: params.lots,

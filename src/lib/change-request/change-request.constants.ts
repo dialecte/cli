@@ -16,7 +16,7 @@ export const PART_MARKER_PATTERN = /^<!-- dialecte:([a-z]+) -->$/
 /** Any template comment of the renderer (the header note included): never in a rendered body. */
 export const RENDERER_COMMENT_PATTERN = /^<!-- dialecte[: ].*-->$/
 
-/** The part whose template text a person owns once the pull request exists: kept from the current body. */
+/** The part whose template text a person owns once the change request exists: kept from the current body. */
 export const KEPT_PART = 'kept'
 
 /** The parts the renderer fills; a template without all of them is no template of the renderer. */
@@ -66,10 +66,10 @@ export const BODY_LINES = {
 	dependsOn: '#{number}',
 	noIssue: 'none named',
 	tddCases: 'tdd: {count} ({statuses}) on {head}',
-	tddStale: 'tdd: stale, taken on {head}, not the tree this pull request lands',
+	tddStale: 'tdd: stale, taken on {head}, not the tree this {changeRequestNoun} lands',
 	gateTests:
 		'gate ({mode}): {passed} of {total} tests passed, {failed} failed, {skipped} skipped, in {files} files on {head}',
-	gateStale: 'gate ({mode}): stale, taken on {head}, not the tree this pull request lands',
+	gateStale: 'gate ({mode}): stale, taken on {head}, not the tree this {changeRequestNoun} lands',
 	findingsHeader: '| Finding | Round | Severity | File | State |',
 	findingsRule: '| --- | --- | --- | --- | --- |',
 	noFindings: 'No finding.',
@@ -145,11 +145,11 @@ export const CHANGE_REQUEST_LINES = {
 	noTemplate:
 		"{template} is not the renderer's template ({fault}): copy the cli's template into the repository",
 	refused:
-		'the pull request text holds a {label}{word} in {record}: rewrite that record, nothing sent',
+		'the {changeRequestNoun} text holds a {label}{word} in {record}: rewrite that record, nothing sent',
 	unreadBrief: '{brief}: {reason}: nothing sent',
-	unchecked: 'the pull request text is not checked: {reason}: nothing sent',
+	unchecked: 'the {changeRequestNoun} text is not checked: {reason}: nothing sent',
 	keptMissing:
-		"the pull request body holds text the render would drop (no '{heading}' heading): move it under that heading or clear it, nothing sent",
+		"the {changeRequestNoun} body holds text the render would drop (no '{heading}' heading): move it under that heading or clear it, nothing sent",
 	recordValue: '{record} holds a {field} its writer never writes: fix that record, nothing sent',
 } as const
 

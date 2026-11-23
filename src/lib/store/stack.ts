@@ -17,7 +17,7 @@ import {
 	STACK_TEXT,
 } from './stack.constants.ts'
 
-import type { ChangeRequest } from '../host/host.types.ts'
+import type { ChangeRequest, HostNouns } from '../host/host.types.ts'
 import type { StackDamage, StackRecord } from './stack.types.ts'
 
 /**
@@ -65,13 +65,13 @@ export function readStackRecord(params: { lotFolder: string }): StackRecord | un
  * @intent show which lot a stacked lot lands on, from files
  * @internal
  */
-export function stackTextOf(params: { lotFolder: string }): string | undefined {
+export function stackTextOf(params: { lotFolder: string; nouns: HostNouns }): string | undefined {
 	const record = readStack(params)
 	if (record === undefined) return undefined
 	if ('damage' in record)
 		return fillMessage({ template: STACK_TEXT.damagedRecord, values: { damage: record.damage } })
 	const number = readLanding({ lotFolder: join(dirname(params.lotFolder), record.parent) })?.number
-	return stackLineText({ parent: record.parent, number, state: undefined })
+	return stackLineText({ parent: record.parent, number, nouns: params.nouns, state: undefined })
 }
 
 /**
@@ -84,11 +84,16 @@ export function stackTextOf(params: { lotFolder: string }): string | undefined {
 export function stackLineText(params: {
 	parent: string
 	number: number | undefined
+	/** The host's change-request nouns, for a parent with none yet. */
+	nouns: HostNouns
 	state: string | undefined
 }): string {
 	const { parent, number, state } = params
 	if (number === undefined)
-		return fillMessage({ template: STACK_TEXT.noChangeRequest, values: { parent } })
+		return fillMessage({
+			template: STACK_TEXT.noChangeRequest,
+			values: { ...params.nouns, parent },
+		})
 	const changeRequest = `#${number}`
 	return state === undefined
 		? fillMessage({ template: STACK_TEXT.filesOnly, values: { parent, changeRequest } })

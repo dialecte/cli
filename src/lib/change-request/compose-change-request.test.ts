@@ -1,3 +1,5 @@
+import { GITHUB_NOUNS } from '../host/github/github.constants.ts'
+import { GENERIC_NOUNS } from '../host/host.constants.ts'
 /**
  * The pull request of a lot is its final state rendered from its records through one template: the parts the records
  * hold, "not recorded" for a record missing, never a guess, and never what stays private.
@@ -6,6 +8,7 @@ import { composeChangeRequest, keptTextOf, titleVersionFault } from './compose-c
 
 import { describe, expect, it } from 'vitest'
 
+import type { HostNouns } from '../host/host.types.ts'
 import type { BodyQuality } from '../quality/quality.types.ts'
 import type { ChangeRequestSources } from './change-request.types.ts'
 
@@ -154,10 +157,15 @@ function partOf(params: { body: string; heading: string }): string {
 }
 
 /** The body of `sources` over the test template, a person's text kept when given. */
-function bodyOf(params: { sources: ChangeRequestSources; kept?: string }): string {
+function bodyOf(params: {
+	sources: ChangeRequestSources
+	kept?: string
+	nouns?: HostNouns
+}): string {
 	const text = composeChangeRequest({
 		template: TEMPLATE,
 		sources: params.sources,
+		nouns: params.nouns ?? GENERIC_NOUNS,
 		kept: params.kept,
 	})
 	if ('refusal' in text) throw new Error(text.refusal)
@@ -166,7 +174,12 @@ function bodyOf(params: { sources: ChangeRequestSources; kept?: string }): strin
 
 describe('composeChangeRequest renders the lot from its records', () => {
 	it('a lot with every record → the whole body from the records, no marker left', () => {
-		const text = composeChangeRequest({ template: TEMPLATE, sources: FULL, kept: undefined })
+		const text = composeChangeRequest({
+			template: TEMPLATE,
+			sources: FULL,
+			nouns: GENERIC_NOUNS,
+			kept: undefined,
+		})
 
 		expect(text).toEqual({
 			title: 'feat(x): x lands',
@@ -277,11 +290,22 @@ Closes #12
 
 		expect(partOf({ body, heading: 'Tests' })).toBe(
 			[
+				'- tdd: stale, taken on 0123456789ab, not the tree this change request lands',
+				'- gate (full): stale, taken on 0123456789ab, not the tree this change request lands',
+			].join('\n'),
+		)
+		expect(partOf({ body, heading: 'Checklist' })).toContain('- [ ] Tests:')
+	})
+
+	it("tests.json parts taken on another tree, a GitHub repository's nouns → both stale lines name the pull request", () => {
+		const body = bodyOf({ sources: { ...FULL, treeHash: OTHER_TREE }, nouns: GITHUB_NOUNS })
+
+		expect(partOf({ body, heading: 'Tests' })).toBe(
+			[
 				'- tdd: stale, taken on 0123456789ab, not the tree this pull request lands',
 				'- gate (full): stale, taken on 0123456789ab, not the tree this pull request lands',
 			].join('\n'),
 		)
-		expect(partOf({ body, heading: 'Checklist' })).toContain('- [ ] Tests:')
 	})
 
 	it('a tdd part with a case still red and no gate part → the gate reads not recorded, tests box left', () => {
@@ -357,13 +381,16 @@ Closes #12
 			'marker checklist after kept',
 		],
 	])('a template %s → refused, the marker named', (_name, template, refusal) => {
-		expect(composeChangeRequest({ template, sources: FULL, kept: undefined })).toEqual({ refusal })
+		expect(
+			composeChangeRequest({ template, sources: FULL, nouns: GENERIC_NOUNS, kept: undefined }),
+		).toEqual({ refusal })
 	})
 
 	it('a template missing a marker → refused, the marker named', () => {
 		const text = composeChangeRequest({
 			template: TEMPLATE.replace('<!-- dialecte:review -->', ''),
 			sources: FULL,
+			nouns: GENERIC_NOUNS,
 			kept: undefined,
 		})
 

@@ -1,5 +1,5 @@
 /**
- * The gathering half of `lot pr` reads the lot's records and its committed head against the merge base: what main
+ * The gathering half of `lot describe` reads the lot's records and its committed head against the merge base: what main
  * moved since never shows, what the lot deletes still names the tree, what no commit holds never passes.
  */
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -45,6 +45,8 @@ import { STORE_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
 import { SOURCE_INDEX_FILE } from '../api/source-functions.constants.ts'
 import { GATE_RECORD_FILE } from '../gate-records/gate-records.constants.ts'
 import { GITHUB_VENDOR } from '../host/github/github-vendor.ts'
+import { GITHUB_NOUNS } from '../host/github/github.constants.ts'
+import { GENERIC_NOUNS } from '../host/host.constants.ts'
 import { writeLanded } from '../landing/landed-record.ts'
 import { STACK_RECORD_DAMAGED } from '../landing/lot-landing.constants.ts'
 import { STACK_FILE, STACK_SCHEMA } from '../store/stack.constants.ts'
@@ -200,7 +202,7 @@ describe(
 			})
 
 			expect('refusal' in prepared ? prepared.refusal : 'rendered').toBe(
-				'the pull request text holds a path outside the tree or a link `notes/a/plan.md` in brief.json summary: rewrite that record, nothing sent',
+				'the change request text holds a path outside the tree or a link `notes/a/plan.md` in brief.json summary: rewrite that record, nothing sent',
 			)
 		})
 	},
@@ -900,6 +902,28 @@ describe(
 			expect('refusal' in prepared ? prepared.refusal : 'rendered').toBe(
 				"the lot's head holds no .github/pull_request_template.md or .gitlab/merge_request_templates/Default.md: copy the cli's template into the repository",
 			)
+		})
+	},
+)
+
+describe(
+	'prepareChangeRequest: the host nouns read from the worktree',
+	{ timeout: STORE_CASE_TIMEOUT },
+	() => {
+		it.each([
+			{ origin: 'a GitHub origin', url: 'https://github.com/o/r.git', nouns: GITHUB_NOUNS },
+			{ origin: 'a local-path origin', url: '/srv/git/repo.git', nouns: GENERIC_NOUNS },
+		])('$origin → its nouns beside the prepared text', ({ url, nouns }) => {
+			const lot = changeRequestLot()
+			git({ root: lot.worktree, args: ['config', 'remote.origin.url', url] })
+
+			const prepared = prepareChangeRequest({
+				lotFolder: lot.lotFolder,
+				worktree: lot.worktree,
+				baseRef: 'main',
+			})
+
+			expect('refusal' in prepared ? prepared.refusal : prepared.nouns).toEqual(nouns)
 		})
 	},
 )

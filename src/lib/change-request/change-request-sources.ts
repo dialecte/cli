@@ -1,7 +1,7 @@
 /**
  * The gathering half of `lot describe`: the lot's records read for its change request, then checked as public text
  * (`prepareChangeRequest`). Every read is of the lot's store folder or of the committed head of its worktree (the tree
- * the pull request lands); a path it names passes only when a commit of the tree holds it. A record missing is undefined, never a guess.
+ * the change request lands); a path it names passes only when a commit of the tree holds it. A record missing is undefined, never a guess.
  */
 import { readFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
@@ -15,7 +15,7 @@ import { hashStateTree } from '../gate-records/state-hash.ts'
 import { readCommitOrNone, readFilesAtRevision, readGit, tryReadGit } from '../git.ts'
 import { readLanding } from '../handover/land-record.ts'
 import { HOST_VENDORS } from '../host/host-vendors.constants.ts'
-import { vendorOf } from '../host/select-host.ts'
+import { hostNounsOf, vendorOf } from '../host/select-host.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { lotBaseOf } from '../landing/lot-base.ts'
 import { readStackParent } from '../landing/read-stack-parent.ts'
@@ -64,13 +64,13 @@ import type {
  * The lot's template and sources, checked: the repository's template holds every marker, and the free text of the
  * records holds no reference, forbidden word, plan entry id, link or path outside the tree. The refusal line otherwise.
  *
- * @intent render a lot's pull request from its records, public text only
+ * @intent render a lot's change request from its records, public text only
  * @internal
  */
 export function prepareChangeRequest(params: {
 	lotFolder: string
 	worktree: string
-	/** The base branch the pull request lands on, as git names it (`origin/main`). */
+	/** The base branch the change request lands on, as git names it (`origin/main`). */
 	baseRef: string
 	/**
 	 * Where the template is read, in order, the first that holds the renderer's markers taken: the lot's head alone
@@ -108,12 +108,17 @@ export function prepareChangeRequest(params: {
 	})
 	if (refused !== undefined)
 		return {
-			refusal: CHANGE_REQUEST_LINES.refused
-				.replace('{label}', refused.label)
-				.replace('{word}', () => (refused.word === undefined ? '' : ` \`${refused.word}\``))
-				.replace('{record}', () => refused.record),
+			refusal: fillMessage({
+				template: CHANGE_REQUEST_LINES.refused,
+				values: {
+					...hostNounsOf({ root: params.worktree }),
+					label: refused.label,
+					word: refused.word === undefined ? '' : ` \`${refused.word}\``,
+					record: refused.record,
+				},
+			}),
 		}
-	return { template: template.text, sources }
+	return { template: template.text, sources, nouns: hostNounsOf({ root: params.worktree }) }
 }
 
 /**
@@ -161,7 +166,7 @@ function templatePathsOf(params: {
 	return params.vendors.map((each) => each.changeRequestTemplate)
 }
 
-/** The lot's sources for its pull request; the refusal when its brief does not read or names no commit message. */
+/** The lot's sources for its change request; the refusal when its brief does not read or names no commit message. */
 export function readChangeRequestSources(params: {
 	lotFolder: string
 	worktree: string
@@ -346,7 +351,7 @@ function bodyQualityOf(params: { worktree: string; base: string }): BodyQuality 
 	}
 }
 
-/** The pull request number the lot's stack parent landed through (its `landing.json`); undefined when none. */
+/** The change request number the lot's stack parent landed through (its `landing.json`); undefined when none. */
 function stackParentChangeRequestOf(params: { lotFolder: string }): number | undefined {
 	const stack = readStackRecord(params)
 	if (stack === undefined) return undefined
@@ -489,14 +494,17 @@ function referencePatternsOf(params: {
 		}
 	} catch (error) {
 		return {
-			refusal: CHANGE_REQUEST_LINES.unchecked.replace('{reason}', () => (error as Error).message),
+			refusal: fillMessage({
+				template: CHANGE_REQUEST_LINES.unchecked,
+				values: { ...hostNounsOf({ root: params.root }), reason: (error as Error).message },
+			}),
 		}
 	}
 }
 
 /**
  * The files of the lot's tree: those its committed head holds and those its base holds (a file the lot deletes still
- * names the tree). An untracked file of the worktree is none: no commit of the pull request holds it.
+ * names the tree). An untracked file of the worktree is none: no commit of the change request holds it.
  */
 function treeFilesOf(params: { worktree: string; base: string }): ReadonlySet<string> {
 	const files = new Set(

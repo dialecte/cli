@@ -5,7 +5,7 @@ export const STACK_QUEUE_LINES = {
 		'{lot} stacks on {parent}, whose records do not read: dialecte lot status {parent} says how',
 	noBase: '{lot} stacks on {parent} and the host does not say what #{number} merges into',
 	noParentChangeRequest:
-		'{lot} stacks on {parent}, whose branch {branch} has no open pull request: lot land {parent} first',
+		'{lot} stacks on {parent}, whose branch {branch} has no open {changeRequestNoun}: lot land {parent} first',
 	parentMerged:
 		'{lot} stacks on #{number} ({parent}), merged: lot land {lot} again moves it onto the base, then approve it',
 	waits:

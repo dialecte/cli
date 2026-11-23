@@ -204,7 +204,9 @@ const CLOSE_ROWS: CloseRow[] = [
 				{
 					closed: true,
 					already: true,
-					landed: expect.stringContaining(`pull request #${LANDING_CHANGE_REQUEST_NUMBER} merged`),
+					landed: expect.stringContaining(
+						`change request #${LANDING_CHANGE_REQUEST_NUMBER} merged`,
+					),
 				},
 			],
 			worktreeGone: false,

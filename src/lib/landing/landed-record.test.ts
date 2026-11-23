@@ -44,7 +44,7 @@ describe('landed.json', () => {
 		{
 			title: 'a change request without its url',
 			text: JSON.stringify({ ...FACT, changeRequest: { number: 7 } }),
-			reason: 'changeRequest is no pull request',
+			reason: 'changeRequest is not a change request record',
 		},
 	])('a landed.json with $title -> damaged naming why, never landed', ({ text, reason }) => {
 		const lotFolder = temporaryFolder('dialecte-landed-')

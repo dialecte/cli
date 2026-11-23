@@ -138,7 +138,7 @@ function keepOf(params: { lotFolder: string }): { keep?: KeepDecision } {
 	return keep === undefined ? {} : { keep }
 }
 
-/** The landing of a lot that lands through its pull request: a landing record and no written hand-over. */
+/** The landing of a lot that lands through its change request: a landing record and no written hand-over. */
 function landingOf(params: { lotFolder: string }): Pick<LotStateInput, 'landing'> {
 	const landing = readLanding({ lotFolder: params.lotFolder })
 	if (landing === undefined || isPresent(join(params.lotFolder, HANDOVER_FILES.lots))) return {}

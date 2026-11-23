@@ -14,8 +14,8 @@ doctor - Installed versions, core API generation, skills in sync, local checkout
   what to fix before trusting what you read
   --brief - the session-start form, nothing when in sync, one line per problem
   --host - runs every read of the repository's host once, for real, through the cli's own code (the
-           newest merged pull request, its checks, its queued state and the queue its base offers, a
-           reference pull request's line comments, the stack extension), then the tool versions
+           newest merged change request, its checks, its queued state and the queue its base offers,
+           a reference change request's line comments, the stack extension), then the tool versions
            against the recorded ones and git against its floor; only those lines; network by name;
            --vendor <name> probes that vendor whatever the origin
 
@@ -35,8 +35,8 @@ Flags: `--json`, `--brief`, `--host`, `--vendor`
   another version than the one installed - linked skills follow node_modules), local checkouts (siblings,
   `$DIALECTE_ROOT`); each warning with the one command that fixes it.
 - `dialecte doctor --host`: every read the lot verbs make of the repository's host, run once for real through
-  the same code they use: the newest merged pull request (its view, a branch that has none, its checks, its
-  queued state), the line comments of a reference pull request, the stack extension; then the host tool's
+  the same code they use: the newest merged change request (its view, a branch that has none, its checks, its
+  queued state), the line comments of a reference change request, the stack extension; then the host tool's
   versions against those the cli was checked with, and git against its floor (2.38). It prints only those
   lines and needs no installed `@dialecte` package. An error (a read refused, an answer whose shape changed,
   git too old, no host vendor for the origin) exits 1; a warning (nothing merged yet to probe, the stack

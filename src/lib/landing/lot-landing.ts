@@ -13,6 +13,8 @@ import { ORIGIN_BRANCH_REF_PREFIX } from '../gate/gate-base.constants.ts'
 import { findBaseBranchRef } from '../gate/gate-base.ts'
 import { readCommitOrNone, readGit, tryReadGit } from '../git.ts'
 import { readLanding } from '../handover/land-record.ts'
+import { GENERIC_NOUNS } from '../host/host.constants.ts'
+import { hostNounsOf } from '../host/select-host.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { readPackageJson } from '../package-json.ts'
 import { readIdentity } from '../store/identity.ts'
@@ -42,15 +44,16 @@ import {
 } from './lot-landing.constants.ts'
 
 import type { HostAdapter } from '../host/host.types.ts'
+import type { HostNouns } from '../host/host.types.ts'
 import type { LotIdentity } from '../store/store.types.ts'
 import type { LandedFact } from './landed-record.types.ts'
 import type { LotLanding, RecordedTips, SettledLot, StatusLanding } from './lot-landing.types.ts'
 
 /**
  * The landing of the store lot in `lotFolder`: from its landed fact when its folder holds one (no git, no host), else
- * the landing state git reads now, with `host` asked whenever it is given (a verb that acts: a pull request opened by
+ * the landing state git reads now, with `host` asked whenever it is given (a verb that acts: a change request opened by
  * hand, its branch deleted on origin after the merge, is still found), or only for a lot that was pushed when
- * `onlyPushed` (a verb that displays: a pull request recorded, or its branch on origin); refused when its identity or
+ * `onlyPushed` (a verb that displays: a change request recorded, or its branch on origin); refused when its identity or
  * its base branch does not read.
  *
  * @intent read whether a store lot landed, once, for every verb
@@ -146,9 +149,10 @@ export function recordLanded(params: { landing: LotLanding; now: Date }): Landed
  * @intent say how a lot was read merged
  * @internal
  */
-export function landedLineOf(fact: LandedFact): string {
+export function landedLineOf(params: { fact: LandedFact; nouns: HostNouns }): string {
+	const { fact } = params
 	const { changeRequest } = fact
-	const values = { base: fact.base, commit: fact.tip.slice(0, SHORT_SHA_LENGTH) }
+	const values = { ...params.nouns, base: fact.base, commit: fact.tip.slice(0, SHORT_SHA_LENGTH) }
 	if (changeRequest === undefined)
 		return fillMessage({
 			template: fact.how === 'host' ? LANDED_HOST_UNNUMBERED_LINE : LANDED_LINES[fact.how],
@@ -162,18 +166,19 @@ export function landedLineOf(fact: LandedFact): string {
 
 /**
  * Why a lot is not landed, as `lot close` keeps it: its work not in the base (with the host's silence when it could
- * not say), its pull request closed, nothing of its own, or a landing that cannot be read.
+ * not say), its change request closed, nothing of its own, or a landing that cannot be read.
  *
  * @intent say why a lot does not close
  * @internal
  */
 export function notLandedTextOf(landing: LotLanding): string {
 	const { state } = landing
+	const nouns = hostNounsOf({ root: landing.root })
 	const base = landing.base.branch
 	if (state.kind === 'closed')
 		return fillMessage({
 			template: NOT_LANDED_TEXTS.closed,
-			values: { number: String(state.changeRequest.number) },
+			values: { ...nouns, number: String(state.changeRequest.number) },
 		})
 	if (state.kind === 'empty') return NOT_LANDED_TEXTS.empty
 	if (state.kind === 'unknown')
@@ -184,7 +189,7 @@ export function notLandedTextOf(landing: LotLanding): string {
 			? fillMessage({ template: NOT_LANDED_TEXTS.unlanded, values: { base } })
 			: workSinceLandingText(since)
 	if (state.kind !== 'unlanded' || state.hostRefusal === undefined) return unlanded
-	return `${unlanded}; ${fillMessage({ template: HOST_SILENT_TEXT, values: { reason: state.hostRefusal } })}`
+	return `${unlanded}; ${fillMessage({ template: HOST_SILENT_TEXT, values: { ...nouns, reason: state.hostRefusal } })}`
 }
 
 /**
@@ -231,14 +236,14 @@ export function statusLandingOf(host: HostAdapter): StatusLanding {
 
 /**
  * The stack line of the lot in `lotFolder`: its parent (`stack.json`) read through `readLotLanding` with the host, its
- * pull request (the one its landing state names, else its landing.json's) and that pull request's state: merged once
+ * change request (the one its landing state names, else its landing.json's) and that change request's state: merged once
  * the parent's landing is proven merged, else closed, queued, draft or open, or why the host cannot say. Undefined for
  * a lot not stacked.
  */
 function stackLineFor(params: { lotFolder: string; host: HostAdapter }): string | undefined {
 	const record = readStack({ lotFolder: params.lotFolder })
 	if (record === undefined) return undefined
-	if ('damage' in record) return stackTextOf({ lotFolder: params.lotFolder })
+	if ('damage' in record) return stackTextOf({ lotFolder: params.lotFolder, nouns: GENERIC_NOUNS })
 	const { parent } = record
 	const parentFolder = join(dirname(params.lotFolder), parent)
 	const number = readLanding({ lotFolder: parentFolder })?.number
@@ -247,28 +252,41 @@ function stackLineFor(params: { lotFolder: string; host: HostAdapter }): string 
 		return stackLineText({
 			parent,
 			number,
+			nouns: GENERIC_NOUNS,
 			state: fillMessage({ template: STACK_UNREADABLE, values: { reason: landing.refusal } }),
 		})
 	const { state } = landing
+	const nouns = hostNounsOf({ root: landing.root })
 	const changeRequest = 'changeRequest' in state ? state.changeRequest : undefined
 	const shown = changeRequest?.number ?? number
 	if (state.kind === 'merged')
-		return stackLineText({ parent, number: shown, state: STACK_CHANGE_REQUEST_STATES.merged })
+		return stackLineText({
+			parent,
+			number: shown,
+			nouns,
+			state: STACK_CHANGE_REQUEST_STATES.merged,
+		})
 	if (changeRequest !== undefined)
-		return stackLineText({ parent, number: shown, state: changeRequestStateOf(changeRequest) })
+		return stackLineText({
+			parent,
+			number: shown,
+			nouns,
+			state: changeRequestStateOf(changeRequest),
+		})
 	if (state.kind === 'unlanded' && state.hostRefusal !== undefined)
 		return stackLineText({
 			parent,
 			number: shown,
+			nouns,
 			state: fillMessage({
 				template: STACK_TEXT.hostSilent,
 				values: { reason: state.hostRefusal },
 			}),
 		})
-	return stackLineText({ parent, number: shown, state: undefined })
+	return stackLineText({ parent, number: shown, nouns, state: undefined })
 }
 
-/** The lot was pushed: its landing recorded a pull request, or origin holds its branch. */
+/** The lot was pushed: its landing recorded a change request, or origin holds its branch. */
 function isPushed(params: {
 	root: string
 	branch: string

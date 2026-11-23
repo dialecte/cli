@@ -13,7 +13,7 @@ import { runningRefusal } from '../lib/handover/handover-run-marker.ts'
 import { registeredEntryOf } from '../lib/handover/handover-store-read.ts'
 import { recordHandoverState } from '../lib/handover/handover-store.ts'
 import { HANDOVER_ABANDON_TEXTS } from '../lib/handover/handover.constants.ts'
-import { createHost } from '../lib/host/select-host.ts'
+import { createHost, hostNounsOf } from '../lib/host/select-host.ts'
 import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { JSON_FLAG } from '../lib/parse-invocation.constants.ts'
 import { jsonOf, textOf } from '../lib/print/print.ts'
@@ -136,21 +136,32 @@ export function lotStop(params: LotStopParams): CommandResult {
 	const lockLines: string[] = []
 	// a lot landing through its pull request: the pull request closed (out of the queue), its entry abandoned
 	if (pending && input.landing !== undefined) {
+		const closeRoot = identity.worktree ?? dirname(registry)
 		const closed = (params.host ?? createHost()).closeChangeRequest({
-			root: identity.worktree ?? dirname(registry),
+			root: closeRoot,
 			number: input.landing.number,
 		})
 		if (closed !== undefined)
 			return lotRefusalExit({
 				lines: [
-					STOP_TEXTS.landingNotClosed
-						.replace('{number}', String(input.landing.number))
-						.replace('{reason}', () => closed.refusal),
+					fillMessage({
+						template: STOP_TEXTS.landingNotClosed,
+						values: {
+							...hostNounsOf({ root: closeRoot }),
+							number: String(input.landing.number),
+							reason: closed.refusal,
+						},
+					}),
 				],
 				json,
 			})
 		recordHandoverState({ store: registry, folder: lotFolder, state: 'abandoned' })
-		lockLines.push(STOP_TEXTS.landingClosed.replace('{number}', String(input.landing.number)))
+		lockLines.push(
+			fillMessage({
+				template: STOP_TEXTS.landingClosed,
+				values: { ...hostNounsOf({ root: closeRoot }), number: String(input.landing.number) },
+			}),
+		)
 	} else if (pending) {
 		const abandoned = abandonOf({ ...target, afterCheck: params.seams?.afterCheck })
 		if ('refused' in abandoned) return lotRefusalExit({ lines: [abandoned.refused], json })

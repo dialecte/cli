@@ -44,6 +44,9 @@ function sshHostnameOf(params: { alias: string }): string | undefined {
 	return run.status === 0 ? hostnameOfSshConfig({ text: run.stdout }) : undefined
 }
 
+/** The ssh alias lookup of this run: `ssh -G` spawned once per alias, its answer kept (a run never edits the ssh config). */
+const sshHostnameOnce = memoisedLookup({ lookup: sshHostnameOf })
+
 /** The personal config key `host` of the repository at `root` (its `repos:` entry included); undefined when not set. */
 function hostKeyOf(params: { root: string }): string | undefined {
 	const resolved = resolveConfig({
@@ -78,7 +81,7 @@ function selectionOf(params: { root: string } & HostSelectionSeams): HostSelecti
 	const byOrigin = vendorOfRemoteHost({ host })
 	if (byOrigin !== undefined) return { vendor: byOrigin, host }
 	if (remote !== undefined && remote.form !== 'https') {
-		const sshHostname = params.sshHostname ?? sshHostnameOf
+		const sshHostname = params.sshHostname ?? sshHostnameOnce
 		const byAlias = vendorOfRemoteHost({ host: sshHostname({ alias: remote.host }) })
 		if (byAlias !== undefined) return { vendor: byAlias, host }
 	}
@@ -267,5 +270,18 @@ function forwardingHost(params: {
 
 /** The change-request nouns printed for the repository at `root`: its vendor's, else the generic ones. */
 export function hostNounsOf(params: { root: string } & HostSelectionSeams): HostNouns {
+	// a root that is gone has no origin to read (repoKeyOf would throw): the generic nouns, as servingHostOf refuses it
+	if (!existsSync(params.root)) return GENERIC_NOUNS
 	return vendorOf(params)?.nouns ?? GENERIC_NOUNS
+}
+
+/** `lookup` with each alias's answer kept for the run: an alias is asked once, even when it answers nothing. */
+export function memoisedLookup(params: {
+	lookup: (params: { alias: string }) => string | undefined
+}): (params: { alias: string }) => string | undefined {
+	const answers = new Map<string, string | undefined>()
+	return function lookupOnce({ alias }) {
+		if (!answers.has(alias)) answers.set(alias, params.lookup({ alias }))
+		return answers.get(alias)
+	}
 }

@@ -192,7 +192,7 @@ describe('dialecte lot approve', { timeout: STORE_CASE_TIMEOUT }, () => {
 
 		expect(result.exitCode).toBe(1)
 		expect(result.output).toBe(
-			`lot approve: ${LOT_NAME} not approved: pull request #${REVIEW_CHANGE_REQUEST_NUMBER} is at ${OTHER_HEAD.slice(0, 12)}, the lot landed ${lot.head.slice(0, 12)} (lot land ${LOT_NAME} pushes it); nothing recorded, nothing queued`,
+			`lot approve: ${LOT_NAME} not approved: change request #${REVIEW_CHANGE_REQUEST_NUMBER} is at ${OTHER_HEAD.slice(0, 12)}, the lot landed ${lot.head.slice(0, 12)} (lot land ${LOT_NAME} pushes it); nothing recorded, nothing queued`,
 		)
 		expect(calls).not.toContain(`queue ${REVIEW_CHANGE_REQUEST_NUMBER}`)
 		expect(existsSync(join(lot.lotFolder, STORE_FILES.approvals))).toBe(false)
@@ -334,9 +334,29 @@ describe('dialecte lot approve', { timeout: STORE_CASE_TIMEOUT }, () => {
 
 		expect(result.exitCode).toBe(1)
 		expect(result.output).toBe(
-			`lot approve: ${LOT_NAME} has no pull request yet: dialecte lot land ${LOT_NAME} opens it`,
+			`lot approve: ${LOT_NAME} has no change request yet: dialecte lot land ${LOT_NAME} opens it`,
 		)
 		expect(calls).toEqual([])
+	})
+
+	it('no landing, on a GitHub origin → refused naming the pull request', () => {
+		const lot = landedLot()
+		rmSync(join(lot.lotFolder, LANDING_FILE))
+		git({
+			root: lot.workspace.repository,
+			args: ['config', 'remote.origin.url', 'https://github.com/o/r.git'],
+		})
+		const { host } = recordingHost({ existing: lot.changeRequest })
+
+		const result = runLotApprove({
+			cwd: lot.workspace.repository,
+			argv: [LOT_NAME, '--by', REVIEWER],
+			host,
+		})
+
+		expect(result.output).toBe(
+			`lot approve: ${LOT_NAME} has no pull request yet: dialecte lot land ${LOT_NAME} opens it`,
+		)
 	})
 
 	it('no --by → usage, exit 2', () => {

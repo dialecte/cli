@@ -7,6 +7,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { hostNounsOf } from '../host/select-host.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import {
 	CI_WORKFLOW_PATH,
@@ -57,7 +58,12 @@ export function flowRefusalOf(params: {
 	if (!landingFlow(flow).refused.includes(`${command} ${verb}`)) return undefined
 	return fillMessage({
 		template: FLOW_REFUSAL,
-		values: { command, verb, root, why: FLOW_REFUSAL_WHY[flow] },
+		values: {
+			command,
+			verb,
+			root,
+			why: fillMessage({ template: FLOW_REFUSAL_WHY[flow], values: hostNounsOf({ root }) }),
+		},
 	})
 }
 

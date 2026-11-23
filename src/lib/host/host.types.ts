@@ -1,6 +1,6 @@
 import type { HOST_READ_METHODS, HOST_VENDOR_NAMES } from './host.constants.ts'
 
-/** A pull request on the host, as a landing reads it. */
+/** A change request on the host, as a landing reads it. */
 export type ChangeRequest = {
 	number: number
 	url: string
@@ -19,22 +19,22 @@ export type ChangeRequest = {
 	filesUrl?: string
 }
 
-/** Whether the host links pull requests into stacks here, and why not when it does not. */
+/** Whether the host links change requests into stacks here, and why not when it does not. */
 export type StackSupport = { stacks: true } | { stacks: false; why: string }
 
-/** How the checks on a pull request's head stand: all passed, one failed, one still running, or none at all. */
+/** How the checks on a change request's head stand: all passed, one failed, one still running, or none at all. */
 export type ChecksState = 'green' | 'failing' | 'pending' | 'none'
 
-/** The checks on a pull request's head: their state and the names of the failing and the pending ones. */
+/** The checks on a change request's head: their state and the names of the failing and the pending ones. */
 export type ChangeRequestChecks = {
-	/** The commit the checks ran on (the pull request's head). */
+	/** The commit the checks ran on (the change request's head). */
 	head: string
 	state: ChecksState
 	failing: string[]
 	pending: string[]
 }
 
-/** A line comment of a pull request's review: on a file, at a line when it has one; a reply names what it answers. */
+/** A line comment of a change request's review: on a file, at a line when it has one; a reply names what it answers. */
 export type ReviewComment = {
 	id: number
 	path: string
@@ -61,9 +61,9 @@ export type HostRefusal = { refusal: string }
  * repository at `root`; none prompts.
  */
 export type HostAdapter = {
-	/** The pull request `ref` names (a number, or a branch: its newest); undefined when there is none. */
+	/** The change request `ref` names (a number, or a branch: its newest); undefined when there is none. */
 	readChangeRequest(params: { root: string; ref: string }): ChangeRequest | undefined | HostRefusal
-	/** A new pull request of `branch` into `base`. */
+	/** A new change request of `branch` into `base`. */
 	openChangeRequest(params: {
 		root: string
 		branch: string
@@ -72,23 +72,23 @@ export type HostAdapter = {
 		body: string
 		draft: boolean
 	}): ChangeRequest | HostRefusal
-	/** The pull request's title and body replaced by `title` and `body`. */
+	/** The change request's title and body replaced by `title` and `body`. */
 	editChangeRequest(params: {
 		root: string
 		number: number
 		title: string
 		body: string
 	}): HostRefusal | undefined
-	/** The pull request closed: taken out of the merge queue, never merged. */
+	/** The change request closed: taken out of the merge queue, never merged. */
 	closeChangeRequest(params: { root: string; number: number }): HostRefusal | undefined
-	/** The pull request queued: merged by the host once its checks pass (a draft made ready first). */
+	/** The change request queued: merged by the host once its checks pass (a draft made ready first). */
 	queueChangeRequest(params: {
 		root: string
 		number: number
 		draft: boolean
 	}): HostRefusal | undefined
 	/**
-	 * The pull request taken back out of the queue: auto-merge turned off when `queued`, made a draft when not `draft`
+	 * The change request taken back out of the queue: auto-merge turned off when `queued`, made a draft when not `draft`
 	 * (an approval is for one head); nothing asked when it is a draft not queued.
 	 */
 	draftChangeRequest(params: {
@@ -98,28 +98,28 @@ export type HostAdapter = {
 		draft: boolean
 	}): HostRefusal | undefined
 	/**
-	 * Whether the host merges the pull request once its checks pass: auto-merge on, or in the merge queue (which a
-	 * pull request read cannot say).
+	 * Whether the host merges the change request once its checks pass: auto-merge on, or in the merge queue (which a
+	 * change request read cannot say).
 	 */
 	readQueued(params: { root: string; number: number }): { queued: boolean } | HostRefusal
 	/** The queue the change request's base offers (a queue, auto-merge or neither), named in the vendor's word. */
 	readQueueKind(params: { root: string; number: number }): QueueSupport | HostRefusal
-	/** The checks on the pull request's head. */
+	/** The checks on the change request's head. */
 	readChecks(params: { root: string; number: number }): ChangeRequestChecks | HostRefusal
-	/** The line comments of the pull request's reviews, oldest first. */
+	/** The line comments of the change request's reviews, oldest first. */
 	readReviewComments(params: { root: string; number: number }): ReviewComment[] | HostRefusal
-	/** The pull request's changed files opened in the browser (`url` is the pull request's page). */
+	/** The change request's changed files opened in the browser (`url` is the change request's page). */
 	openFiles(params: { root: string; url: string }): HostRefusal | undefined
-	/** Whether the host links pull requests into stacks here (33CI CI4); no network asked. */
+	/** Whether the host links change requests into stacks here (33CI CI4); no network asked. */
 	probeStacks(params: { root: string }): StackSupport
-	/** The pull request at `child` (its url) linked on top of the one at `parent` as a stack. */
+	/** The change request at `child` (its url) linked on top of the one at `parent` as a stack. */
 	linkStack(params: { root: string; parent: string; child: string }): HostRefusal | undefined
 	/**
 	 * The stack queued up to and including `number`, all or nothing (never auto-merge: refused for a stack); a draft made
 	 * ready first.
 	 */
 	queueStack(params: { root: string; number: number; draft: boolean }): HostRefusal | undefined
-	/** The pull request's base branch changed to `base`. */
+	/** The change request's base branch changed to `base`. */
 	retargetChangeRequest(params: {
 		root: string
 		number: number
@@ -187,7 +187,7 @@ export type HostVendor<Calls extends HostCallTable, Subject extends keyof Calls>
 	calls: Calls
 	/** The versions of the tool the record was taken from, by part (the keys `describe.versionOf` takes). */
 	recordedVersions: Readonly<Record<string, string>>
-	/** The read that finds the pull request the other probes read, and its probe. */
+	/** The read that finds the change request the other probes read, and its probe. */
 	subject: {
 		call: Calls[Subject]['kind'] extends 'write' ? never : Subject
 		find: HostSubjectProbe<Calls>
@@ -332,8 +332,8 @@ export type HostProbe<Calls extends HostCallTable = HostCallTable> = (params: {
 }) => HostLine
 
 /**
- * The probe of the read that finds the pull request the other probes read: its line (its subject `subject`, the
- * read's name), and the pull request found.
+ * The probe of the read that finds the change request the other probes read: its line (its subject `subject`, the
+ * read's name), and the change request found.
  */
 export type HostSubjectProbe<Calls extends HostCallTable = HostCallTable> = (params: {
 	root: string

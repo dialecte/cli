@@ -18,6 +18,7 @@ import { closeTargetsOf } from '../handover/close-targets.ts'
 import { handoverLockPath } from '../handover/handover-lock.ts'
 import { readStoreEntries } from '../handover/handover-store-read.ts'
 import { findHandoverStore, handoverStoreOf } from '../handover/handover-store.ts'
+import { hostNounsOf } from '../host/select-host.ts'
 import { lostWork, workSinceLanding } from '../landing/lost-work.ts'
 import { settleLotLanding } from '../landing/lot-landing.ts'
 import { readPackageJson } from '../package-json.ts'
@@ -155,6 +156,7 @@ function readRepositoryFacts(params: {
 	const lost = lostByBranch({ reads, lots, candidates })
 	return {
 		main: params.main,
+		nouns: hostNounsOf({ root: params.main }),
 		baseBranch: reads.baseBranch,
 		...(reads.baseRef !== undefined && { baseRef: reads.baseRef }),
 		mainBranch: reads.mainBranch,

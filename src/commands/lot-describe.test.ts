@@ -1,5 +1,5 @@
 /**
- * `dialecte lot pr <id>`: the lot's pull request rendered from its records through the repository's template, its
+ * `dialecte lot describe <id>`: the lot's pull request rendered from its records through the repository's template, its
  * open pull request updated when it reads otherwise; a body holding what a public text never holds is not sent.
  */
 import { rmSync, writeFileSync } from 'node:fs'
@@ -170,7 +170,7 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 		expect(result.exitCode).toBe(1)
 		expect(calls).toEqual([])
 		expect(result.output).toBe(
-			`lot describe: the pull request text holds a forbidden word \`${FORBIDDEN_WORD}\` in brief.json steps[0].behaviours[0]: rewrite that record, nothing sent`,
+			`lot describe: the change request text holds a forbidden word \`${FORBIDDEN_WORD}\` in brief.json steps[0].behaviours[0]: rewrite that record, nothing sent`,
 		)
 	})
 
@@ -200,7 +200,7 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 		})
 
 		expect(result.output).toContain(
-			'- tdd: stale, taken on 0123456789ab, not the tree this pull request lands',
+			'- tdd: stale, taken on 0123456789ab, not the tree this change request lands',
 		)
 		expect(result.output).not.toContain('1 case (1 green)')
 	})
@@ -396,7 +396,7 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 		expect(result).toEqual({
 			exitCode: 1,
 			output:
-				"lot describe: the pull request body holds text the render would drop (no '### Checklist for the reviewer when doing the PR review' heading): move it under that heading or clear it, nothing sent",
+				"lot describe: the change request body holds text the render would drop (no '### Checklist for the reviewer when doing the PR review' heading): move it under that heading or clear it, nothing sent",
 		})
 		expect(calls).toEqual(['read feat/x'])
 	})

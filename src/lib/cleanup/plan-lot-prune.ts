@@ -8,6 +8,7 @@ import { lostWorkText, workSinceLandingText } from '../landing/lost-work.ts'
 import { landedLineOf } from '../landing/lot-landing.ts'
 import { PRUNE_PLAN_TEXTS } from './plan-lot-prune.constants.ts'
 
+import type { HostNouns } from '../host/host.types.ts'
 import type { SettledLot } from '../landing/lot-landing.types.ts'
 import type {
 	BranchFacts,
@@ -85,12 +86,12 @@ function planLot(params: { repository: RepositoryFacts; lot: LotFacts }): LotPla
 		state: lot.state,
 		landing:
 			lot.worktreeGone && 'landed' in lot.settled && lot.landedTipGone === undefined
-				? `${landingLineOf(lot.settled)}${PRUNE_PLAN_TEXTS.worktreeGone}`
+				? `${landingLineOf({ settled: lot.settled, nouns: repository.nouns })}${PRUNE_PLAN_TEXTS.worktreeGone}`
 				: lot.landedTipGone === undefined
-					? landingLineOf(lot.settled)
-					: `${landingLineOf(lot.settled)}; ${fillMessage({ template: PRUNE_PLAN_TEXTS.landedTipGone, values: { tip: lot.landedTipGone.slice(0, SHORT_SHA_LENGTH) } })}`,
+					? landingLineOf({ settled: lot.settled, nouns: repository.nouns })
+					: `${landingLineOf({ settled: lot.settled, nouns: repository.nouns })}; ${fillMessage({ template: PRUNE_PLAN_TEXTS.landedTipGone, values: { tip: lot.landedTipGone.slice(0, SHORT_SHA_LENGTH) } })}`,
 		simulated: lot.simulated,
-		stale: staleOf(lot),
+		stale: staleOf({ lot, nouns: repository.nouns }),
 	}
 	if (lot.simulated) return { ...base, items: [] }
 	const open = holdReason(lot)
@@ -275,8 +276,9 @@ function landingKeep(params: { settled: SettledLot; branch: BranchFacts }): stri
 }
 
 /** The line naming a lot's landing as the run settled it. */
-function landingLineOf(settled: SettledLot): string {
-	if ('landed' in settled) return landedLineOf(settled.landed)
+function landingLineOf(params: { settled: SettledLot; nouns: HostNouns }): string {
+	const { settled } = params
+	if ('landed' in settled) return landedLineOf({ fact: settled.landed, nouns: params.nouns })
 	if ('canceled' in settled) return PRUNE_PLAN_TEXTS.canceled
 	if ('notLanded' in settled) return settled.notLanded
 	if ('notRead' in settled) return settled.notRead
@@ -284,11 +286,16 @@ function landingLineOf(settled: SettledLot): string {
 }
 
 /** A lot whose worktree is gone and whose landing is not proven (not landed, not canceled): why, and the lot stop command. */
-function staleOf(lot: LotFacts): string | undefined {
+function staleOf(params: { lot: LotFacts; nouns: HostNouns }): string | undefined {
+	const { lot } = params
 	const { settled } = lot
 	if (!lot.worktreeGone || 'landed' in settled || 'canceled' in settled) return undefined
 	return fillMessage({
 		template: PRUNE_PLAN_TEXTS.stale,
-		values: { state: lot.state, why: landingLineOf(settled), lot: lot.lot },
+		values: {
+			state: lot.state,
+			why: landingLineOf({ settled, nouns: params.nouns }),
+			lot: lot.lot,
+		},
 	})
 }

@@ -1,10 +1,10 @@
 /**
- * `dialecte lot approve <id> --by <who> [--reason <text>]`: a person's approval of the lot's pull request (33CI CI7).
- * Refused, nothing recorded and nothing queued, unless the pull request is open at the lot's landed head, its checks
+ * `dialecte lot approve <id> --by <who> [--reason <text>]`: a person's approval of the lot's change request (33CI CI7).
+ * Refused, nothing recorded and nothing queued, unless the change request is open at the lot's landed head, its checks
  * are green there and no blocking or should-fix finding is open. Then the approval is appended to the lot folder's `approvals.jsonl`
- * (a person's verdict row of `review.jsonl`), the pull request's text rendered again from the records and the pull
+ * (a person's verdict row of `review.jsonl`), the change request's text rendered again from the records and the pull
  * request queued (made ready when a draft): the only verb that queues, `lot land` never does. A lot started on another
- * whose pull request still merges into its parent's branch queues as a native stack, only behind a queued parent
+ * whose change request still merges into its parent's branch queues as a native stack, only behind a queued parent
  * (`stackQueueOf`). `--by orchestrator` approves the cli's own lots only.
  */
 import { existsSync, readFileSync } from 'node:fs'
@@ -56,7 +56,7 @@ import type { LotPlace } from './lot-describe.types.ts'
 export function runLotApprove(params: {
 	cwd: string
 	argv: string[]
-	/** Where the pull request lives; default: the repository's host. */
+	/** Where the change request lives; default: the repository's host. */
 	host?: HostAdapter
 	now?: Date
 }): CommandResult {
@@ -87,7 +87,7 @@ export function runLotApprove(params: {
 	if (landing === undefined)
 		return lineOf({
 			exitCode: 1,
-			line: LOT_APPROVE_LINES.noLanding.replaceAll('{lot}', () => place.lot),
+			line: noLandingLine({ place }),
 		})
 	const host = params.host ?? createHost()
 	const changeRequest = openChangeRequestOf({ host, place, number: landing.number })
@@ -105,8 +105,7 @@ export function runLotApprove(params: {
 		})
 	// the text must render over the live body before the approval is recorded: a refusal leaves nothing behind
 	const early = prepareChangeRequest({ ...place, templateRefs: ['HEAD'] })
-	const kept =
-		'refusal' in early ? early : keptPartOf({ template: early.template, body: changeRequest.body })
+	const kept = 'refusal' in early ? early : keptPartOf({ ...early, body: changeRequest.body })
 	if ('refusal' in kept)
 		return lineOf({ exitCode: 1, line: `${LOT_APPROVE_LINES.prefix}${kept.refusal}` })
 	return recordAndQueue({
@@ -126,7 +125,7 @@ export function runLotApprove(params: {
 }
 
 /**
- * Why `lot approve` would refuse the lot now: the lot is no longer at work, its pull request is not open or not at the
+ * Why `lot approve` would refuse the lot now: the lot is no longer at work, its change request is not open or not at the
  * head the lot landed, its checks are not green on that head, or a finding other than a nit is open; none when it
  * would approve.
  *
@@ -154,7 +153,11 @@ export function approvalRefusals(params: {
 			: [
 					fillMessage({
 						template: LOT_APPROVE_LINES.notOpen,
-						values: { number: String(changeRequest.number), state: changeRequest.state },
+						values: {
+							...hostNounsOf({ root: place.worktree }),
+							number: String(changeRequest.number),
+							state: changeRequest.state,
+						},
 					}),
 				]),
 		...headReasons(params),
@@ -227,7 +230,7 @@ function approverRefusal(params: {
 			})
 }
 
-/** The lot's pull request `number`; the line of one the host refuses or cannot find. */
+/** The lot's change request `number`; the line of one the host refuses or cannot find. */
 function openChangeRequestOf(params: {
 	host: HostAdapter
 	place: LotPlace
@@ -240,14 +243,19 @@ function openChangeRequestOf(params: {
 	if (read === undefined)
 		return lineOf({
 			exitCode: 1,
-			line: LOT_APPROVE_LINES.noChangeRequest
-				.replace('{number}', String(number))
-				.replace('{lot}', () => place.lot),
+			line: fillMessage({
+				template: LOT_APPROVE_LINES.noChangeRequest,
+				values: {
+					...hostNounsOf({ root: place.worktree }),
+					number: String(number),
+					lot: place.lot,
+				},
+			}),
 		})
 	return read
 }
 
-/** Why the pull request's head is not the one approved: it is not the head the lot landed. */
+/** Why the change request's head is not the one approved: it is not the head the lot landed. */
 function headReasons(params: {
 	place: LotPlace
 	changeRequest: ChangeRequest
@@ -256,11 +264,16 @@ function headReasons(params: {
 	const { changeRequest, landed } = params
 	if (changeRequest.head === landed) return []
 	return [
-		LOT_APPROVE_LINES.headElsewhere
-			.replace('{number}', String(changeRequest.number))
-			.replace('{pushed}', changeRequest.head.slice(0, SHORT_SHA_LENGTH))
-			.replace('{landed}', landed.slice(0, SHORT_SHA_LENGTH))
-			.replace('{lot}', () => params.place.lot),
+		fillMessage({
+			template: LOT_APPROVE_LINES.headElsewhere,
+			values: {
+				...hostNounsOf({ root: params.place.worktree }),
+				number: String(changeRequest.number),
+				pushed: changeRequest.head.slice(0, SHORT_SHA_LENGTH),
+				landed: landed.slice(0, SHORT_SHA_LENGTH),
+				lot: params.place.lot,
+			},
+		}),
 	]
 }
 
@@ -291,7 +304,7 @@ function checksReasons(params: {
 	landed: string
 }): string[] {
 	const { checks, landed } = params
-	// a pull request at another head is named once, by headReasons
+	// a change request at another head is named once, by headReasons
 	if (params.changeRequest.head === landed && checks.head !== landed)
 		return [
 			fillMessage({
@@ -339,7 +352,7 @@ function blockingReasons(params: { folder: string }): string[] {
 
 /**
  * How the lot queues, then the approval appended and the review record written, the text rendered again and sent, and
- * the queue asked: the pull request alone, or the native stack up to it. A lot on an open parent queues only behind a
+ * the queue asked: the change request alone, or the native stack up to it. A lot on an open parent queues only behind a
  * queued parent: refused before anything is recorded.
  */
 function recordAndQueue(params: {
@@ -436,7 +449,7 @@ function queueViaOf(params: { host: HostAdapter; root: string; number: number })
 	return fillMessage({ template: QUEUE_VIA, values: { noun: support.noun } })
 }
 
-/** Whether the folder holds this approver's approval of this head of this pull request already. */
+/** Whether the folder holds this approver's approval of this head of this change request already. */
 function isApproved(params: { folder: string; approval: ApprovalLine }): boolean {
 	const { approval } = params
 	const file = join(params.folder, STORE_FILES.approvals)
@@ -459,4 +472,13 @@ function isApproved(params: { folder: string; approval: ApprovalLine }): boolean
 
 function lineOf(params: { exitCode: number; line: string }): CommandResult {
 	return resultOf({ exitCode: params.exitCode, lines: [params.line] })
+}
+
+// dialecte-allow duplicate-read: it fills approve's own refusal; landedLineOf names a landed fact
+/** Why a lot with no landing cannot be approved: lot land opens its change request first. */
+function noLandingLine(params: { place: LotPlace }): string {
+	return fillMessage({
+		template: LOT_APPROVE_LINES.noLanding,
+		values: { ...hostNounsOf({ root: params.place.worktree }), lot: params.place.lot },
+	})
 }

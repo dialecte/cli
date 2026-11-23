@@ -115,6 +115,8 @@ function fileFindingsOf(params: {
 			spellsVendorNoun({ text: node.text, vendors })
 		)
 			found.push(findingOf({ node, kind: 'noun-identifier' }))
+		if (seam && noun && isTextNode(node) && printsVendorNoun({ text: node.text, vendors }))
+			found.push(findingOf({ node, kind: 'noun-text' }))
 		if (seam) visitSeam(node)
 		ts.forEachChild(node, visit)
 	}
@@ -136,12 +138,40 @@ function fileFindingsOf(params: {
 	}
 
 	function findingOf(finding: {
-		node: ts.StringLiteral | ts.NoSubstitutionTemplateLiteral | ts.Identifier | ts.PrivateIdentifier
+		node: ts.StringLiteral | ts.TemplateLiteralLikeNode | ts.Identifier | ts.PrivateIdentifier
 		kind: HostSeamFinding['kind']
 	}): PlacedHostSeamFinding {
 		const { line, column } = positionOf({ node: finding.node, sourceFile })
 		return { file, line, kind: finding.kind, text: finding.node.text, column }
 	}
+}
+
+/** Whether the node is printed text: a string literal, a no-substitution template or one part of a template. */
+function isTextNode(node: ts.Node): node is ts.StringLiteral | ts.TemplateLiteralLikeNode {
+	return (
+		ts.isStringLiteral(node) ||
+		ts.isNoSubstitutionTemplateLiteral(node) ||
+		ts.isTemplateHead(node) ||
+		ts.isTemplateMiddle(node) ||
+		ts.isTemplateTail(node)
+	)
+}
+
+// dialecte-allow duplicate-read: it matches printed nouns as whole phrases in text; spellsVendorNoun matches identifier words
+/**
+ * Whether a text prints a vendor's change-request noun (`pull request`, `pull requests`) as whole words, in any case;
+ * `pull_request` and a noun split across template parts do not.
+ */
+function printsVendorNoun(params: { text: string; vendors: readonly HostSeamVendor[] }): boolean {
+	return params.vendors.some(function printsItsNoun(vendor) {
+		return [vendor.nouns.changeRequestNoun, vendor.nouns.changeRequestNouns].some(
+			function holdsNoun(noun) {
+				return new RegExp(`\\b${noun.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(
+					params.text,
+				)
+			},
+		)
+	})
 }
 
 /**

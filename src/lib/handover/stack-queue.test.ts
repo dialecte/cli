@@ -160,7 +160,7 @@ describe('stackQueueOf', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 
 		expect(route).toEqual({
 			refusal:
-				'0002-repo-y stacks on 0001-repo-x, whose branch feat/x has no open pull request: lot land 0001-repo-x first',
+				'0002-repo-y stacks on 0001-repo-x, whose branch feat/x has no open change request: lot land 0001-repo-x first',
 		})
 	})
 

@@ -262,7 +262,7 @@ function checksLine(checks: ChangeRequestChecks | { refusal: string }): string {
 	})
 }
 
-/** What never goes on the pull request page: the brief's goal and steps, tests, decisions, findings, standard. */
+/** What never goes on the change request page: the brief's goal and steps, tests, decisions, findings, standard. */
 function privateLines(place: LotPlace): string[] {
 	const folder = place.lotFolder
 	return [

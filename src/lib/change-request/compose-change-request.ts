@@ -26,6 +26,7 @@ import {
 	TEMPLATE_FAULTS,
 } from './change-request.constants.ts'
 
+import type { HostNouns } from '../host/host.types.ts'
 import type {
 	DesignRow,
 	FindingRow,
@@ -39,6 +40,8 @@ import type { ChangeRequestSources, ChangeRequestText } from './change-request.t
 export function composeChangeRequest(params: {
 	template: string
 	sources: ChangeRequestSources
+	/** The host's change-request nouns, for the body's own lines. */
+	nouns: HostNouns
 	/** A person's part of the current body (`keptTextOf`); the template's own when undefined. */
 	kept: string | undefined
 }): ChangeRequestText | { refusal: string } {
@@ -55,7 +58,7 @@ export function composeChangeRequest(params: {
 			.trim()
 	const rendered = lines.slice(0, keptAt).flatMap(function renderLine(line, index) {
 		const part = markers[index]
-		if (part !== undefined) return partLines({ part, sources: params.sources })
+		if (part !== undefined) return partLines({ part, sources: params.sources, nouns: params.nouns })
 		return RENDERER_COMMENT_PATTERN.test(line) ? [] : [line]
 	})
 	return {
@@ -125,6 +128,8 @@ export function keptTextOf(params: { template: string; body: string }): string |
 export function keptPartOf(params: {
 	template: string
 	body: string
+	/** The host's change-request nouns, for the refusal. */
+	nouns: HostNouns
 }): { kept: string | undefined } | { refusal: string } {
 	const kept = keptTextOf(params)
 	if (kept !== undefined) return { kept }
@@ -134,7 +139,12 @@ export function keptPartOf(params: {
 	const heading = lines
 		.slice(lines.map(markerOf).indexOf(KEPT_PART) + 1)
 		.find((line) => line.trim() !== '')
-	return { refusal: CHANGE_REQUEST_LINES.keptMissing.replace('{heading}', () => heading ?? '') }
+	return {
+		refusal: fillMessage({
+			template: CHANGE_REQUEST_LINES.keptMissing,
+			values: { ...params.nouns, heading: heading ?? '' },
+		}),
+	}
 }
 
 /** The lines of a text, whatever line ends another system gave it. */
@@ -148,7 +158,11 @@ function markerOf(line: string): string | undefined {
 }
 
 /** The lines of one filled part. */
-function partLines(params: { part: string; sources: ChangeRequestSources }): string[] {
+function partLines(params: {
+	part: string
+	sources: ChangeRequestSources
+	nouns: HostNouns
+}): string[] {
 	const { sources } = params
 	switch (params.part) {
 		case 'summary':
@@ -158,7 +172,7 @@ function partLines(params: { part: string; sources: ChangeRequestSources }): str
 		case 'changelog':
 			return changelogLines(sources)
 		case 'tests':
-			return testsLines(sources)
+			return testsLines({ sources, nouns: params.nouns })
 		case 'review':
 			return reviewLines(sources)
 		case 'risk':
@@ -248,19 +262,21 @@ function changelogLines(sources: ChangeRequestSources): string[] {
 }
 
 /** One line per part of `tests.json`: its counts on the tree it lands, "stale" for another tree. */
-function testsLines(sources: ChangeRequestSources): string[] {
-	const { tests, treeHash } = sources
+function testsLines(params: { sources: ChangeRequestSources; nouns: HostNouns }): string[] {
+	const { nouns } = params
+	const { tests, treeHash } = params.sources
 	if (tests?.tdd === undefined && tests?.gate === undefined) return [NOT_RECORDED]
 	return [
-		`- ${tests.tdd === undefined ? `tdd: ${NOT_RECORDED}` : tddLine({ tdd: tests.tdd, treeHash })}`,
-		`- ${tests.gate === undefined ? BODY_LINES.noGate : gateLine({ gate: tests.gate, treeHash })}`,
+		`- ${tests.tdd === undefined ? `tdd: ${NOT_RECORDED}` : tddLine({ tdd: tests.tdd, treeHash, nouns })}`,
+		`- ${tests.gate === undefined ? BODY_LINES.noGate : gateLine({ gate: tests.gate, treeHash, nouns })}`,
 	]
 }
 
-function tddLine(params: { tdd: TestsRecordTdd; treeHash: string }): string {
+function tddLine(params: { tdd: TestsRecordTdd; treeHash: string; nouns: HostNouns }): string {
 	const { tdd } = params
 	const head = tdd.head.slice(0, SHORT_SHA_LENGTH)
-	if (tdd.stateHash !== params.treeHash) return BODY_LINES.tddStale.replace('{head}', head)
+	if (tdd.stateHash !== params.treeHash)
+		return fillMessage({ template: BODY_LINES.tddStale, values: { ...params.nouns, head } })
 	const statuses = Object.entries(tdd.counts)
 		.map(([status, count]) => `${count} ${status}`)
 		.join(', ')
@@ -270,11 +286,14 @@ function tddLine(params: { tdd: TestsRecordTdd; treeHash: string }): string {
 		.replace('{head}', head)
 }
 
-function gateLine(params: { gate: TestsRecordGate; treeHash: string }): string {
+function gateLine(params: { gate: TestsRecordGate; treeHash: string; nouns: HostNouns }): string {
 	const { gate } = params
 	const head = gate.head.slice(0, SHORT_SHA_LENGTH)
 	if (gate.stateHash !== params.treeHash)
-		return BODY_LINES.gateStale.replace('{mode}', gate.mode).replace('{head}', head)
+		return fillMessage({
+			template: BODY_LINES.gateStale,
+			values: { ...params.nouns, mode: gate.mode, head },
+		})
 	return BODY_LINES.gateTests
 		.replace('{mode}', gate.mode)
 		.replace('{passed}', String(gate.tests?.passed ?? 0))

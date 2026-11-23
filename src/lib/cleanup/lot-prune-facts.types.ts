@@ -1,6 +1,6 @@
 import type { CardLine, Removal } from '../events/cards-log.types.ts'
 import type { StoreEntry } from '../handover/handover.types.ts'
-import type { HostAdapter } from '../host/host.types.ts'
+import type { HostAdapter, HostNouns } from '../host/host.types.ts'
 import type { LostCommit } from '../landing/lost-work.types.ts'
 import type { SettledLot } from '../landing/lot-landing.types.ts'
 import type { RunEntry } from '../mutation/mutation.types.ts'
@@ -22,6 +22,8 @@ export type RepositoryFacts = {
 	/** The ref merged work is compared with (the base branch where it is newest); undefined when none resolves. */
 	baseRef?: string
 	mainBranch: string | undefined
+	/** The host's change-request nouns, read once for the repository: the planner reads no git. */
+	nouns: HostNouns
 	/** `known`, or why the processes could not be listed (then no worktree nor throwaway goes). */
 	processes: 'known' | string
 	holders: BranchHolders

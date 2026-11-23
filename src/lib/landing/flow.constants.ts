@@ -30,6 +30,6 @@ export const FLOW_REFUSAL = '{command} {verb}: {root} {why}; nothing written'
 
 /** Why each flow refuses its verbs. */
 export const FLOW_REFUSAL_WHY = {
-	'ci-first': `is CI-first (${CI_WORKFLOW_PATH} runs on ${MERGE_QUEUE_TRIGGER} and holds the ${REQUIRED_CHECK_JOB} job): a lot lands through its pull request, never a hand-over; commit on the lot branch through the hook, then lot land <id>`,
+	'ci-first': `is CI-first (${CI_WORKFLOW_PATH} runs on ${MERGE_QUEUE_TRIGGER} and holds the ${REQUIRED_CHECK_JOB} job): a lot lands through its {changeRequestNoun}, never a hand-over; commit on the lot branch through the hook, then lot land <id>`,
 	'hand-over': `lands through a hand-over (no ${CI_WORKFLOW_PATH} running on ${MERGE_QUEUE_TRIGGER} with a ${REQUIRED_CHECK_JOB} job): run the stations, then handover write <lots.json>`,
 } as const

@@ -11,6 +11,7 @@ import { basename, dirname, join } from 'node:path'
 import { CARDS_LOG_FILE } from '../events/cards-log.constants.ts'
 import { readCardsLog } from '../events/cards-log.ts'
 import { realPathOf } from '../file-system.ts'
+import { hostNounsOf } from '../host/select-host.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { landedLineOf, settleLotLanding } from '../landing/lot-landing.ts'
 import { readIdentity } from '../store/identity.ts'
@@ -125,7 +126,7 @@ export function settleCloseTargets(params: {
 				: []
 		const own = target.kind === 'unknown' ? undefined : target.lotFolder
 		const lots = [...new Set([...(own === undefined ? [] : [own]), ...reaching])].map(settle)
-		const landed = lots.flatMap((lot) => ('landed' in lot ? [landedLineOf(lot.landed)] : []))
+		const landed = landedLinesOf({ lots, main: params.main })
 		if (target.kind !== 'lot') return { target, landed }
 		const lot = settle(target.lotFolder)
 		const name = basename(target.lotFolder)
@@ -222,4 +223,13 @@ function readRecordedTips(params: { main: string; store: string | undefined }): 
 		cards: existsSync(file) ? readCardsLog({ file }).cards : [],
 		entries: params.store === undefined ? [] : readStoreEntries(params.store),
 	}
+}
+
+// dialecte-allow duplicate-read: it maps settled lots through landedLineOf, the one landed-line writer
+/** The landed line of each settled lot that landed, in the host's nouns of the repository at `main`. */
+function landedLinesOf(params: { lots: readonly SettledLot[]; main: string }): string[] {
+	const nouns = hostNounsOf({ root: params.main })
+	return params.lots.flatMap(function landedLine(lot) {
+		return 'landed' in lot ? [landedLineOf({ fact: lot.landed, nouns })] : []
+	})
 }

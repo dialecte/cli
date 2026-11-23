@@ -1,5 +1,5 @@
 /**
- * `lot pr` builds the design line from the lot's live design standing (DESIGN-GATE section 4, review round 1): a source
+ * `lot describe` builds the design line from the lot's live design standing (DESIGN-GATE section 4, review round 1): a source
  * edited after its approval reads stale in the body, whatever `review.jsonl` last recorded.
  */
 import { writeFileSync } from 'node:fs'

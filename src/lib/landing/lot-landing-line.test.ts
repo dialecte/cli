@@ -1,3 +1,5 @@
+import { GITHUB_NOUNS } from '../host/github/github.constants.ts'
+import { GENERIC_NOUNS } from '../host/host.constants.ts'
 /**
  * The line that names a landed lot, read from its landed fact: the change request's number comes from the key
  * `changeRequest`; a fact written before that key names none, and its line no number sign.
@@ -26,14 +28,20 @@ describe('landedLineOf', () => {
 		{
 			name: 'a fact landed by the host through its change request',
 			fact: FACT,
-			line: 'landed on main at aaaaaaaaaaaa: pull request #7 merged',
+			line: 'landed on main at aaaaaaaaaaaa: change request #7 merged',
 		},
 		{
 			name: 'a fact written before the change request key, its number unknown',
 			fact: JSON.parse(OLDER_FACT_TEXT) as LandedFact,
-			line: 'landed on main at aaaaaaaaaaaa: pull request merged',
+			line: 'landed on main at aaaaaaaaaaaa: change request merged',
 		},
 	])('$name → its line', ({ fact, line }) => {
-		expect(landedLineOf(fact)).toBe(line)
+		expect(landedLineOf({ fact, nouns: GENERIC_NOUNS })).toBe(line)
+	})
+
+	it("a GitHub repository's nouns → the pull request named", () => {
+		expect(landedLineOf({ fact: FACT, nouns: GITHUB_NOUNS })).toBe(
+			'landed on main at aaaaaaaaaaaa: pull request #7 merged',
+		)
 	})
 })

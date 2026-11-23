@@ -1,8 +1,8 @@
 /**
- * `dialecte lot describe <id> [--print] [--json]`: the lot's pull request rendered from its records through the repository's
- * one template (`src/lib/change-request/`), checked as public text, then sent to its open pull request when that reads otherwise:
+ * `dialecte lot describe <id> [--print] [--json]`: the lot's change request rendered from its records through the repository's
+ * one template (`src/lib/change-request/`), checked as public text, then sent to its open change request when that reads otherwise:
  * the squash commit on the base branch takes this title and body, so they hold the lot's final state. `--print` sends
- * nothing; a lot without a pull request yet prints its text (`lot land` opens it).
+ * nothing; a lot without a change request yet prints its text (`lot land` opens it).
  */
 import { existsSync } from 'node:fs'
 import { basename } from 'node:path'
@@ -126,7 +126,7 @@ function headElsewhereLine(params: {
 }
 
 /**
- * The lot the arguments name, where it lives and the base its pull request lands on; the usage or refusal otherwise
+ * The lot the arguments name, where it lives and the base its change request lands on; the usage or refusal otherwise
  * (an unknown option is a usage error: a mistyped `--print` must never send).
  */
 function lotPlaceOf(params: { cwd: string; argv: string[] }): LotPlace | CommandResult {
@@ -139,10 +139,10 @@ function lotPlaceOf(params: { cwd: string; argv: string[] }): LotPlace | Command
 }
 
 /**
- * The store lot `id` names, where it lives and the base its pull request lands on; the refusal (`lot <verb>: ...`)
+ * The store lot `id` names, where it lives and the base its change request lands on; the refusal (`lot <verb>: ...`)
  * of an id naming none, a damaged lot, one without a worktree, or a base the repository does not name.
  *
- * @intent find a lot's worktree, branch and base for its pull request
+ * @intent find a lot's worktree, branch and base for its change request
  * @internal
  */
 export function resolveLotPlace(params: {
@@ -188,10 +188,10 @@ export function resolveLotPlace(params: {
 }
 
 /**
- * The open pull request's title and body rendered again from `prepared` (a person's part after the kept marker kept)
+ * The open change request's title and body rendered again from `prepared` (a person's part after the kept marker kept)
  * and sent when they read otherwise; the text and whether it was sent, or the refusal of the render or the host.
  *
- * @intent keep an open pull request's text the lot's records
+ * @intent keep an open change request's text the lot's records
  * @internal
  */
 export function sendRenderedText(params: {
@@ -201,7 +201,11 @@ export function sendRenderedText(params: {
 	changeRequest: ChangeRequest
 }): { text: ChangeRequestText; sent: boolean } | { refusal: string } {
 	const { prepared, changeRequest } = params
-	const kept = keptPartOf({ template: prepared.template, body: changeRequest.body })
+	const kept = keptPartOf({
+		template: prepared.template,
+		body: changeRequest.body,
+		nouns: prepared.nouns,
+	})
 	if ('refusal' in kept) return kept
 	const text = composeChangeRequest({ ...prepared, kept: kept.kept })
 	if ('refusal' in text) return text
@@ -216,7 +220,7 @@ export function sendRenderedText(params: {
 	return edited ?? { text, sent: true }
 }
 
-/** The line (or JSON) of a text sent to the open pull request, or found the same there. */
+/** The line (or JSON) of a text sent to the open change request, or found the same there. */
 function sentAnswer(params: {
 	changeRequest: ChangeRequest
 	text: ChangeRequestText
