@@ -770,6 +770,7 @@ export const DUPLICATE_GATE_REASON = 'duplicate case ids in {count} file(s): {fi
 export const TDD_BASE_SOURCES = {
 	flag: '--base',
 	lotBase: 'lot base {ref}',
+	lotBaseJoined: 'lot base {ref} joined with {base}',
 	gateBase: "lot base, the gate's own",
 	head: 'HEAD (no base branch found)',
 } as const

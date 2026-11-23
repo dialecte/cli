@@ -2,14 +2,19 @@
  * `gate --hook` of a package declaring `dialecte.gate.hook`: the tdd receipts of the lot first (measured from the lot
  * base), then the declared steps; no test suite. Without a declared hook list, no tdd step.
  */
-import { writeFileSync } from 'node:fs'
+import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { writeStoreLot } from '../../test/brief-workspace.ts'
 import { runHookIn } from '../../test/gate-hook.ts'
+import { createStartWorkspace, entriesOf } from '../../test/lot-start-workspace.ts'
 import { countRuns, countingStep, createCounter } from '../../test/scratch-checks.ts'
-import { git, writeFiles } from '../../test/scratch-repository.ts'
+import { cloneRepository, git, temporaryFolder, writeFiles } from '../../test/scratch-repository.ts'
+import { VITEST_FOLDER } from '../../test/scratch-vitest-package.constants.ts'
 import { createVitestPackage } from '../../test/scratch-vitest-package.ts'
+import { readIdentity } from '../lib/store/identity.ts'
 import { runGate } from './gate.ts'
+import { runLot } from './lot.ts'
 import { runTdd } from './tdd.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -608,3 +613,117 @@ describe(
 		})
 	},
 )
+
+const STACKED_NOW = new Date('2026-11-17T21:00:00.000Z')
+const PARENT = '0005-repo-parent'
+const PARENT_BRANCH = 'feat/parent'
+/** A test file of one passing case named `name`. */
+function passingTestOf(name: string): string {
+	return `import { expect, it } from 'vitest'\nit('${name}', () => { expect(1).toBe(1) })\n`
+}
+const CHILD_STUB =
+	"export function twice(value: number): number {\n\tthrow new Error('not implemented: twice')\n}\n"
+const CHILD_IMPLEMENTED = 'export function twice(value: number): number {\n\treturn value * 2\n}\n'
+const CHILD_TEST = [
+	"import { twice } from './twice.ts'",
+	"import { expect, it } from 'vitest'",
+	"it('two twice → four', () => { expect(twice(2)).toBe(4) })",
+	'',
+].join('\n')
+
+/**
+ * A vitest package on main whose hook runs the tdd step and one counting `check`, an open parent lot on its own branch
+ * adding a test file of one case, then a child started on it (`lot start --on`), its worktree linked to the cli's
+ * vitest: the child's worktree and the repository.
+ */
+function stackedVitestChild(): { worktree: string; repository: string } {
+	const start = createStartWorkspace()
+	const { repository } = start
+	const check: GateStep = countingStep({ counter: createCounter(), name: 'check' })
+	writeFiles({
+		root: repository,
+		files: {
+			'package.json': `${JSON.stringify({
+				name: 'demo',
+				type: 'module',
+				devDependencies: { vitest: '^4.1.8' },
+				dialecte: { gate: { full: [check], hook: [check] } },
+			})}\n`,
+			'.gitignore': 'node_modules\n',
+		},
+	})
+	git({ root: repository, args: ['add', '-A'] })
+	git({ root: repository, args: ['commit', '-q', '--no-verify', '-m', 'chore: a vitest package'] })
+	git({ root: repository, args: ['checkout', '-q', '-b', PARENT_BRANCH] })
+	writeFiles({ root: repository, files: { 'src/parent.test.ts': passingTestOf('parent case') } })
+	git({ root: repository, args: ['add', '-A'] })
+	git({ root: repository, args: ['commit', '-q', '--no-verify', '-m', 'feat: the parent case'] })
+	git({ root: repository, args: ['checkout', '-q', 'main'] })
+	writeStoreLot({
+		workspace: start.workspace,
+		name: PARENT,
+		scope: ['src/parent.test.ts'],
+		branch: PARENT_BRANCH,
+		repository,
+	})
+	runLot({
+		cwd: start.cwd,
+		argv: ['start', start.workspace.briefPath, '--on', PARENT, '--json'],
+		now: STACKED_NOW,
+	})
+	const [child] = entriesOf(start.store).filter((name) => name !== PARENT)
+	const worktree =
+		readIdentity({ lotFolder: join(start.store, child ?? 'none') })?.worktree ?? 'no-child-worktree'
+	mkdirSync(join(worktree, 'node_modules', '.bin'), { recursive: true })
+	symlinkSync(VITEST_FOLDER, join(worktree, 'node_modules', 'vitest'))
+	symlinkSync(join('..', 'vitest', 'vitest.mjs'), join(worktree, 'node_modules', '.bin', 'vitest'))
+	return { worktree, repository }
+}
+
+/**
+ * The repository's main pushed to a new bare origin, then `files` committed on origin's main from another clone (main
+ * moving on there only), origin fetched: origin's main is ahead of the local one.
+ */
+function moveOriginMain(params: { repository: string; files: Record<string, string> }): void {
+	const { repository } = params
+	const folder = temporaryFolder('dialecte-stacked-origin-')
+	const origin = join(folder, 'origin.git')
+	git({ root: folder, args: ['init', '-q', '--bare', '-b', 'main', origin] })
+	git({ root: repository, args: ['remote', 'add', 'origin', origin] })
+	git({ root: repository, args: ['push', '-q', 'origin', 'main'] })
+	const other = cloneRepository({ origin, into: join(folder, 'other') })
+	writeFiles({ root: other, files: params.files })
+	git({ root: other, args: ['add', '-A'] })
+	git({ root: other, args: ['commit', '-qm', 'feat: main moves on'] })
+	git({ root: other, args: ['push', '-q', 'origin', 'main'] })
+	git({ root: repository, args: ['fetch', '-q', 'origin'] })
+}
+
+describe('gate --hook: the cases of a stacked lot', { timeout: 240_000 }, () => {
+	it("a child of an open parent that merged origin's main, main and the parent each adding a test file, then its own case red then green → the hook's tdd step counts its own case only", async () => {
+		const { worktree, repository } = stackedVitestChild()
+		moveOriginMain({ repository, files: { 'src/main.test.ts': passingTestOf('main case') } })
+		git({ root: worktree, args: ['fetch', '-q', 'origin'] })
+		git({ root: worktree, args: ['merge', '--no-edit', '-q', 'origin/main'] })
+		writeFiles({
+			root: worktree,
+			files: { 'src/dataflow/twice.ts': CHILD_STUB, 'src/dataflow/twice.test.ts': CHILD_TEST },
+		})
+		await tdd({ root: worktree, argv: ['red'] })
+		writeFileSync(join(worktree, 'src/dataflow/twice.ts'), CHILD_IMPLEMENTED)
+		await tdd({ root: worktree, argv: ['green'] })
+		git({ root: worktree, args: ['add', '-A'] })
+
+		const result = await runHookIn({ cwd: worktree })
+
+		expect({
+			tdd: result.output.split('\n').find((line) => /^(ok|FAIL|skip) +tdd /.test(line)),
+			otherFiles: ['src/main.test.ts', 'src/parent.test.ts'].filter((file) =>
+				result.output.includes(file),
+			),
+		}).toEqual({
+			tdd: 'ok    tdd  1 case(s) of the change: 1 red then green',
+			otherFiles: [],
+		})
+	})
+})

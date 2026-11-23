@@ -475,7 +475,7 @@ function storeStack() {
 		base: { ref: 'feat/x', commit: tip },
 	})
 	writeFileSync(join(childFolder, 'stack.json'), JSON.stringify({ schema: 1, parent: PARENT }))
-	return { repository, parentWorktree, parentFolder, childWorktree, tip }
+	return { repository, origin, parentWorktree, parentFolder, childWorktree, childFolder, tip }
 }
 
 describe('dialecte lot land of a stacked store lot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
@@ -490,6 +490,34 @@ describe('dialecte lot land of a stacked store lot', { timeout: SCRATCH_GIT_CASE
 			opened: writesOf(host).filter((call) => call.startsWith('open')),
 		}).toEqual({
 			exitCode: 0,
+			opened: ['open feat/y -> feat/x "feat: x" draft'],
+		})
+	})
+
+	it("a lot started on its open parent that merged origin's main after main changed another file → lot land gets past the scope guard: landed on the parent branch", () => {
+		const stack = storeStack()
+		landOnOrigin({ origin: stack.origin, files: { 'src/main.ts': 'export const main = 1\n' } })
+		git({ root: stack.childWorktree, args: ['fetch', '-q', 'origin'] })
+		git({ root: stack.childWorktree, args: ['merge', '--no-edit', '-q', 'origin/main'] })
+		const host = recordingHost({ parent: parentChangeRequest() })
+
+		const landed = landLot({
+			lot: CHILD,
+			worktree: stack.childWorktree,
+			branch: 'feat/y',
+			base: 'main',
+			lotFolder: stack.childFolder,
+			host: host.host,
+			now: NOW,
+		})
+
+		expect({
+			exitCode: landed.exitCode,
+			scope: landed.lines.filter((line) => line.includes('scope')),
+			opened: writesOf(host).filter((call) => call.startsWith('open')),
+		}).toEqual({
+			exitCode: 0,
+			scope: [],
 			opened: ['open feat/y -> feat/x "feat: x" draft'],
 		})
 	})
