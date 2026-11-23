@@ -1,6 +1,6 @@
 /**
- * `dialecte lot land <id>`: the store lot's branch landed through its pull request (`landLot`): rebased onto origin's
- * base branch when behind, pushed, its pull request opened or reused as a draft and never queued (`lot approve`
+ * `dialecte lot land <id>`: the store lot's branch landed through its change request (`landLot`): rebased onto origin's
+ * base branch when behind, pushed, its change request opened or reused as a draft and never queued (`lot approve`
  * queues it), the landing recorded in the lot's folder for `lot close`. `--draft`, from when lot land queued, is
  * refused naming the change.
  */

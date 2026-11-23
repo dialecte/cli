@@ -21,6 +21,6 @@ export type LotStopParams = {
 	argv: string[]
 	now?: Date
 	seams?: StopSeams
-	/** Where a landing lot's pull request is closed; default: the repository's host. */
+	/** Where a landing lot's change request is closed; default: the repository's host. */
 	host?: HostAdapter
 }

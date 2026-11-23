@@ -17,19 +17,19 @@ export const STACK_PARENT_REFUSALS = {
 } as const
 
 /**
- * How `lot status` and the card name a lot's stack parent: `{changeRequest}` its pull request; `{state}` that pull
+ * How `lot status` and the card name a lot's stack parent: `{changeRequest}` its change request; `{state}` that change
  * request's state as the host holds it (`lot status`), or `{reason}` the host's silence. The card reads files only: no
  * state.
  */
 export const STACK_TEXT = {
 	withState: 'on {parent} ({changeRequest}, {state})',
 	filesOnly: 'on {parent} ({changeRequest})',
-	noChangeRequest: 'on {parent} (no pull request yet)',
+	noChangeRequest: 'on {parent} (no {changeRequestNoun} yet)',
 	hostSilent: 'the host cannot say: {reason}',
 	damagedRecord: 'damaged ({damage})',
 } as const
 
-/** A pull request's state as the stack line names it. */
+/** A change request's state as the stack line names it. */
 export const STACK_CHANGE_REQUEST_STATES = {
 	merged: 'merged',
 	closed: 'closed',

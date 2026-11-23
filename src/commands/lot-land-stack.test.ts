@@ -261,7 +261,7 @@ describe('a stacked lot lands as a stack', { timeout: SCRATCH_GIT_CASE_TIMEOUT }
 		}).toEqual({
 			exitCode: 1,
 			lines: [
-				`lot land: ${CHILD} stacks on ${PARENT}, which has no pull request yet: lot land ${PARENT} first, nothing pushed`,
+				`lot land: ${CHILD} stacks on ${PARENT}, which has no change request yet: lot land ${PARENT} first, nothing pushed`,
 			],
 			pushed: '',
 		})

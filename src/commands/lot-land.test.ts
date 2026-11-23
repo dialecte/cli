@@ -1,5 +1,5 @@
 /** `dialecte lot land <id>`: the store lot resolved, its worktree's branch landed through the host into the base. */
-import { chmodSync, existsSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createBriefWorkspace, writeStoreLot } from '../../test/brief-workspace.ts'
@@ -75,7 +75,7 @@ function landableLot(
 			brief: { lots: [{ paths: ['src/', 'package.json'], message: release.message }] },
 		}),
 	})
-	return { workspace, lotFolder }
+	return { workspace, lotFolder, worktree }
 }
 
 describe('dialecte lot land', { timeout: STORE_CASE_TIMEOUT }, () => {
@@ -201,7 +201,7 @@ function squashOnOrigin(params: { workspace: { workspace: string }; head: string
 }
 
 describe('dialecte lot close of a landed lot', { timeout: STORE_CASE_TIMEOUT }, () => {
-	it("its landing's pull request merged at the pushed head → the close says the lot is committed first", () => {
+	it("its landing's change request merged at the pushed head → the close says the lot is committed first", () => {
 		const { workspace, lotFolder } = landableLot()
 		runLotLand({ cwd: workspace.repository, argv: ['0001-repo-x'], host: recordingHost().host })
 		const landing = JSON.parse(readFileSync(join(lotFolder, 'landing.json'), 'utf8')) as {
@@ -230,10 +230,46 @@ describe('dialecte lot close of a landed lot', { timeout: STORE_CASE_TIMEOUT }, 
 			spawner: createRecordingSpawner().spawner,
 		})
 
-		expect(closed.output).toContain('pull request #7 merged')
+		expect(closed.output).toContain('change request #7 merged')
 		expect(
 			registeredEntryOf({ store: handoverStoreOf(workspace.repository), folder: lotFolder })?.state,
 		).toBe('committed')
+	})
+
+	it("its landing's change request merged, on a GitHub origin → the close names the pull request", () => {
+		const { workspace, lotFolder } = landableLot()
+		runLotLand({ cwd: workspace.repository, argv: ['0001-repo-x'], host: recordingHost().host })
+		git({
+			root: workspace.repository,
+			args: ['config', 'remote.origin.url', 'https://github.com/o/r.git'],
+		})
+		const landing = JSON.parse(readFileSync(join(lotFolder, 'landing.json'), 'utf8')) as {
+			head: string
+		}
+		const merged = recordingHost({
+			existing: {
+				number: 7,
+				url: 'https://host.test/pull/7',
+				title: 'feat: x',
+				body: '',
+				state: 'merged',
+				draft: false,
+				queued: false,
+				head: landing.head,
+			},
+		})
+		const name =
+			registeredEntryOf({ store: handoverStoreOf(workspace.repository), folder: lotFolder })
+				?.name ?? ''
+
+		const closed = runLotClose({
+			cwd: workspace.repository,
+			argv: [name],
+			host: merged.host,
+			spawner: createRecordingSpawner().spawner,
+		})
+
+		expect(closed.output).toContain('pull request #7 merged')
 	})
 })
 
@@ -292,7 +328,7 @@ describe(
 
 			expect({
 				line: closed.output.includes(
-					`landed on main at ${head.slice(0, 12)}: pull request #7 merged`,
+					`landed on main at ${head.slice(0, 12)}: change request #7 merged`,
 				),
 				state,
 				landed,
@@ -419,7 +455,7 @@ describe('dialecte lot close named by its lot id', { timeout: STORE_CASE_TIMEOUT
 		})
 
 		expect({
-			confirmed: closed.output.includes('pull request #7 merged'),
+			confirmed: closed.output.includes('change request #7 merged'),
 			exitCode: closed.exitCode,
 			state: registeredEntryOf({ store: handoverStoreOf(workspace.repository), folder: lotFolder })
 				?.state,
@@ -672,7 +708,7 @@ describe('a landing lot, as the other lot verbs read it', { timeout: STORE_CASE_
 		expect(status.output).toContain('dialecte lot close ')
 	})
 
-	it('lot stop → its pull request closed (out of the queue), its entry abandoned, the lot canceled', () => {
+	it('lot stop → its change request closed (out of the queue), its entry abandoned, the lot canceled', () => {
 		const { workspace, lotFolder } = landableLot()
 		runLotLand({ cwd: workspace.repository, argv: ['0001-repo-x'], host: recordingHost().host })
 		const { host, calls } = recordingHost()
@@ -685,9 +721,30 @@ describe('a landing lot, as the other lot verbs read it', { timeout: STORE_CASE_
 
 		expect(stopped.exitCode).toBe(0)
 		expect(calls).toEqual(['close 7'])
+		expect(stopped.output).toContain('change request #7 closed: out of the queue, never merged')
 		expect(
 			registeredEntryOf({ store: handoverStoreOf(workspace.repository), folder: lotFolder })?.state,
 		).toBe('abandoned')
+	})
+
+	it('lot stop with its worktree gone and the host refusing the close → the refusal in the generic noun, nothing thrown', () => {
+		const { workspace, worktree } = landableLot()
+		runLotLand({ cwd: workspace.repository, argv: ['0001-repo-x'], host: recordingHost().host })
+		rmSync(worktree, { recursive: true, force: true })
+		const refusing = {
+			...recordingHost().host,
+			closeChangeRequest: () => ({ refusal: 'HTTP 502' }),
+		}
+
+		const stopped = lotStop({
+			cwd: workspace.repository,
+			argv: ['0001-repo-x', '--reason', 'not needed'],
+			host: refusing,
+		})
+
+		expect(stopped.output).toContain(
+			'lot stop: change request #7 could not be closed (HTTP 502): nothing stopped',
+		)
 	})
 
 	it('a stopped (canceled) lot → lot land refuses it, nothing asked of the host', () => {

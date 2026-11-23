@@ -201,7 +201,7 @@ export function runLot(params: {
 	probe?: HandoverProbe
 	/** The cli named in `lot result`'s card when the repository's own cannot run hand-overs. */
 	cliPath?: string
-	/** Where lots land, asked by `lot status` (the stack parent's pull request) and `lot close`; default: the repository's host. */
+	/** Where lots land, asked by `lot status` (the stack parent's change request) and `lot close`; default: the repository's host. */
 	host?: HostAdapter
 	/** The shared temporary folders `lot design` refuses a design in; default `/tmp` and `/private/tmp`. */
 	sharedTemporaryRoots?: readonly string[]

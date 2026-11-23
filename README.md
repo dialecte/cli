@@ -168,7 +168,7 @@ Every command that reads the base branch (the gate's base, `mutants`, `tdd`, `wo
    and `lot prune` hold nothing through the base, and `tdd` measures from HEAD.
 
 Each rule reads the branch where it is newest: the local branch or origin's, whichever is ahead of the other, and
-origin's when they diverged. The remote is the truth: a merge queue lands on the host, so a local base branch goes
+origin's when they diverged. The remote is the truth: the host's queue lands the work, so a local base branch goes
 stale. `worktree add` (without `--from`) fetches origin before it cuts the branch, and `lot close` and `lot prune`
 fetch it and fast-forward the local base branch (merged in the main checkout when it is checked out there and clean,
 its ref moved otherwise; a line says when it does not move). A fetch that fails says so and the last known refs are read. A

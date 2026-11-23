@@ -21,9 +21,9 @@ export type ParsedBrief = {
 	steps: BriefStep[]
 	lots: BriefLot[]
 	effort: BriefEffort | undefined
-	/** One public sentence a pull request may show; absent when the brief gives none. */
+	/** One public sentence a change request may show; absent when the brief gives none. */
 	summary?: string
-	/** The issue the lot's pull request closes; absent when the brief gives none. */
+	/** The issue the lot's change request closes; absent when the brief gives none. */
 	issue?: number
 	/** Why the lot is kept on purpose from its start (KEEP 3.4): its first `keep` line; absent when the brief gives none. */
 	keep?: string
@@ -53,9 +53,9 @@ export type CheckedBrief = {
 	/** Paths normalised. */
 	lots: BriefLot[]
 	effort: BriefEffort | undefined
-	/** One public sentence a pull request may show; absent when the brief gives none. */
+	/** One public sentence a change request may show; absent when the brief gives none. */
 	summary?: string
-	/** The issue the lot's pull request closes; absent when the brief gives none. */
+	/** The issue the lot's change request closes; absent when the brief gives none. */
 	issue?: number
 	/** Why the lot is kept on purpose from its start (KEEP 3.4); absent when the brief gives none. */
 	keep?: string

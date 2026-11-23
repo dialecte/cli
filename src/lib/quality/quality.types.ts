@@ -100,7 +100,7 @@ export type QualityResult = {
 	aliasesChanged: boolean
 }
 
-/** Which tree the base-aware rules read: the worktree (a `rules` run), or a commit (the pull request body: HEAD). */
+/** Which tree the base-aware rules read: the worktree (a `rules` run), or a commit (the change request body: HEAD). */
 export type QualityTree = { kind: 'worktree' } | { kind: 'revision'; revision: string }
 
 /**
@@ -132,7 +132,7 @@ export type QualityLists = {
 /** The docs row of a run: its `docs-not-updated` findings, each with its opt-out. */
 export type QualityDocs = { docs: RecordedFinding<DocsNotUpdated>[] }
 
-/** The findings of a run, each with its opt-out: what the record and the pull request body keep. */
+/** The findings of a run, each with its opt-out: what the record and the change request body keep. */
 export type RecordedQuality = Omit<QualityResult, 'duplicates' | 'sharedExports' | 'docs'> &
 	QualityLists &
 	QualityDocs
@@ -177,12 +177,12 @@ export type QualityDocsStanding = QualityDocs & {
 	notJudged?: string
 }
 
-/** The pull request body's quality judged: the findings on the committed head against its base, with the notes. */
+/** The change request body's quality judged: the findings on the committed head against its base, with the notes. */
 export type JudgedQuality = { kind: 'judged'; base: QualityBase; notes: string[] } & QualityLists &
 	QualityDocs
 
-/** The pull request body's quality: the findings judged on the committed head with the notes, or why not judged. */
+/** The change request body's quality: the findings judged on the committed head with the notes, or why not judged. */
 export type BodyQuality = JudgedQuality | { kind: 'not-judged'; why: string }
 
-/** One quality line of the pull request body with where it comes from: the file holding the finding, or the notes. */
+/** One quality line of the change request body with where it comes from: the file holding the finding, or the notes. */
 export type QualityBodyLine = { record: string; text: string }

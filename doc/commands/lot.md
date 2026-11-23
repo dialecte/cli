@@ -89,11 +89,11 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
           start and at lot scope --add (every other open lot's still is); a parent that is unknown,
           damaged, not working or ready, of another repository or without its branch is refused
           before anything is written, before any other fault of the brief; lot status shows a stack
-          line, on <parent> (#<pull request>, <state>), the parent read through the one lot reader:
-          merged once its landing is proven (its landed fact, git or the host), else its pull
-          request as the host holds it (open, draft, queued, closed, or the host cannot say: <why>),
-          the hand-over card on <parent> (#<pull request>) from files only; on <parent> (no pull
-          request yet) without one
+          line, on <parent> (#<change request>, <state>), the parent read through the one lot
+          reader: merged once its landing is proven (its landed fact, git or the host), else its
+          change request as the host holds it (open, draft, queued, closed, or the host cannot say:
+          <why>), the hand-over card on <parent> (#<change request>) from files only; on <parent>
+          (no change request yet) without one
   start - a scope meeting another open lot goes ahead when that lot's work reads (its forecast
           against main, run and never written: a new lot has no work, so no conflict can exist),
           printed shares <met> with <lot> (forecast clean); still refused: a damaged lot or one
@@ -122,7 +122,7 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
                entry; it never blocks a real lot
   brief - a working or ready real lot takes a new brief whose only changes are its public text (the
           summary, the issue, step titles and behaviours, and each lot's commit message, which
-          titles its pull request); any other change is refused naming the field, nothing written;
+          titles its change request); any other change is refused naming the field, nothing written;
           the new brief passes the start's field and public-text checks; it replaces the stored
           brief and a brief transition records the sha256 of the old and new brief, --by and
           --reason, the state and position kept; the same brief again answers already, nothing
@@ -147,11 +147,11 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
              yet prints the text and names lot land; --json { title, body, changeRequest, head, sent
              }
   review - the private half of the lot's review, read-only (nothing written): the lot's state and
-           branch, its pull request (landing.json's) with the head it is at, the head the lot landed
-           and the worktree's HEAD, its checks, the brief's goal and steps (title, spec,
+           branch, its change request (landing.json's) with the head it is at, the head the lot
+           landed and the worktree's HEAD, its checks, the brief's goal and steps (title, spec,
            behaviours), tests.json's tdd counts and gate run, decisions.md, every finding of the
            ledger with its text and state, the standard line, and what lot approve would refuse (or
-           the approve command when it would approve); then opens the pull request's changed files
+           the approve command when it would approve); then opens the change request's changed files
            in the browser (--no-open names the page only; an opener that fails is named, never an
            exit); a lot without a landing prints its private half and names lot land <id>, the host
            never asked
@@ -162,31 +162,31 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
     all the comment says), else should-fix, at its path:line (the path alone for a comment on the
     file), its lines joined into one; review.jsonl written again; private points stay off the change
     request: lot finding records them
-  approve - a person's approval of the lot's pull request: refused (exit 1, nothing recorded,
-            nothing queued) unless the lot is at work, the pull request landing.json names is open
+  approve - a person's approval of the lot's change request: refused (exit 1, nothing recorded,
+            nothing queued) unless the lot is at work, the change request landing.json names is open
             at the head the lot landed and the worktree is at that head too (an unpushed commit
             refuses), its checks ran on that head and are green (a check run again counts by its
             newest run; a failing or pending check, or none yet, refuses) and no finding but a nit
             is open (open, or a fix still to verify), and its text renders over the live body; then
             appends { schema, at, by, reason?, number, head } to the lot folder's approvals.jsonl,
-            which review.jsonl shows as a person's approve verdict with that head (a pull request
+            which review.jsonl shows as a person's approve verdict with that head (a change request
             text rendered on another head, after a later commit or a rebase, leaves it out; the body
             names it by kind only, never the name; the orchestrator in any casing and spacing is
-            recorded as orchestrator), renders the pull request's text again from the records, makes
-            a draft ready and queues it (gh pr merge --auto; a lot started with --on whose pull
-            request still merges into its parent's branch queues as a stack up to it, gh stack
-            merge, and only on a host with stacks once the parent's pull request, read by the
-            parent's branch, is queued (auto-merge on or in the merge queue), refused otherwise
-            before anything is recorded: approve the parent first, or land it again once the parent
-            merged); the only verb that queues, lot land never does; a queue the host refuses keeps
-            the approval (exit 1) and the same approval run again answers already approved, writing
-            nothing, and queues; --by orchestrator (in any casing and spacing) approves the cli's
-            own lots only (the package named @dialecte/cli), every other package waits for a person
-            (exit 2); a forbidden word in --by or --reason, or a --by holding what a public record
-            never holds, refused (exit 2) before the host is asked; a lot without a landing names
-            lot land <id>; the queued line names the queue the host answers for the change request's
-            base (queued (merge queue), queued (auto-merge)), nothing when it offers none, the read
-            is refused or the lot is stacked
+            recorded as orchestrator), renders the change request's text again from the records,
+            makes a draft ready and queues it (the host's auto-merge or queue; a lot started with
+            --on whose change request still merges into its parent's branch queues as a stack up to
+            it through the host's stack merge, and only on a host with stacks once the parent's
+            change request, read by the parent's branch, is queued (auto-merge on or in the host's
+            queue), refused otherwise before anything is recorded: approve the parent first, or land
+            it again once the parent merged); the only verb that queues, lot land never does; a
+            queue the host refuses keeps the approval (exit 1) and the same approval run again
+            answers already approved, writing nothing, and queues; --by orchestrator (in any casing
+            and spacing) approves the cli's own lots only (the package named @dialecte/cli), every
+            other package waits for a person (exit 2); a forbidden word in --by or --reason, or a
+            --by holding what a public record never holds, refused (exit 2) before the host is
+            asked; a lot without a landing names lot land <id>; the queued line names the queue the
+            host answers for the change request's base (queued (<the host's word for its queue>)),
+            nothing when it offers none, the read is refused or the lot is stacked
   design - a lot's design (design before code): --from <file> records it by the sha256 of its bytes,
            appending { schema, at, kind: recorded, file, hash, from } to the lot folder's
            design.jsonl and keeping its copy as design/<hash>.md (the copy rules once the source is
@@ -215,7 +215,7 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
            missing, not-required (shown not required); lot start and its dry run print design
            required (<reasons>) or design not required, lot forecast and lot status the state line,
            the hand-over card a design line (passed or a warning, never failed), review.jsonl a
-           design row and the pull request body Design: <state> by <kind>
+           design row and the change request body Design: <state> by <kind>
   design - the gate: while a lot's required design is missing, unapproved or stale, tdd red in its
            own worktree refuses (exit 2, nothing run), gate --hook's design step fails a commit of
            the lot's branch, from any worktree, holding a production path (after the scope step,
@@ -228,54 +228,55 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
            shared areas of the lot base its run resolved, through git, over the scope, the change's
            paths since that base and the staged or landed ones; a refusing path without the lot's
            worktree refuses; lot land records the base's shared areas again after its rebase
-  land - a lot started with --on lands as a stack: its pull request is based on the parent's branch,
-         its body's depends-on part names the parent's pull request (a parent without one is
-         refused: land it first); the host's stacks are probed once (gh stack): with them, the pull
-         request is linked on the parent's (gh stack link); without, a note says why; it is never
-         queued (lot approve queues it); before each landing it is rebased onto the parent branch's
-         newest tip (the local branch or origin's) when it does not hold it, from its fork point
-         (git merge-base --fork-point: only its own commits move, whatever the parent's amend or
-         rebase); once the parent merged (its landing state: a merge, a squash read offline, or its
-         pull request merged; never the registry's committed alone, which a hand-over run writes
-         before anything reaches the base), the parent's landed fact is recorded and the child is
-         rebased with git rebase --onto origin/<base> <fork point>, only its own commits moved, and
-         its pull request retargeted to the base when the host did not; when the host already
-         rewrote its branch on origin (a native stack), it follows that rewrite (local commits
-         beyond its last push rebased onto it, that head the lease); a conflict names its files, the
-         rebase undone, nothing pushed, exit 2
-  land - the lot lands through its pull request: its committed HEAD (uncommitted files stay in the
+  land - a lot started with --on lands as a stack: its change request is based on the parent's
+         branch, its body's depends-on part names the parent's change request (a parent without one
+         is refused: land it first); the host's stacks are probed once: with them, the change
+         request is linked on the parent's; without, a note says why; it is never queued (lot
+         approve queues it); before each landing it is rebased onto the parent branch's newest tip
+         (the local branch or origin's) when it does not hold it, from its fork point (git
+         merge-base --fork-point: only its own commits move, whatever the parent's amend or rebase);
+         once the parent merged (its landing state: a merge, a squash read offline, or its change
+         request merged; never the registry's committed alone, which a hand-over run writes before
+         anything reaches the base), the parent's landed fact is recorded and the child is rebased
+         with git rebase --onto origin/<base> <fork point>, only its own commits moved, and its
+         change request retargeted to the base when the host did not; when the host already rewrote
+         its branch on origin (a native stack), it follows that rewrite (local commits beyond its
+         last push rebased onto it, that head the lease); a conflict names its files, the rebase
+         undone, nothing pushed, exit 2
+  land - the lot lands through its change request: its committed HEAD (uncommitted files stay in the
          worktree, named), rebased onto origin/<base> when behind (a conflict undone and named,
          nothing pushed; with uncommitted tracked changes it is pushed as committed, the rebase left
          for a clean worktree), pushed with a lease, its title and body rendered from the lot's
-         records through the repository's .github/pull_request_template.md on the rebased head
-         before the push (as lot describe renders them; records that do not render, or a base branch
-         origin does not hold, push nothing), its pull request opened with them as a draft or reused
-         (edited when its title or body reads otherwise, a person's part after the kept marker
-         kept), never queued: CI runs on every push and lot approve, a person's step, queues it; a
-         reused pull request queued or ready whose head to push no person approved (approvals.jsonl)
-         is taken back out of the queue before the push (auto-merge off, gh pr merge --disable-auto;
-         a draft again, gh pr ready --undo), since an approval is for one head: a rebase that only
-         moves the sha takes it out too, and every landing checks, so one stopped after its push
-         heals on the next (a refusal there pushes nothing); --draft, from when lot land queued, is
-         refused (exit 2) naming the change; the landing (number, url, branch, pushed tip) recorded
-         in <lot folder>/landing.json; a lot already merged (its pull request merged, or its tip or
-         its work in origin/<base>: a squash read offline) is committed: its landed fact written in
-         <lot folder>/landed.json, its hand-over entry committed, the commits made since named (they
-         land in a new lot), the close line printed (for a lot kept on purpose, its keep and its lot
-         unkeep instead: no line names lot close, and the line after an opened pull request asks to
-         land it again once merged), nothing pushed; a branch with no commit beyond origin's base is
-         refused before any push; the committed HEAD is forecast against origin/<base> just fetched
-         (git merge-tree, before any entry, rebase or push): a conflict refuses naming its files and
-         ranges, a forecast that cannot run refuses (fails closed), a lot on an open parent is not
-         compared; the lot's forecast against every other open lot is recorded (trigger land) and
-         each pair it does not clear printed (! <lot>: <why>), for information only; the pushed head
-         is kept in landing.json at once, so a pull request the host refused to open does not make
-         the next push one outside lot land; the host is GitHub through gh, which never prompts
+         records through the repository's change-request template (its host's path) on the rebased
+         head before the push (as lot describe renders them; records that do not render, or a base
+         branch origin does not hold, push nothing), its change request opened with them as a draft
+         or reused (edited when its title or body reads otherwise, a person's part after the kept
+         marker kept), never queued: CI runs on every push and lot approve, a person's step, queues
+         it; a reused change request queued or ready whose head to push no person approved
+         (approvals.jsonl) is taken back out of the queue before the push (the host's auto-merge
+         turned off; a draft again), since an approval is for one head: a rebase that only moves the
+         sha takes it out too, and every landing checks, so one stopped after its push heals on the
+         next (a refusal there pushes nothing); --draft, from when lot land queued, is refused (exit
+         2) naming the change; the landing (number, url, branch, pushed tip) recorded in <lot
+         folder>/landing.json; a lot already merged (its change request merged, or its tip or its
+         work in origin/<base>: a squash read offline) is committed: its landed fact written in <lot
+         folder>/landed.json, its hand-over entry committed, the commits made since named (they land
+         in a new lot), the close line printed (for a lot kept on purpose, its keep and its lot
+         unkeep instead: no line names lot close, and the line after an opened change request asks
+         to land it again once merged), nothing pushed; a branch with no commit beyond origin's base
+         is refused before any push; the committed HEAD is forecast against origin/<base> just
+         fetched (git merge-tree, before any entry, rebase or push): a conflict refuses naming its
+         files and ranges, a forecast that cannot run refuses (fails closed), a lot on an open
+         parent is not compared; the lot's forecast against every other open lot is recorded
+         (trigger land) and each pair it does not clear printed (! <lot>: <why>), for information
+         only; the pushed head is kept in landing.json at once, so a change request the host refused
+         to open does not make the next push one outside lot land; the repository's host, which
+         never prompts
   land - before anything is written (after the committed-entry check, before the stack rebase, the
          forecast and any entry), the lot's committed work (its lot base to HEAD) must lie inside
          its effective scope, as gate --hook's scope step holds it: a path outside refuses (exit 1)
          naming every such path and the lot scope <lot> --add ... --by lot-session to run, no entry,
-         no rebase, nothing pushed, no pull request; uncommitted work is not held; a lot base that
+         no rebase, nothing pushed, no change request; uncommitted work is not held; a lot base that
          cannot be read refuses
   status - the state derived from the lot records (working, input-required, ready, committed,
            canceled, failed), the worktree and link checks, and the exact next command (and an also:
@@ -473,7 +474,7 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
           round n-1 and prints its removal command; for a lot kept on purpose it prints kept by
           decision: <why> (by <who>, <date>): the throwaway stays with the lot instead, and --json
           carries kept and no removal
-  recap - the <details> part of a pull request from the hand-over's records only; writes nothing
+  recap - the <details> part of a change request from the hand-over's records only; writes nothing
   verify - from anywhere (the main checkout included): appends { schema, at, by, note, state } to
            <folder>/verify.jsonl in one write, state the state hash of the lot's own worktree (a
            plain hand-over folder: the work tree it runs in); a lot with no worktree (a simulated
@@ -541,58 +542,58 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
           arguments reach (the lot named, the lot an entry registers, the open lots naming an
           entry's worktree and branch) is read, with the host asked for every lot it reads (one
           never pushed by lot land, its branch deleted on origin after the merge, included): merged
-          (its tip on the base, its pull request merged - the one landing.json names, else the
-          newest of its branch whose head the branch reached, a pull request opened by hand included
-          - or its work contained in origin/<base>, a squash read offline) writes its landed fact in
-          <lot folder>/landed.json, commits its pending entry (a lot with none is closed as the lot
-          itself: no registry entry is made) and every outcome reaching it carries the line landed
-          on <base> at <commit>: <how>, landed in --json; a lot kept on purpose keeps its worktree,
-          reason kept by decision: <why> (by <who>, <date>); a lot named by its id that is open is
-          kept with lot <name> <state>: why (its work not in the base, its pull request closed, the
-          commits it holds since part of it landed, or the host's silence); a lot whose branch and
-          worktree are gone reads its landing from the latest card line of its own or of a hand-over
-          on its branch whose entry names its worktree, written since the lot was made; a canceled
-          lot closes, its landing never read; then for each committed or abandoned hand-over, and
-          each committed or canceled lot named by its id: its final record first, the card line in
-          the repository's cards.log (a catch-up one when none exists, for every hand-over of the
-          worktree, read back), then a removing line, then its worktree moved to .worktrees/_trash/
-          and removed in the background by git worktree remove without --force (git refuses one
-          written into since the check: it stays in .worktrees/_trash/), its node_modules parked in
-          .worktrees/_pool-<repository>-<n>, its caches to their own _trash/ entries, then a removed
-          line (trashed or kept); a commit dropped from its branch (reset or rebased away), held by
-          the branch reflog alone, is named under the closed line: git expires it with that reflog
-          (gc.reflogExpireUnreachable), as it would have with the worktree's; a landed or canceled
-          lot's own lot files (its root .dialecte/lot link naming the lot's folder): the root's
-          .dialecte/lot.json and each package's (the folder of a package.json git tracks, or one the
-          lot deleted), archived in that folder first (lot prune and lot close --feature archive the
-          same way), the root's as lot.json and a package's as lots/<package path>/lot.json, or
-          lot.landed.json beside a lot.json holding other bytes, never over one and read back, kept
-          naming both archives when both hold other bytes; every lot file it counted read again
-          right before the move, one rewritten since keeping the worktree, nothing archived; a lot
-          file is removable only when empty or byte-equal to an archive of its own package path;
-          kept first when a lot holds it: an open, damaged or kept on purpose lot naming it, or the
-          lot its root .dialecte/lot link names (a lot whose identity does not read included, reason
-          lot <name> damaged; a lot folder present in the store but not read, lot <name>: its
-          records do not read; a lot folder gone or moved aside holds nothing), the holding lot
-          first (reason lot <name> <state>, or its kept text), then with why when it is the main
-          checkout, on another branch than the hand-over's, locked, another hand-over of the same
-          worktree is neither committed nor abandoned, a link from outside it points into it, dirty,
-          a landed lot holds commits made since its landing (<n> commit(s) made since its landing:
-          <commits>), its removal would lose a commit (<n> commit(s) its removal would lose:
-          <commits>: a commit only its HEAD or HEAD reflog reaches, that no surviving branch, branch
-          reflog, tag, landed tip or remote-tracking ref holds, nor the same change at the same
-          place (a commit of theirs with the same diff, its hunk line numbers included) - a commit
-          made on a detached HEAD), it holds ignored files its removal would delete that nothing
-          else holds (rebuilt folders, dialecte.rebuiltIgnored folders, the .dialecte/lot link, an
-          empty or archived .dialecte/lot.json and copies byte-equal to the main checkout's go), a
-          process or a mutation run works there, lot close itself runs from inside it, or the
-          processes are not known, or the final record cannot be kept or the lot's commit is not
-          known; the branch never touched; a hand-over already closed, or a lot whose worktree a
-          recorded removal moved, answers already closed, exit 0, nothing moved (a lot whose
-          worktree is gone with no such removal: nothing to close), its lot's landed fact still
-          recorded when the host proves the merge (its landed line beside already closed); exit 1
-          when one is kept, 2 when a name or index is neither a hand-over nor a lot (the others are
-          still closed)
+          (its tip on the base, its change request merged - the one landing.json names, else the
+          newest of its branch whose head the branch reached, a change request opened by hand
+          included - or its work contained in origin/<base>, a squash read offline) writes its
+          landed fact in <lot folder>/landed.json, commits its pending entry (a lot with none is
+          closed as the lot itself: no registry entry is made) and every outcome reaching it carries
+          the line landed on <base> at <commit>: <how>, landed in --json; a lot kept on purpose
+          keeps its worktree, reason kept by decision: <why> (by <who>, <date>); a lot named by its
+          id that is open is kept with lot <name> <state>: why (its work not in the base, its change
+          request closed, the commits it holds since part of it landed, or the host's silence); a
+          lot whose branch and worktree are gone reads its landing from the latest card line of its
+          own or of a hand-over on its branch whose entry names its worktree, written since the lot
+          was made; a canceled lot closes, its landing never read; then for each committed or
+          abandoned hand-over, and each committed or canceled lot named by its id: its final record
+          first, the card line in the repository's cards.log (a catch-up one when none exists, for
+          every hand-over of the worktree, read back), then a removing line, then its worktree moved
+          to .worktrees/_trash/ and removed in the background by git worktree remove without --force
+          (git refuses one written into since the check: it stays in .worktrees/_trash/), its
+          node_modules parked in .worktrees/_pool-<repository>-<n>, its caches to their own _trash/
+          entries, then a removed line (trashed or kept); a commit dropped from its branch (reset or
+          rebased away), held by the branch reflog alone, is named under the closed line: git
+          expires it with that reflog (gc.reflogExpireUnreachable), as it would have with the
+          worktree's; a landed or canceled lot's own lot files (its root .dialecte/lot link naming
+          the lot's folder): the root's .dialecte/lot.json and each package's (the folder of a
+          package.json git tracks, or one the lot deleted), archived in that folder first (lot prune
+          and lot close --feature archive the same way), the root's as lot.json and a package's as
+          lots/<package path>/lot.json, or lot.landed.json beside a lot.json holding other bytes,
+          never over one and read back, kept naming both archives when both hold other bytes; every
+          lot file it counted read again right before the move, one rewritten since keeping the
+          worktree, nothing archived; a lot file is removable only when empty or byte-equal to an
+          archive of its own package path; kept first when a lot holds it: an open, damaged or kept
+          on purpose lot naming it, or the lot its root .dialecte/lot link names (a lot whose
+          identity does not read included, reason lot <name> damaged; a lot folder present in the
+          store but not read, lot <name>: its records do not read; a lot folder gone or moved aside
+          holds nothing), the holding lot first (reason lot <name> <state>, or its kept text), then
+          with why when it is the main checkout, on another branch than the hand-over's, locked,
+          another hand-over of the same worktree is neither committed nor abandoned, a link from
+          outside it points into it, dirty, a landed lot holds commits made since its landing (<n>
+          commit(s) made since its landing: <commits>), its removal would lose a commit (<n>
+          commit(s) its removal would lose: <commits>: a commit only its HEAD or HEAD reflog
+          reaches, that no surviving branch, branch reflog, tag, landed tip or remote-tracking ref
+          holds, nor the same change at the same place (a commit of theirs with the same diff, its
+          hunk line numbers included) - a commit made on a detached HEAD), it holds ignored files
+          its removal would delete that nothing else holds (rebuilt folders, dialecte.rebuiltIgnored
+          folders, the .dialecte/lot link, an empty or archived .dialecte/lot.json and copies
+          byte-equal to the main checkout's go), a process or a mutation run works there, lot close
+          itself runs from inside it, or the processes are not known, or the final record cannot be
+          kept or the lot's commit is not known; the branch never touched; a hand-over already
+          closed, or a lot whose worktree a recorded removal moved, answers already closed, exit 0,
+          nothing moved (a lot whose worktree is gone with no such removal: nothing to close), its
+          lot's landed fact still recorded when the host proves the merge (its landed line beside
+          already closed); exit 1 when one is kept, 2 when a name or index is neither a hand-over
+          nor a lot (the others are still closed)
   close - --feature <name> closes a feature at a pipeline's last step: its lots in every store of
           the list (simulated ones left out); none answers no lot of the feature, exit 1; a lot of
           it neither committed nor canceled refuses the whole close, listing each with its state,
@@ -644,11 +645,11 @@ Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`
 
 - `dialecte lot start <brief.json> [--effort low|medium|high] [--by <who> --reason <text>] [--dry-run] [--simulate <scenario>] [--json]` starts a lot from its brief
   (`schema`, `feature`, `repository`, `branch`, `base`, `goal`, `plan`, `scope`, `steps`, `lots`, `effort`, and
-  the optional public `summary` and `issue`). `summary` is one sentence a pull request may show (one line, at most
+  the optional public `summary` and `issue`). `summary` is one sentence a change request may show (one line, at most
   200 characters); a path, a link or a `file:line` in it is refused (`summary: public-text - summary holds a path or
   a link`), as are a plan tag, a ticket number, a standard citation, a reference the package declares, a consumer
   name and a forbidden word (`summary holds a <label>`, the text never printed). `issue` is a positive integer, the
-  issue the lot's pull request closes. `goal` stays private.
+  issue the lot's change request closes. `goal` stays private.
   Every check runs first and every refusal is printed at once (`<field>: <rule> - <detail>`, `{ refused }` with
   `--json`, exit 2), before anything is created: the fields, the repository's main checkout, a new valid branch,
   a base that resolves to a commit, the plan and each step's heading in it, the scope and the lots covering it
@@ -883,7 +884,7 @@ Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`
     forbidden word in either, a run in another work tree than the lot identity's worktree (both named), or
     no snapshot yet (nothing is late), nothing written; 1 outside a git work tree, or a line over the event
     line limit.
-  - `review.jsonl` in the folder holds the review's public rows, what a pull request may show, derived and written
+  - `review.jsonl` in the folder holds the review's public rows, what a change request may show, derived and written
     whole by `lot finding`, `lot decide`, `lot verify` and a `reviewer` / `independent-reviewer` `lot station end`:
     a `finding` row per ledger row (`id`, `round`, `severity` blocking / should-fix / nit, `file`, `state` open /
     fix-to-verify / fixed / accepted / logged, `closedBy: { round }` for fixed), then a `verdict` row per review by
@@ -932,15 +933,15 @@ Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`
     an argument names (a lot id, name or index, with no registry entry needed), the lot an entry registers, and the
     open lots naming an entry's worktree and branch. A lot is merged when its tip is on the base branch, when its pull
     request merged (the host is asked for every lot close reads, pushed by `lot land` or not: the one `landing.json`
-    names, else the newest pull request of its branch whose head the branch reached since the lot was created, so one
+    names, else the newest change request of its branch whose head the branch reached since the lot was created, so one
     opened by hand counts, its branch deleted on origin after the merge or not, and a branch name reused by a new lot
-    never takes an older lot's pull request), or when its work is
+    never takes an older lot's change request), or when its work is
     contained in `origin/<base>` (a squash merge read offline). A merged lot gets its landed fact
     (`<lot folder>/landed.json`), reads `committed` everywhere from then on, files only, and its pending entry is
     committed (a lot with none closes as the lot itself: no registry entry is made); every outcome reaching it carries
     the line `landed on <base> at <commit>: <how>` (under the outcome's line, indented; `landed` in `--json`). A lot
     argument that is open is kept with `lot <name> <state>: <why>` (its work not in the base, the commits it holds
-    since part of it landed, its pull request closed, or the host's silence); a canceled lot closes, its landing never
+    since part of it landed, its change request closed, or the host's silence); a canceled lot closes, its landing never
     read; a lot whose branch and worktree are both gone reads its landing from the head of its final card line (its
     own, or a hand-over's on its branch whose registry entry names its worktree and index), written since the lot
     was made. An argument that names nothing is listed (exit 2) and the others still close. A hand-over
@@ -1114,7 +1115,7 @@ Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`
     that file, a second one removes the temporary folder and exits 1 naming the file; a match renames it. The
     source is never written; another run's temporary folder is named, never removed.
 
-- `dialecte lot recap <id|folder>` prints the expandable part (`<details>`) as GitHub markdown, from the
+- `dialecte lot recap <id|folder>` prints the expandable part (`<details>`) as host markdown (its recap in `<details>`), from the
   records only: the commits of the lots (or `not committed yet`), the test cases the newest gate record of the
   current tree judged red then green, counted per test file, the gate and rules lines (and `mutation`), the
   lot's mutation runs (`Mutation`: each run of the branch and of the branches it merges, oldest first, with
@@ -1144,55 +1145,55 @@ Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`
   URLs stay. Where a finding was logged, the hand-over folder and the lots file's notes are left out. It writes
   nothing.
 
-## Landing through the merge queue
+## Landing through the host's queue
 
-`dialecte lot land <id>` lands a lot through its pull request: the committed HEAD (a push carries only commits: uncommitted
+`dialecte lot land <id>` lands a lot through its change request: the committed HEAD (a push carries only commits: uncommitted
 files stay in the worktree and are named, `uncommitted, not pushed: N files`), rebased onto `origin/<base>` when
 behind it (a conflict undone, its files named, nothing pushed; with a tracked file changed git cannot rebase: the lot
 is pushed as committed, a line saying the rebase waits for a clean worktree; CI tests the merge with the base), pushed
-with a lease, its pull request opened or reused with the title and body `lot describe` renders from the lot's records
-through `.github/pull_request_template.md`, on the rebased head before the push: the title is the lot's own message
+with a lease, its change request opened or reused with the title and body `lot describe` renders from the lot's records
+through the repository's change-request template (its host's path), on the rebased head before the push: the title is the lot's own message
 (the first commit lot of its brief), never the branch's last commit, so a merge of main never becomes the squash title,
 and the body is the lot's final state, never its commit bodies. The message is changed with `dialecte lot brief`, so a
 re-versioned release lot needs no hand edit of its title. A lot that changes package.json's version (read at the lot's
 own fork point: a lot started on an open release lot sets none of its own) is refused while its title does not name
 the new version, by `lot describe`, `lot land` before anything is pushed and `lot approve` before anything is queued. A
-reused pull request whose title or body reads otherwise is edited, a person's part after the template's kept marker
+reused change request whose title or body reads otherwise is edited, a person's part after the template's kept marker
 kept; records that do not render push nothing.
-The pull request is always a draft and `lot land` never queues it: CI runs on every push while the lot goes on, and
-`lot approve`, a person's step, queues it (below). An approval is for one head: a reused pull request queued or ready
+The change request is always a draft and `lot land` never queues it: CI runs on every push while the lot goes on, and
+`lot approve`, a person's step, queues it (below). An approval is for one head: a reused change request queued or ready
 whose head to push no person approved (`approvals.jsonl`) is taken back out of the queue before the push (auto-merge
 off, then a draft again), so no refusal after the push leaves an unapproved head queued, and every landing checks,
 so a landing stopped after its push heals on the next one. A rebase that keeps the tree but moves the sha takes it out
-too: the person approves the new head. A pull request queued at a head a person approved is left as it is. `--draft`, from when `lot land` queued, is refused (exit 2) naming the change. The merge queue
+too: the person approves the new head. A change request queued at a head a person approved is left as it is. `--draft`, from when `lot land` queued, is refused (exit 2) naming the change. The queue
 runs the full suite on the lot on top of main and the lots ahead of it, then squashes it onto main; nothing reaches
-main another way. The landing is recorded in `<lot folder>/landing.json` (its pull request and the head it pushed: the next
+main another way. The landing is recorded in `<lot folder>/landing.json` (its change request and the head it pushed: the next
 push's lease, and the head a landed lot's final record takes) and as the lot's hand-over entry (`pending`). A lot
 already merged is not pushed again: `lot land` writes its landed fact, commits its entry, names the commits made since
 (they land in a new lot) and prints the close line; `lot close` reads the same landing state (a squash read offline
-from the tree, or the pull request the host says merged), after bringing the local base branch up to origin's. The push's lease is pinned to the head the
+from the tree, or the change request the host says merged), after bringing the local base branch up to origin's. The push's lease is pinned to the head the
 last landing pushed, a lot must be on its branch, and a lot cut from another lot is refused until stacks land.
 
-## Review on the pull request page
+## Review on the change request page
 
-The pull request page is the review tool: its Files tab holds the file tree, the full files and the line comments.
-`dialecte lot review <id>` adds the half that never goes on GitHub: it prints the lot's state, its pull request with the
+The change request page is the review tool: its changed-files view holds the file tree, the full files and the line comments.
+`dialecte lot review <id>` adds the half that never goes on the host: it prints the lot's state, its change request with the
 head it is at, the head the lot landed and the worktree's HEAD, the checks, the brief's goal and steps, the tests
 record, `decisions.md`, every finding with its text and state, the standard line, and what `lot approve` would refuse;
-then it opens the Files tab. It writes nothing.
+then it opens the changed files. It writes nothing.
 
-Points that can be public are line comments on the pull request, prefixed `blocking:`, `should-fix:` or `nit:`
+Points that can be public are line comments on the change request, prefixed `blocking:`, `should-fix:` or `nit:`
 (should-fix when none). `dialecte lot review <id> --comments --round <n>` brings them back as findings of round n, each
-comment once; the lot fixes them as a review round. Private points (the plans, the standard) never go on GitHub: they
+comment once; the lot fixes them as a review round. Private points (the plans, the standard) never go on the host: they
 are recorded with `lot finding`.
 
-`dialecte lot approve <id> --by <who> [--reason <text>]` is the approval: once the pull request is at the head the lot
+`dialecte lot approve <id> --by <who> [--reason <text>]` is the approval: once the change request is at the head the lot
 landed, its checks are green there and no finding but a nit is open, it records a person's `approve` verdict
 (`approvals.jsonl`, shown in `review.jsonl` and in the body by kind only, for that head: a later commit needs a new
 approval), renders the body again and queues the pull
-request: the only verb that queues. A lot started with `--on` whose pull request still merges into its parent's
-branch queues as a native stack up to it (`gh stack merge`), and only once the parent's pull request (read by the
-parent's branch) is queued, auto-merge on or in the merge queue, so
+request: the only verb that queues. A lot started with `--on` whose change request still merges into its parent's
+branch queues as a native stack up to it (the host's stack merge), and only once the parent's change request (read by the
+parent's branch) is queued, auto-merge on or in the host's queue, so
 nothing unapproved joins the queue; without native stacks it waits for the parent to merge (then `lot land` it again,
 which moves it onto the base). Either refusal records nothing. The cli's own lots take `--by orchestrator` after the orchestrator's independent review; every other package
 waits for a person.
@@ -1204,7 +1205,7 @@ was given against: an edit of the file reads stale, and a scope that reaches a n
 it is approved again. A lot needs a design when its scope lies in a `dialecte.risk.high` area (the repository's shared
 concepts) or is broader than one, or when it carries out a plan entry of kind `lot`; `--waive --by <who> --reason
 <text>` lets such a lot go on without one, recorded and shown. `lot start`, `lot status`, `lot forecast`, the card and
-the pull request body say where the design stands.
+the change request body say where the design stands.
 
 While a required design is missing, not approved or stale, the lot does not move: `tdd red` in its worktree refuses,
 the commit hook's `design` step fails a commit of production code on the lot's branch, `lot land` refuses after its rebase and pushes

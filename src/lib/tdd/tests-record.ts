@@ -1,5 +1,5 @@
 /**
- * A lot's `tests.json` (33CI CI2a): the public record of its tests, what a pull request may show. Its tdd part is the
+ * A lot's `tests.json` (33CI CI2a): the public record of its tests, what a change request may show. Its tdd part is the
  * cases of the change with their status (`tdd status`), written by `tdd green`; its gate part the newest gate run of
  * the worktree that counted tests, written by the gate. Each writer replaces its own part and keeps the other; the
  * file is written whole. Never a receipt's reason or message, nor a skipped receipt; a part with no source is absent.

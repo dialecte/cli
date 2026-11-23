@@ -20,12 +20,14 @@ const GITHUB: HostSeamVendor = {
 	tool: 'gh',
 	nounWords: ['pull', 'pulls', 'pullrequest', 'pullrequests'],
 	nounPathPattern: /pull[-_]?request/i,
+	nouns: { changeRequestNoun: 'pull request', changeRequestNouns: 'pull requests' },
 }
 const GITLAB: HostSeamVendor = {
 	name: 'gitlab',
 	tool: 'glab',
 	nounWords: ['mergerequest', 'mergerequests', 'mr', 'mrs'],
 	nounPathPattern: /merge[-_]?request/i,
+	nouns: { changeRequestNoun: 'merge request', changeRequestNouns: 'merge requests' },
 }
 
 /** A tree of whole files written under a new temporary folder; the folder is the scanned root. */
@@ -133,7 +135,7 @@ describe('scanHostSeam: what is not a spawn passes', () => {
 		},
 		{
 			name: 'a refusal text starting with gh',
-			file: "export const REFUSAL = 'gh pr view: no pull request'\nexport const OTHER = `gh pr view: ${'x'}`\n",
+			file: "export const REFUSAL = 'gh pr view: not found'\nexport const OTHER = `gh pr view: ${'x'}`\n",
 		},
 		{
 			name: 'a word that holds the tool',
@@ -571,8 +573,8 @@ describe('scanHostSeam: the change-request noun of one vendor stays in the vendo
 			file: '/** The pull request, read. */\n// pullRequest is the field\nexport const A = 1\n',
 		},
 		{
-			name: 'a string and a template',
-			file: "export const A = 'pull request #7 pullRequest'\nexport const B = `pull ${'x'} pullRequest`\n",
+			name: 'a template splitting the noun across its parts',
+			file: "export const B = `pull ${'x'} request`\n",
 		},
 		{
 			name: 'a word that only starts with pull',
@@ -582,6 +584,17 @@ describe('scanHostSeam: the change-request noun of one vendor stays in the vendo
 		expect(
 			scanHostSeam(scanOf({ files: { 'src/lib/landing/text.ts': file }, vendors: [GITHUB] })),
 		).toMatchObject(findingsOf([]))
+	})
+
+	it('a string and a template holding the noun and a pullRequest-like word → the noun-text finding only, never a noun identifier', () => {
+		const file =
+			"export const A = 'pull request #7 pullRequest'\nexport const B = `pull ${'x'} pullRequest`\n"
+
+		expect(
+			scanHostSeam(scanOf({ files: { 'src/lib/landing/text.ts': file }, vendors: [GITHUB] })),
+		).toEqual([
+			expect.objectContaining({ file: 'src/lib/landing/text.ts', line: 1, kind: 'noun-text' }),
+		])
 	})
 
 	it("each vendor's own folders hold the noun, a second vendor's too → no finding", () => {
@@ -654,6 +667,51 @@ describe("scanHostSeam: each vendor's own noun words, compounds included", () =>
 	})
 })
 
+describe("scanHostSeam: a vendor's printed noun in a source string", () => {
+	it.each([
+		{
+			name: "GitHub's noun in a generic source string",
+			path: 'src/lib/landing/text.ts',
+			text: "export const A = 'pull request #7 merged'\n",
+			expected: [{ file: 'src/lib/landing/text.ts', line: 1, kind: 'noun-text' }],
+		},
+		{
+			name: "GitHub's plural noun in a template part, in capitals",
+			path: 'src/lib/landing/text.ts',
+			text: 'export const A = (n: number) => `${n} Pull Requests open`\n',
+			expected: [{ file: 'src/lib/landing/text.ts', line: 1, kind: 'noun-text' }],
+		},
+		{
+			name: "the second vendor's noun in a generic source string",
+			path: 'src/lib/landing/text.ts',
+			text: "export const A = 'merge request #7 merged'\n",
+			expected: [{ file: 'src/lib/landing/text.ts', line: 1, kind: 'noun-text' }],
+		},
+		{
+			name: "GitHub's noun in GitHub's own folder",
+			path: 'src/lib/host/github/github-text.ts',
+			text: "export const A = 'pull request #7 merged'\n",
+			expected: [],
+		},
+		{
+			name: "GitHub's noun in a test file",
+			path: 'src/lib/landing/text.test.ts',
+			text: "export const A = 'pull request #7 merged'\n",
+			expected: [],
+		},
+		{
+			name: "GitHub's event and template names, written without a space",
+			path: 'src/lib/landing/text.ts',
+			text: "export const A = 'on pull_request, .github/pull_request_template.md'\n",
+			expected: [],
+		},
+	])('$name → $expected.length finding(s)', ({ path, text, expected }) => {
+		expect(scanHostSeam(scanOf({ files: { [path]: text }, vendors: [GITHUB, GITLAB] }))).toEqual(
+			expected.map((finding) => expect.objectContaining(finding)),
+		)
+	})
+})
+
 describe("scanHostSeam on the cli's own sources", () => {
 	it('no vendor tool literal, vendor import or change-request noun outside its place → no finding', () => {
 		const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
@@ -662,6 +720,7 @@ describe("scanHostSeam on the cli's own sources", () => {
 			tool: vendor.tool,
 			nounWords: vendor.nounWords,
 			nounPathPattern: vendor.nounPathPattern,
+			nouns: vendor.nouns,
 		}))
 
 		expect(scanHostSeam({ root, vendors })).toEqual([])

@@ -7,23 +7,25 @@ export const LOT_LANDING_REFUSALS = {
 /** How a landed lot's line names what proved it merged: `{base}`, `{commit}` (short) and `{number}`. */
 export const LANDED_LINES = {
 	ancestor: 'landed on {base} at {commit}: its tip is on {base}',
-	host: 'landed on {base} at {commit}: pull request #{number} merged',
+	host: 'landed on {base} at {commit}: {changeRequestNoun} #{number} merged',
 	tree: 'landed on {base} at {commit}: its work is in {base} (a squash read offline)',
 } as const
 
 /** The host's line for a fact that names no change request (written before the key `changeRequest`): no number. */
-export const LANDED_HOST_UNNUMBERED_LINE = 'landed on {base} at {commit}: pull request merged'
+export const LANDED_HOST_UNNUMBERED_LINE =
+	'landed on {base} at {commit}: {changeRequestNoun} merged'
 
 /** A lot `lot close` was asked for whose landing is not merged: `{lot}`, `{state}` and why. */
 export const NOT_LANDED_TEXTS = {
 	unlanded: 'not landed: its work is not in {base}',
-	closed: 'not landed: pull request #{number} was closed unmerged',
+	closed: 'not landed: {changeRequestNoun} #{number} was closed unmerged',
 	empty: 'not landed: no commit of its own beyond its base',
 	unknown: 'its landing cannot be read: {reason}',
 } as const
 
-/** A host that could not say whether the lot's pull request merged: `{reason}`. */
-export const HOST_SILENT_TEXT = 'the host could not say whether its pull request merged ({reason})'
+/** A host that could not say whether the lot's change request merged: `{reason}`. */
+export const HOST_SILENT_TEXT =
+	'the host could not say whether its {changeRequestNoun} merged ({reason})'
 
 /** Prune's reason for a lot whose landing git alone cannot prove: `{lot}` its name. */
 export const NOT_PROVABLE_OFFLINE =

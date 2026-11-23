@@ -4,6 +4,7 @@
  * working lot's next line and refuses the other flow's landing verbs.
  */
 import { temporaryFolder, writeFiles } from '../../../test/scratch-repository.ts'
+import { GENERIC_NOUNS } from '../host/host.constants.ts'
 import { flowRefusalOf, landingFlow, landingFlowOf } from './flow.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -126,7 +127,7 @@ describe('landingFlow', () => {
 
 /** The CI-first refusal of `<command> <verb>` in `root`. */
 function ciFirstRefusal(params: { command: string; verb: string; root: string }): string {
-	return `${params.command} ${params.verb}: ${params.root} is CI-first (.github/workflows/ci.yml runs on merge_group and holds the ci-ok job): a lot lands through its pull request, never a hand-over; commit on the lot branch through the hook, then lot land <id>; nothing written`
+	return `${params.command} ${params.verb}: ${params.root} is CI-first (.github/workflows/ci.yml runs on merge_group and holds the ci-ok job): a lot lands through its change request, never a hand-over; commit on the lot branch through the hook, then lot land <id>; nothing written`
 }
 
 /** The hand-over refusal of `<command> <verb>` in `root`. */
@@ -183,6 +184,6 @@ describe('flowRefusalOf', () => {
 		const root = temporaryFolder('dialecte-flow-')
 		writeFiles({ root, files })
 
-		expect(flowRefusalOf({ root, command, verb })).toEqual(expected(root))
+		expect(flowRefusalOf({ root, command, verb, nouns: GENERIC_NOUNS })).toEqual(expected(root))
 	})
 })

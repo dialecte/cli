@@ -12,6 +12,7 @@ import { designJsonLine, designStatusJson } from '../lib/design/design-line.ts'
 import { shownDesignStandingOf } from '../lib/design/design-standing.ts'
 import { isFolder, realPathOf } from '../lib/file-system.ts'
 import { readStoreEntries } from '../lib/handover/handover-store-read.ts'
+import { GENERIC_NOUNS } from '../lib/host/host.constants.ts'
 import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { JSON_FLAG } from '../lib/parse-invocation.constants.ts'
 import { jsonOf, textOf } from '../lib/print/print.ts'
@@ -205,7 +206,7 @@ function stackStatusOf(params: { lotFolder: string; landing: StatusLanding | und
 } {
 	const stack =
 		params.landing === undefined
-			? stackTextOf({ lotFolder: params.lotFolder })
+			? stackTextOf({ lotFolder: params.lotFolder, nouns: GENERIC_NOUNS })
 			: params.landing.stackLineOf({ lotFolder: params.lotFolder })
 	return stack === undefined ? {} : { stack }
 }

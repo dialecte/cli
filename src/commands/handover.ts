@@ -112,6 +112,7 @@ import { NOT_A_LOT_VALUE_OPTIONS } from '../lib/handover/store-lot-guard.constan
 import { notALotWordRefusal, readNotALotOptions } from '../lib/handover/store-lot-guard.ts'
 import { findTargetRef } from '../lib/handover/target-moved.ts'
 import { writeHandover } from '../lib/handover/write-handover.ts'
+import { hostNounsOf } from '../lib/host/select-host.ts'
 import { startLongRun } from '../lib/keep-awake/long-run.ts'
 import { flowRefusalOf } from '../lib/landing/flow.ts'
 import { HANDOVER_LEGEND } from '../lib/legend/legend.constants.ts'
@@ -266,11 +267,12 @@ export function runHandover(params: {
 	const absoluteLotsPath = resolve(cwd, lotsPath)
 	const lotsFile = readLotsFile(absoluteLotsPath)
 	if (typeof lotsFile === 'string') return usage(`handover: ${lotsFile}`)
-	// a CI-first repository lands its lots through their pull requests: no hand-over is written for it
+	// a CI-first repository lands its lots through their change requests: no hand-over is written for it
 	const writeRefusal = flowRefusalOf({
 		root: lotsFile.repository,
 		command: 'handover',
 		verb: 'write',
+		nouns: hostNounsOf({ root: lotsFile.repository }),
 	})
 	if (writeRefusal !== undefined) return usage(writeRefusal)
 	const outWord = getArg(argv, 'out')
@@ -502,11 +504,12 @@ export async function runHandoverRun(params: {
 		write(textOf([`handover run: ${handover}`]))
 		return 2
 	}
-	// a CI-first repository lands its lots through their pull requests: no hand-over runs, rehearsed or for real
+	// a CI-first repository lands its lots through their change requests: no hand-over runs, rehearsed or for real
 	const runRefusal = flowRefusalOf({
 		root: handover.lotsFile.repository,
 		command: 'handover',
 		verb: 'run',
+		nouns: hostNounsOf({ root: handover.lotsFile.repository }),
 	})
 	if (runRefusal !== undefined) {
 		write(textOf([runRefusal]))

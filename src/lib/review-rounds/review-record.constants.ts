@@ -51,7 +51,7 @@ export const WORKTREE_FILES_ARGUMENTS: readonly string[] = [
 /** `git ls-tree` of a commit's files, NUL-separated: the base commit follows. */
 export const BASE_FILES_ARGUMENTS: readonly string[] = ['ls-tree', '-r', '--name-only', '-z']
 
-/** The verdict of a `lot approve` line: a person approved the pull request. */
+/** The verdict of a `lot approve` line: a person approved the change request. */
 export const APPROVE_VERDICT = 'approve'
 
 /** The one severity that never blocks an approval; any other, or one the parser cannot read, blocks while open. */

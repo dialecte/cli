@@ -12,16 +12,16 @@ export const APPROVABLE_STATES: readonly string[] = ['working', 'ready']
 export const LOT_APPROVE_LINES = {
 	prefix: 'lot approve: ',
 	notApprovable: 'lot approve: {lot} is {state}: only a lot at work is approved',
-	noLanding: 'lot approve: {lot} has no pull request yet: dialecte lot land {lot} opens it',
-	noChangeRequest: 'lot approve: pull request #{number} of {lot} cannot be found',
-	notOpen: 'pull request #{number} is {state}',
+	noLanding: 'lot approve: {lot} has no {changeRequestNoun} yet: dialecte lot land {lot} opens it',
+	noChangeRequest: 'lot approve: {changeRequestNoun} #{number} of {lot} cannot be found',
+	notOpen: '{changeRequestNoun} #{number} is {state}',
 	lotNotApprovable: 'the lot is {state}',
 	worktreeElsewhere:
 		'the worktree is at {head}, the lot landed {landed} (lot land {lot} pushes it)',
 	checksElsewhere: 'checks ran on {checked}, not the landed {landed}',
 	refused: 'lot approve: {lot} not approved: {reasons}; nothing recorded, nothing queued',
 	headElsewhere:
-		'pull request #{number} is at {pushed}, the lot landed {landed} (lot land {lot} pushes it)',
+		'{changeRequestNoun} #{number} is at {pushed}, the lot landed {landed} (lot land {lot} pushes it)',
 	checksFailing: 'checks failing on the head: {names}',
 	checksPending: 'checks pending on the head: {names}',
 	checksNone: 'no check on the head yet',

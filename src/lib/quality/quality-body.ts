@@ -1,5 +1,5 @@
 /**
- * The pull request body's quality, in its risk part: the counts since the body's base, each finding no opt-out
+ * The change request body's quality, in its risk part: the counts since the body's base, each finding no opt-out
  * silenced worded as `rules` words it (a public export left without docs marked `✗`), then the notes `rules` prints;
  * or why it was not judged. Pure: the findings are judged by the caller.
  */
@@ -27,7 +27,7 @@ import type {
  * The quality lines of the body's risk part: the head line with the counts and the base, then one line per finding
  * and note; `Quality: not judged (<why>)` alone when it was not.
  *
- * @intent show a reviewer what the base-aware rules find on the change the pull request lands
+ * @intent show a reviewer what the base-aware rules find on the change the change request lands
  * @internal
  */
 export function qualityBodyLines(quality: BodyQuality): string[] {
@@ -40,7 +40,7 @@ export function qualityBodyLines(quality: BodyQuality): string[] {
  * The quality lines of the body that hold free text (a finding's names and paths, a note), each with where it comes
  * from: what the public-text check reads.
  *
- * @intent check the quality lines of a pull request body as public text
+ * @intent check the quality lines of a change request body as public text
  * @internal
  */
 export function qualityBodyPieces(quality: BodyQuality): QualityBodyLine[] {

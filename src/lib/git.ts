@@ -259,7 +259,7 @@ export function listStagedFiles(root: string): string[] {
 
 /**
  * Fetches `origin` into its remote-tracking refs (pruned) for the repository at `root`, so a base branch read next is
- * the host's (a merge queue lands there): undefined when it fetched or there is no `origin`; the line saying why not
+ * the host's (a queue lands there): undefined when it fetched or there is no `origin`; the line saying why not
  * otherwise (offline, a timeout) - the last known refs are then read, nothing thrown.
  *
  * @intent bring the host's base branch here before a lot is cut or closed

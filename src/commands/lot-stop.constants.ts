@@ -8,9 +8,9 @@ export const STOP_TEXTS = {
 	stopped: 'lot stop: {name} stopped',
 	already: 'lot stop: {name} is canceled already: nothing written',
 	movedAside: 'stopped {name}: damaged ({damage}); its folder is now {folder}',
-	landingClosed: 'pull request #{number} closed: out of the merge queue, never merged',
+	landingClosed: '{changeRequestNoun} #{number} closed: out of the queue, never merged',
 	landingNotClosed:
-		'lot stop: pull request #{number} could not be closed ({reason}): nothing stopped; close it on the host, then stop again',
+		'lot stop: {changeRequestNoun} #{number} could not be closed ({reason}): nothing stopped; close it on the host, then stop again',
 	damagedPending:
 		'lot stop: {name} is damaged and its hand-over {entry} is pending: nothing moved; first: dialecte handover abandon {entry}',
 	// a damaged lot kept on purpose is never moved aside: its worktree would be named by no lot (KEEP 3.7)

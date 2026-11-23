@@ -675,7 +675,7 @@ describe(
 
 			expect(calls).toContain('edit 7 "feat(x): x answers one"')
 			expect(bodies[0]).toContain('### Summary')
-			expect(landed.lines).toContain('pull request #7 updated from the lot records')
+			expect(landed.lines).toContain('change request #7 updated from the lot records')
 		})
 
 		it('a commit message holding a forbidden word → refused naming the record, nothing pushed', () => {
@@ -688,7 +688,7 @@ describe(
 			expect(landed).toEqual({
 				exitCode: 1,
 				lines: [
-					`lot land: the pull request text holds a forbidden word \`${FIRST_WORD}\` in brief.json lots[0].message: rewrite that record, nothing sent`,
+					`lot land: the change request text holds a forbidden word \`${FIRST_WORD}\` in brief.json lots[0].message: rewrite that record, nothing sent`,
 				],
 			})
 			expect(calls).toEqual([])

@@ -42,6 +42,7 @@ import {
 } from '../gate-records/gate-records.ts'
 import { computeStateTree, hashStateTree } from '../gate-records/state-hash.ts'
 import { mainCheckoutOf } from '../git.ts'
+import { GENERIC_NOUNS } from '../host/host.constants.ts'
 import { PACKAGE_MANIFEST_FILE } from '../package-json.constants.ts'
 import { readPackageJson } from '../package-json.ts'
 import { readProfile } from '../profile/profile.ts'
@@ -1143,13 +1144,13 @@ function optionalSection(params: { name: string; text: string | undefined }): Ca
 
 /**
  * The card's `stack` line of a lot started on another (33CI CI4): `on <parent lot> (#<pr>)`, or that the parent has no
- * pull request yet; none for a lot not stacked. Files only: the parent's pull request state is `lot status`'s.
+ * change request yet; none for a lot not stacked. Files only: the parent's change request state is `lot status`'s.
  *
  * @intent show which lot a stacked lot lands on
  * @internal
  */
 export function buildStackCardLine(params: { folder: string }): CardGateLine | undefined {
-	const detail = stackTextOf({ lotFolder: params.folder })
+	const detail = stackTextOf({ lotFolder: params.folder, nouns: GENERIC_NOUNS })
 	if (detail === undefined) return undefined
 	const read = readStack({ lotFolder: params.folder })
 	const damaged = read !== undefined && 'damage' in read

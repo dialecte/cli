@@ -153,12 +153,38 @@ describe('the stack line', { timeout: STORE_CASE_TIMEOUT }, () => {
 		).toContain(`stack: on ${PARENT} (#5, merged)`)
 	})
 
-	it('lot status of a stacked lot whose parent has no pull request yet → the line says so', () => {
+	it('lot status of a stacked lot whose parent has no change request yet → the line says so', () => {
 		const { workspace } = stackedLots({ landed: false })
 
 		expect(
 			withLines(runLot(statusArgumentsOf({ workspace, lot: CHILD, answers: {} }))).lines,
+		).toContain(`stack: on ${PARENT} (no change request yet)`)
+	})
+
+	it('lot status of a stacked lot whose parent has none yet, on a GitHub origin → the line names the pull request', () => {
+		const { workspace } = stackedLots({ landed: false })
+		git({
+			root: workspace.repository,
+			args: ['config', 'remote.origin.url', 'https://github.com/o/r.git'],
+		})
+
+		expect(
+			withLines(runLot(statusArgumentsOf({ workspace, lot: CHILD, answers: {} }))).lines,
 		).toContain(`stack: on ${PARENT} (no pull request yet)`)
+	})
+
+	it('the hand-over card of a lot whose parent has none yet, on a GitHub origin → the generic noun, read from files only', () => {
+		const { workspace, child } = stackedLots({ landed: false })
+		git({
+			root: workspace.repository,
+			args: ['config', 'remote.origin.url', 'https://github.com/o/r.git'],
+		})
+
+		expect(buildStackCardLine({ folder: child })).toEqual({
+			name: 'stack',
+			status: 'passed',
+			detail: `on ${PARENT} (no change request yet)`,
+		})
 	})
 
 	it('lot status of a lot not stacked → no stack line', () => {

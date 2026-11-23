@@ -1,3 +1,4 @@
+import { GENERIC_NOUNS } from '../host/host.constants.ts'
 import { FILLED_PARTS, KEPT_PART } from './change-request.constants.ts'
 /**
  * The review part of a pull request names the lot's design first (DESIGN-GATE section 4): its state and who approved
@@ -18,6 +19,7 @@ const TEMPLATE = [...FILLED_PARTS, KEPT_PART]
 function reviewPartOf(review: ReviewRecord): string {
 	const text = composeChangeRequest({
 		template: TEMPLATE,
+		nouns: GENERIC_NOUNS,
 		sources: {
 			messages: [],
 			treeHash: 'a'.repeat(64),

@@ -1,5 +1,5 @@
 /**
- * The base branch brought up to the host's once a lot landed there (a merge queue merges on the host, so the local
+ * The base branch brought up to the host's once a lot landed there (a queue merges on the host, so the local
  * base branch goes stale): origin fetched, then the local branch fast-forwarded when it is behind.
  */
 import { spawnSync } from 'node:child_process'

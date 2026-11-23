@@ -425,7 +425,7 @@ function publicTextFaults(params: {
 }
 
 /**
- * The faults of every public text of a brief - its summary, each step's title and behaviours, all of which a pull
+ * The faults of every public text of a brief - its summary, each step's title and behaviours, all of which a change
  * request shows: one refusal per field holding what a public text never holds (`publicTextLabel`; a summary's path
  * is its own field check), naming the label, never the text. When the lists cannot be read, one refusal says so.
  *

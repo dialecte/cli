@@ -273,7 +273,7 @@ function hasCard(params: {
  * The catch-up `card` line: the card rebuilt (no probe) when the folder holds a written hand-over and the head is
  * known, else `null` (the usage then read from the folder). A
  * committed lot's head is the last of its lot commits when every lot is found (they name the lot exactly; a hook
- * record naming another commit is no reason to keep). Else a lot landed through its pull request takes the head its
+ * record naming another commit is no reason to keep). Else a lot landed through its change request takes the head its
  * landing pushed (`landing.json`: the queue squashed that head onto the base branch), else the tip its landed fact records (`landed.json`). Else the `sole-owner` takes the hook record's (no other
  * committed or abandoned lot shares the worktree: its last hooked commit is this lot's), a `sibling` writes `head: null` (its
  * commit is not the closed lot's concern), and an owner with neither keeps the worktree. A canceled lot's head is the

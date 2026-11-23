@@ -1,4 +1,4 @@
-/** A line of a lot folder's `approvals.jsonl`: who approved which head of which pull request, when and why. */
+/** A line of a lot folder's `approvals.jsonl`: who approved which head of which change request, when and why. */
 export type ApprovalLine = {
 	schema: number
 	at: string

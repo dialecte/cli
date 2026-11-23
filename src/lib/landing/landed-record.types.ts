@@ -7,11 +7,11 @@ import type { LandingEvidence } from './landing-state.types.ts'
 export type LandedFact = {
 	schema: number
 	how: LandingEvidence
-	/** The lot's tip that landed (or the merged pull request's head). */
+	/** The lot's tip that landed (or the merged change request's head). */
 	tip: string
 	/** The base branch it landed on, its short name. */
 	base: string
-	/** The pull request it landed through, when one is known. */
+	/** The change request it landed through, when one is known. */
 	changeRequest?: { number: number; url: string }
 	/** When the fact was written (ISO). */
 	at: string

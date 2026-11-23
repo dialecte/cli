@@ -21,13 +21,13 @@ ci - The CI files shipped as a template: write them into the package, report dri
     HEAD^1, skipped on a dispatch), where --no-verify cannot skip it; a build script is required
     (publish.yml builds the package)
   the repository owns .github/workflows/_test.yml (ci.yml calls it: a workflow_call trigger; a mode
-    input of type string gets pr on a pull request, full in the merge queue) and every other
+    input of type string gets pr on a `pull_request` run, full in the merge queue) and every other
     workflow file the template does not name; they are listed, never written
   sync - writes what differs from the template, deletes the retired files (pr.yml, _lint.yml) and
          the reusables no job of the package calls; an update prints its diff; a second run is in
          step; --dry-run writes nothing
   check - the same comparison, read-only: each drifted file with its diff, then the fix; the
-          template's _check.yml runs it on every pull request
+          template's _check.yml runs it on every `pull_request` run
   publish-decision - the publish guard of the push to main (BEFORE, GITHUB_OUTPUT): publish above
                      npm's latest, a pre-release under next, a missing release tag pushed alone, a
                      failed npm query refused
@@ -44,7 +44,7 @@ Verbs: `sync`, `check`, `publish-decision`
 Flags: `--dry-run`
 <!-- /dialecte-reference -->
 
-Every Dialecte package runs the same CI: the pull request and the merge queue run `ci.yml`, whose one required check
+Every Dialecte package runs the same CI: the `pull_request` run and the merge queue run `ci.yml`, whose one required check
 is `ci-ok`; the queue's merge to main runs `publish.yml`, which builds, publishes a changed version and tags it. The
 cli ships these files as a template, so a package stays in step with the cli version it pins: a bump of the pin runs
 `dialecte ci sync` and commits what it writes in the same change; `_check.yml` runs `dialecte ci check` on every pull

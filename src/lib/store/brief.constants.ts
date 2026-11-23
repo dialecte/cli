@@ -33,7 +33,7 @@ export const FEATURE_MAX_LENGTH = 60
 /** The longest goal. */
 export const GOAL_MAX_LENGTH = 200
 
-/** The longest summary: one sentence a pull request shows. */
+/** The longest summary: one sentence a change request shows. */
 export const SUMMARY_MAX_LENGTH = 200
 
 /** The detail of a summary holding a path or a link. */

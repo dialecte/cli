@@ -1,4 +1,4 @@
-/** A store lot with a pushed origin, the cli's template and its records, for `lot pr` to render. */
+/** A store lot with a pushed origin, the cli's template and its records, for `lot describe` to render. */
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 

@@ -17,7 +17,7 @@ import {
 	STACK_TEXT,
 } from './stack.constants.ts'
 
-import type { ChangeRequest } from '../host/host.types.ts'
+import type { ChangeRequest, HostNouns } from '../host/host.types.ts'
 import type { StackDamage, StackRecord } from './stack.types.ts'
 
 /**
@@ -46,7 +46,7 @@ export function readStack(params: { lotFolder: string }): StackRecord | StackDam
 
 /**
  * The lot's stack record when it reads as one; undefined when it has none or it is damaged (a reader that only shows
- * what a stack adds, such as the pull request's depends-on part).
+ * what a stack adds, such as the change request's depends-on part).
  *
  * @intent read a stack record a reader may skip when damaged
  * @internal
@@ -57,26 +57,26 @@ export function readStackRecord(params: { lotFolder: string }): StackRecord | un
 }
 
 /**
- * How the hand-over card names the lot a lot was started on, files only: `on <parent> (#<pr>)`, its pull request from
- * the parent's `landing.json`, or `on <parent> (no pull request yet)`; the damage of a stack.json that does not read;
- * undefined for a lot not stacked. `lot status` names the pull request's state too, through the one lot reader
+ * How the hand-over card names the lot a lot was started on, files only: `on <parent> (#<pr>)`, its change request from
+ * the parent's `landing.json`, or `on <parent> (no change request yet)`; the damage of a stack.json that does not read;
+ * undefined for a lot not stacked. `lot status` names the change request's state too, through the one lot reader
  * (`statusLandingOf`).
  *
  * @intent show which lot a stacked lot lands on, from files
  * @internal
  */
-export function stackTextOf(params: { lotFolder: string }): string | undefined {
+export function stackTextOf(params: { lotFolder: string; nouns: HostNouns }): string | undefined {
 	const record = readStack(params)
 	if (record === undefined) return undefined
 	if ('damage' in record)
 		return fillMessage({ template: STACK_TEXT.damagedRecord, values: { damage: record.damage } })
 	const number = readLanding({ lotFolder: join(dirname(params.lotFolder), record.parent) })?.number
-	return stackLineText({ parent: record.parent, number, state: undefined })
+	return stackLineText({ parent: record.parent, number, nouns: params.nouns, state: undefined })
 }
 
 /**
- * The stack line's text: `on <parent> (#<pr>, <state>)`, `on <parent> (#<pr>)` without a state, `on <parent> (no pull
- * request yet)` without a pull request.
+ * The stack line's text: `on <parent> (#<pr>, <state>)`, `on <parent> (#<pr>)` without a state, `on <parent> (no change
+ * request yet)` without a change request.
  *
  * @intent write the stack line one way for the card and lot status
  * @internal
@@ -84,11 +84,16 @@ export function stackTextOf(params: { lotFolder: string }): string | undefined {
 export function stackLineText(params: {
 	parent: string
 	number: number | undefined
+	/** The host's change-request nouns, for a parent with none yet. */
+	nouns: HostNouns
 	state: string | undefined
 }): string {
 	const { parent, number, state } = params
 	if (number === undefined)
-		return fillMessage({ template: STACK_TEXT.noChangeRequest, values: { parent } })
+		return fillMessage({
+			template: STACK_TEXT.noChangeRequest,
+			values: { ...params.nouns, parent },
+		})
 	const changeRequest = `#${number}`
 	return state === undefined
 		? fillMessage({ template: STACK_TEXT.filesOnly, values: { parent, changeRequest } })
@@ -96,9 +101,9 @@ export function stackLineText(params: {
 }
 
 /**
- * A pull request's state as the stack line names it: merged, closed, queued, draft or open.
+ * A change request's state as the stack line names it: merged, closed, queued, draft or open.
  *
- * @intent name where a parent's pull request stands
+ * @intent name where a parent's change request stands
  * @internal
  */
 export function changeRequestStateOf(changeRequest: ChangeRequest): string {

@@ -5,7 +5,13 @@ import { delimiter, join } from 'node:path'
 import { createConfigWorkspace } from '../../../test/config-workspace.ts'
 import { createScratchRepository, git, temporaryFolder } from '../../../test/scratch-repository.ts'
 import { takeRefusingGhCalls } from '../../../test/suite-guard/refusing-gh.ts'
-import { createHost, hostNounsOf, hostnameOfSshConfig, vendorOf } from './select-host.ts'
+import {
+	createHost,
+	hostNounsOf,
+	hostnameOfSshConfig,
+	memoisedLookup,
+	vendorOf,
+} from './select-host.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -361,6 +367,48 @@ describe('hostNounsOf', () => {
 
 		expect([hostNounsOf({ root: repositoryWith(origin), ...seams }), seams.ssh]).toEqual([
 			nouns,
+			[],
+		])
+	})
+})
+
+describe('memoisedLookup', () => {
+	it('two aliases, the first asked twice → each looked up once, the same answers', () => {
+		const asked: string[] = []
+		const lookup = memoisedLookup({
+			lookup: ({ alias }) => (
+				asked.push(alias),
+				alias === 'github' ? 'github.com' : 'other.example'
+			),
+		})
+
+		expect([
+			lookup({ alias: 'github' }),
+			lookup({ alias: 'github' }),
+			lookup({ alias: 'work' }),
+			asked,
+		]).toEqual(['github.com', 'github.com', 'other.example', ['github', 'work']])
+	})
+
+	it('an alias whose lookup answers nothing, asked twice → looked up once', () => {
+		const asked: string[] = []
+		const lookup = memoisedLookup({ lookup: ({ alias }) => (asked.push(alias), undefined) })
+
+		expect([lookup({ alias: 'gone' }), lookup({ alias: 'gone' }), asked]).toEqual([
+			undefined,
+			undefined,
+			['gone'],
+		])
+	})
+})
+
+describe('hostNounsOf on a folder that does not exist', () => {
+	it('a missing root → the generic nouns, nothing thrown, no ssh asked', () => {
+		const seams = recordedSeams({})
+		const root = join(temporaryFolder('dialecte-gone-root-'), 'gone')
+
+		expect([hostNounsOf({ root, ...seams }), seams.ssh]).toEqual([
+			{ changeRequestNoun: 'change request', changeRequestNouns: 'change requests' },
 			[],
 		])
 	})
