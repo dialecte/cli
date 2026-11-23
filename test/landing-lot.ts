@@ -56,9 +56,11 @@ import type { LandingLot } from './landing-lot.types.ts'
 /**
  * A brief workspace whose repository's main is pushed to a bare origin, and the store lot `name` (`0001-repo-x` by
  * default) on its own worktree `.worktrees/<name>`, its branch cut from main with one commit of its own (`src/x.ts`).
- * The caller restores the environment (`vi.unstubAllEnvs`).
+ * Its brief's scope is `scope` (`src/x.ts` when left out). The caller restores the environment (`vi.unstubAllEnvs`).
  */
-export function landingLotOf(params: { name?: string; branch?: string } = {}): LandingLot {
+export function landingLotOf(
+	params: { name?: string; branch?: string; scope?: readonly string[] } = {},
+): LandingLot {
 	const workspace = createBriefWorkspace()
 	const root = workspace.repository
 	const origin = join(temporaryFolder('dialecte-landing-origin-'), 'origin.git')
@@ -81,7 +83,7 @@ export function landingLotOf(params: { name?: string; branch?: string } = {}): L
 		writeStoreLot({
 			workspace,
 			name,
-			scope: [LANDING_LOT_FILE],
+			scope: [...(params.scope ?? [LANDING_LOT_FILE])],
 			branch,
 			worktree,
 			repository: root,

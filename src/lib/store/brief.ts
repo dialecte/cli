@@ -1,4 +1,3 @@
-/** The brief of a lot: the field checks (pure), and the whole check against the repository, the plan and the store. */
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
@@ -10,6 +9,8 @@ import { readEvents } from '../events/read-events.ts'
 import { onDiskPathOf, realPathOf } from '../file-system.ts'
 import { branchExists, mainCheckoutOf, readGit } from '../git.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
+/** The brief of a lot: the field checks (pure), and the whole check against the repository, the plan and the store. */
+import { unsettledOf } from '../landing/met-lots.ts'
 import { findWorkspace } from '../workspace.ts'
 import {
 	coversEntry,
@@ -70,6 +71,7 @@ import { listLotNames, locateStore } from './store-folder.ts'
 import { SIMULATED_FINDING_RULES, STORE_FILES } from './store.constants.ts'
 import { readTransitions } from './transitions.ts'
 
+import type { MetLotsSettled } from '../landing/met-lots.types.ts'
 import type {
 	BriefEffort,
 	BriefFieldsResult,
@@ -78,6 +80,7 @@ import type {
 	CheckBriefResult,
 	CheckedBrief,
 	ParsedBrief,
+	SettleMet,
 } from './brief.types.ts'
 import type { StackParent } from './stack.types.ts'
 import type {
@@ -168,6 +171,8 @@ export function checkBrief(params: {
 	pause?: SynchronousPause
 	/** The start's clock: a met lot still starting is judged by it (`isStillStarting`); now by default. */
 	now?: Date
+	/** Settles the open lots the scope meets: what landed holds nothing (`settleMetLots`); none: nothing settled. */
+	settleMet?: SettleMet
 }): CheckBriefResult {
 	const briefPath = resolve(params.cwd ?? process.cwd(), params.briefPath)
 	const briefFolder = dirname(briefPath)
@@ -214,6 +219,7 @@ export function checkBrief(params: {
 		: []
 	const refused = faults.filter((fault) => !findings.includes(fault))
 	const { brief } = fields
+	const settle = overlaps.settle === undefined ? {} : { settle: overlaps.settle }
 	if (
 		refused.length > 0 ||
 		!brief ||
@@ -222,8 +228,9 @@ export function checkBrief(params: {
 		plan.text === undefined ||
 		plan.bytes === undefined
 	)
-		return { refused, checked: undefined }
+		return { refused, checked: undefined, ...settle }
 	return {
+		...settle,
 		refused,
 		checked: checkedOf({
 			brief,
@@ -888,22 +895,30 @@ function overlapFaults(params: {
 	parent?: string
 	/** The start's clock (`isStillStarting`). */
 	now?: Date
-}): { refused: Refusal[]; accepted: LotOverlap[]; cleared: LotOverlap[] } {
+	/** Settles the met lots: what landed leaves the overlaps. */
+	settleMet?: SettleMet
+}): {
+	refused: Refusal[]
+	accepted: LotOverlap[]
+	cleared: LotOverlap[]
+	settle?: MetLotsSettled
+} {
 	const { location } = params
 	const { entries } = scopeEntriesOf(params.brief.scope)
 	if (!location || !entries) return { refused: [], accepted: [], cleared: [] }
-	const judged = overlappingOpenLots({
+	const met = overlappingOpenLots({
 		store: location.store,
 		registry: location.registry,
 		scope: entries,
 		caseInsensitive: params.caseInsensitive,
 		pause: params.pause,
-	})
-		.filter((overlap) => overlap.name !== params.parent)
-		.map((overlap) => ({
-			overlap,
-			hold: overlapHoldOf({ overlap, store: location.store, now: params.now ?? new Date() }),
-		}))
+	}).filter((overlap) => overlap.name !== params.parent)
+	// a met lot merged on the host but never closed holds nothing: settled, it leaves the overlaps
+	const settle = met.length === 0 ? undefined : params.settleMet?.({ store: location.store, met })
+	const judged = unsettledOf({ met, settle }).map((overlap) => ({
+		overlap,
+		hold: overlapHoldOf({ overlap, store: location.store, now: params.now ?? new Date() }),
+	}))
 	const accepted = params.overlapOk
 		? judged.map(({ overlap }) => overlap).filter(isAcceptableOverlap)
 		: []
@@ -919,7 +934,7 @@ function overlapFaults(params: {
 			}),
 		)
 	const cleared = judged.filter(({ hold }) => hold === undefined).map(({ overlap }) => overlap)
-	return { refused, accepted, cleared }
+	return { refused, accepted, cleared, ...(settle !== undefined && { settle }) }
 }
 
 /**

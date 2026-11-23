@@ -196,14 +196,18 @@ export const CHECK_NEXT_COMMANDS: Readonly<Record<NextCheckName, string>> = {
 /** What runs a lot in S: a person or a host runs the stations by hand, or the simulator plays a scenario. */
 export const RUNNERS = { manual: 'manual', simulated: 'simulated' } as const
 
-/** The states of a closed lot: its worktree is kept by no lot (33S section 11). */
-export const LOTS_KEEPING_NOTHING: readonly LotStateName[] = ['committed', 'canceled']
+/** The states of a closed lot: it keeps nothing and holds no scope (33S section 11); read through `isClosedState`. */
+export const CLOSED_STATES: readonly LotStateName[] = ['committed', 'canceled']
 
 /** Why `worktree prune` and `lot close` keep a worktree an open lot names. */
 export const LOT_KEEP_REASON = 'lot {name} {state}'
 
-/** The states on which no question stays open: a lot in one takes no question and no answer either. */
-export const QUESTIONS_CLOSED_STATES: readonly LotStateName[] = ['canceled', 'failed', 'committed']
+/**
+ * The states of a lot that takes no more work: no question, no answer, no scope or risk change; read through
+ * `isTerminalState`. A failed lot is terminal but not closed: it keeps its worktree and, unless it failed by an overlap,
+ * its scope.
+ */
+export const TERMINAL_STATES: readonly LotStateName[] = ['canceled', 'failed', 'committed']
 
 /** The longest question text, question details and answer, in characters (33S section 4). */
 export const QUESTION_TEXT_LIMIT = 500

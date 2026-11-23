@@ -1,5 +1,5 @@
 import { ROUND_FOLDER_PATTERN } from '../gate-records/gate-records.constants.ts'
-import { QUESTIONS_CLOSED_STATES } from '../store/store.constants.ts'
+import { isTerminalState } from '../store/lot-state.ts'
 import { MS_PER_SECOND } from './attribute-steps.constants.ts'
 import { attributeStepsToRuns, timeBreakdown } from './attribute-steps.ts'
 import {
@@ -26,7 +26,6 @@ import {
 import { SUITE_FAMILIES } from './unrecorded-steps.constants.ts'
 import { countSuites } from './unrecorded-steps.ts'
 
-import type { LotStateName } from '../store/store.types.ts'
 import type { RunAttributedStep, WaitTime } from './attribute-steps.types.ts'
 import type { EventRun, LotEvent } from './event.types.ts'
 import type {
@@ -54,7 +53,7 @@ export function buildLotReport(params: LotReportInput): LotReport {
 	const paired = pairRuns({ events: [...params.events] })
 	const stationRuns = runsOfKind({ runs: paired.runs, prefix: STATION_KIND_PREFIX })
 	const stepRuns = runsOfKind({ runs: paired.runs, prefix: STEP_KIND_PREFIX })
-	const terminal = QUESTIONS_CLOSED_STATES.includes(identity.state as LotStateName)
+	const terminal = isTerminalState(identity.state)
 	const summary = summarizeStationRuns({ stationRuns, terminal })
 	const { runs } = summary
 	const roundNumbers = roundsOf({ ledger: params.ledger, roundFolders: params.roundFolders })

@@ -186,7 +186,10 @@ export function registerHandover(params: {
 	}
 }
 
-/** Records `state` in the entry of `folder` in `store`; a folder without an entry is left unregistered. */
+/**
+ * Records `state` in the entry of `folder` in `store`; a folder without an entry is left unregistered, an entry already
+ * in `state` is not written again.
+ */
 export function recordHandoverState(params: {
 	store: string | undefined
 	folder: string
@@ -198,6 +201,7 @@ export function recordHandoverState(params: {
 	const registered = registeredEntryOf({ store: params.store, folder: params.folder })
 	if (!registered) return
 	const { name, ...entry } = registered
+	if (entry.state === params.state) return
 	writeStoreEntry({
 		store: params.store,
 		name,

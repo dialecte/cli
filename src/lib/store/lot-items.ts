@@ -12,14 +12,13 @@ import { isStoreFolder } from './lot-folder.ts'
 import { CLOSED_LOT_ITEM_REASON, LOT_RECORDS_UNREAD } from './lot-items.constants.ts'
 import { keptByDecision, keptOfChecked } from './lot-keep.ts'
 import { readCheckedLotState } from './lot-records.ts'
-import { lotState } from './lot-state.ts'
+import { isClosedState, lotState } from './lot-state.ts'
 import { listLotFolderNames, locateStore } from './store-folder.ts'
 import {
 	DAMAGED_STATE,
 	LOT_FOLDER_NAME_PATTERN,
 	LOT_KEEP_REASON,
 	LOT_LINK_SEGMENTS,
-	LOTS_KEEPING_NOTHING,
 	TEMPORARY_FOLDER_PATTERN,
 } from './store.constants.ts'
 
@@ -140,7 +139,7 @@ function lotRecordOf(params: {
 	const kept = keptOfChecked({ name, checked })
 	const state = 'damage' in checked ? DAMAGED_STATE : lotState(checked.input).state
 	const keptOnPurpose = keptByDecision({ keep: checked.keep })
-	const open = !LOTS_KEEPING_NOTHING.some((closed) => closed === state)
+	const open = !isClosedState(state)
 	const openReason = fillMessage({ template: LOT_KEEP_REASON, values: { name, state } })
 	const reason =
 		state === DAMAGED_STATE
@@ -171,7 +170,7 @@ function lotRecordOf(params: {
 
 /** Which item wins a shared key: an open (or damaged) lot's, then a closed lot kept on purpose, then a closed lot's. */
 function rankOf(params: { record: LotRecord; item: LotItem }): number {
-	if (!LOTS_KEEPING_NOTHING.some((closed) => closed === params.record.state)) return 2
+	if (!isClosedState(params.record.state)) return 2
 	return params.item.held ? 1 : 0
 }
 

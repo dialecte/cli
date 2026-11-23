@@ -2,7 +2,7 @@
  * What the wiring of the forecast needs from the library (33CO CO2b): a refusal value for a lot with no forecast, lock
  * files never shared (decision Q2), and a recorded run whose event names its own trigger.
  */
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 import { replaceRecord } from '../../../test/damaged-lot-workspace.ts'
@@ -20,6 +20,9 @@ import {
 	startForecastLot,
 	workInLot,
 } from '../../../test/forecast-workspace.ts'
+import { LANDING_CHANGE_REQUEST_NUMBER } from '../../../test/landing-lot.constants.ts'
+import { addLandingLot, landingLotOf, writeLandingRecord } from '../../../test/landing-lot.ts'
+import { mergeOnOrigin } from '../../../test/landing-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
 import { overlappingOpenLots, registryOfLotFolder } from '../store/lot-records.ts'
 import { STORE_FILES } from '../store/store.constants.ts'
@@ -49,6 +52,25 @@ function lastEventOf(lot: ForecastTestLot): unknown {
 }
 
 describe('the library the wiring reads', { timeout: STORE_CASE_TIMEOUT }, () => {
+	it('another open lot squash-merged on origin and fetched, never closed -> not compared, named settled, no landed fact written', () => {
+		const merged = landingLotOf()
+		writeLandingRecord({ lot: merged, number: LANDING_CHANGE_REQUEST_NUMBER })
+		mergeOnOrigin({ repository: merged.repository, how: 'squash' })
+		const self = addLandingLot({ lot: merged, name: '0002-repo-y', branch: 'feat/y' })
+
+		const run = forecastLot({
+			lotFolder: self.lotFolder,
+			trigger: 'forecast',
+			now: () => FORECAST_NOW,
+		})
+
+		expect({
+			compared: 'lines' in run && run.lines.some((line) => line.against === merged.name),
+			settled: 'settled' in run ? run.settled.map((lot) => lot.name) : undefined,
+			landed: existsSync(join(merged.lotFolder, 'landed.json')),
+		}).toEqual({ compared: false, settled: [merged.name], landed: false })
+	})
+
 	it('the forecast of a damaged lot -> a refusal value naming its damage, no throw, nothing written', () => {
 		const workspace = createForecastWorkspace()
 		const lot = startForecastLot({ workspace, feature: 'lot-a' })

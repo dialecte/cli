@@ -13,7 +13,12 @@ import {
 } from '../../../test/handover-store-scenario.ts'
 import { temporaryFolder } from '../../../test/scratch-repository.ts'
 import { HANDOVER_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
-import { handoverStoreOf, nextHandoverName, resolveHandoverArgument } from './handover-store.ts'
+import {
+	handoverStoreOf,
+	nextHandoverName,
+	recordHandoverState,
+	resolveHandoverArgument,
+} from './handover-store.ts'
 import { COMMIT_SCRIPT_FILE, HANDOVER_STORE_FOLDER } from './handover.constants.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -139,5 +144,26 @@ describe('resolveHandoverArgument', () => {
 			resolveHandoverArgument({ argument: 'sub/registered', store, cwd }),
 			resolveHandoverArgument({ argument: join(cwd, 'plain'), store, cwd }),
 		]).toEqual([join(cwd, 'sub', 'registered'), join(cwd, 'plain')])
+	})
+})
+
+describe('recordHandoverState', { timeout: HANDOVER_CASE_TIMEOUT }, () => {
+	it('an entry already in the state asked -> nothing written, its temporary file never made', () => {
+		const store = join(temporaryFolder('dialecte-store-state-'), HANDOVER_STORE_FOLDER)
+		const folder = join(store, '..', STORE_FIRST_NAME)
+		makeEntry({ store, name: STORE_FIRST_NAME, folder })
+		recordHandoverState({ store, folder, state: 'committed' })
+		const written: string[] = []
+
+		recordHandoverState({
+			store,
+			folder,
+			state: 'committed',
+			afterTemporaryWritten: function seen(path) {
+				written.push(path)
+			},
+		})
+
+		expect(written).toEqual([])
 	})
 })

@@ -32,7 +32,7 @@ import {
 	readCheckedLotState,
 	registryOfLotFolder,
 } from '../lib/store/lot-records.ts'
-import { lotState } from '../lib/store/lot-state.ts'
+import { isClosedState, lotState } from '../lib/store/lot-state.ts'
 import { noLotRefusal, requiredLotOf } from '../lib/store/resolve-lot.ts'
 import { scopeChangesText } from '../lib/store/scope-changes.ts'
 import { STACK_STATUS_LINE } from '../lib/store/stack.constants.ts'
@@ -57,6 +57,7 @@ import type {
 	LinkCheck,
 	LotIdentity,
 	LotStateInput,
+	LotStateName,
 	LotStateReport,
 	WorktreeCheck,
 } from '../lib/store/store.types.ts'
@@ -175,7 +176,7 @@ export function lotStatusOfInput(params: {
 		effort: effortStatusOf({ identity, lotFolder }),
 		simulated: identity.simulated,
 		scenario: identity.scenario,
-		checks: checksOf({ identity, lotFolder }),
+		checks: checksOf({ identity, lotFolder, state: report.state }),
 		notes: otherFolderNotes(params),
 		scope: lotScopeOf({ lotFolder }),
 		next,
@@ -286,12 +287,19 @@ function questionsOf(params: {
 
 /**
  * The worktree and its link as they are on disk; null for a simulated lot (no worktree), which carries instead the
- * findings its start recorded (`wouldRefuse`); a real lot refuses at its start, so it holds none.
+ * findings its start recorded (`wouldRefuse`); a real lot refuses at its start, so it holds none. A closed lot whose
+ * worktree is gone reads `removed`, no link checked: a close removes it, nothing to warn about.
  */
-function checksOf(params: { identity: LotIdentity; lotFolder: string }): LotStatusJson['checks'] {
+function checksOf(params: {
+	identity: LotIdentity
+	lotFolder: string
+	state: LotStateName
+}): LotStatusJson['checks'] {
 	const { identity } = params
 	if (identity.worktree === null)
 		return { worktree: null, link: null, wouldRefuse: identity.wouldRefuse ?? [] }
+	if (isClosedState(params.state) && !isFolder(identity.worktree))
+		return { worktree: 'removed', link: null, wouldRefuse: [] }
 	const worktree: WorktreeCheck = isFolder(identity.worktree) ? 'present' : 'missing'
 	return {
 		worktree,
@@ -455,6 +463,6 @@ function belowLineOf(status: LotStatusJson): string | undefined {
 /** The checks that are not `present`, as `worktree missing, link dangling`; empty when all are. */
 function checksText(checks: LotStatusJson['checks']): string {
 	if (checks.worktree === 'missing') return 'worktree missing'
-	if (checks.link === null || checks.link === 'present') return ''
+	if (checks.worktree === 'removed' || checks.link === null || checks.link === 'present') return ''
 	return `link ${checks.link}`
 }

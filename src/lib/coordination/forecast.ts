@@ -11,6 +11,7 @@ import { findBaseBranchRef } from '../gate/gate-base.ts'
 import { belowGitFloor, gitVersionOf } from '../git.ts'
 import { readStoreEntries } from '../handover/handover-store-read.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
+import { mergedOfflineOf } from '../landing/met-lots.ts'
 import { readPackageJson } from '../package-json.ts'
 import {
 	commonFolderOfLotFolder,
@@ -48,6 +49,7 @@ import type {
 	ForecastLine,
 	ForecastLotParams,
 	ForecastOutcome,
+	ForecastSettled,
 	ForecastSide,
 	ForecastVerdict,
 	OpenLot,
@@ -71,7 +73,7 @@ export function forecastLot(params: ForecastLotParams): ForecastOutcome {
 	const entries = readStoreEntries(registry)
 	const selfLot = forecastableLotOf({ lotFolder, registry, entries })
 	if ('refusal' in selfLot) return selfLot
-	const others = listLotFolderNames({ store: dirname(lotFolder) })
+	const openOthers = listLotFolderNames({ store: dirname(lotFolder) })
 		.filter(
 			(name) =>
 				!params.mainOnly &&
@@ -82,6 +84,13 @@ export function forecastLot(params: ForecastLotParams): ForecastOutcome {
 			const other = openLotOf({ lotFolder: join(dirname(lotFolder), name), registry, entries })
 			return other === undefined ? [] : [other]
 		})
+	// a lot that merged on the host but was never closed holds nothing: left out, named (read only, no host)
+	const merged = openOthers.flatMap(function mergedOf(other): ForecastSettled[] {
+		if ('damage' in other) return []
+		const read = mergedOfflineOf({ lotFolder: join(dirname(lotFolder), other.name) })
+		return read === undefined ? [] : [read]
+	})
+	const others = openOthers.filter((other) => !merged.some((lot) => lot.name === other.name))
 	const outcomes = comparisonsOf({
 		self: selfLot,
 		others,
@@ -101,6 +110,7 @@ export function forecastLot(params: ForecastLotParams): ForecastOutcome {
 		lines,
 		verdict: worstVerdictOf(lines.map((line) => line.verdict)),
 		durationMs: Math.round(performance.now() - startedAt),
+		settled: merged,
 	}
 }
 

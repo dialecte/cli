@@ -21,7 +21,9 @@ import { startStep } from '../lib/events/record-step.ts'
 import { realPathThroughAncestors } from '../lib/file-system.ts'
 import { branchExists } from '../lib/git.ts'
 import { registryOfCommonFolder } from '../lib/handover/handover-store-read.ts'
+import { createHost } from '../lib/host/select-host.ts'
 import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
+import { lazyHostOf, settleMetLots, withSettledLines } from '../lib/landing/met-lots.ts'
 import { JSON_FLAG } from '../lib/parse-invocation.constants.ts'
 import { jsonOf, textOf } from '../lib/print/print.ts'
 import { readCliVersion } from '../lib/read-cli-version.ts'
@@ -114,6 +116,7 @@ import {
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { DesignNeed } from '../lib/design/design.types.ts'
 import type { StepHandle, WorktreeAddParts } from '../lib/events/record-step.types.ts'
+import type { MetLotsSettled } from '../lib/landing/met-lots.types.ts'
 import type { RiskClass, RiskDerivation } from '../lib/risk/risk.types.ts'
 import type { BriefEffort, CheckedBrief } from '../lib/store/brief.types.ts'
 import type { KeepLine } from '../lib/store/keep-decisions.types.ts'
@@ -161,7 +164,8 @@ export function startLot(params: {
 
 /**
  * The checks of a start up to its effort: the words, the brief, `--by` and `--reason`, the store list, the scope's
- * risk class. Nothing written.
+ * risk class. Nothing written, but the landed facts of the lots the scope met that merged on the host (a real start,
+ * neither a dry run nor a simulated one): an exit after the brief check names them first.
  */
 export function prepareStart(params: {
 	cwd: string
@@ -169,6 +173,25 @@ export function prepareStart(params: {
 	now?: Date
 	seams?: StartSeams
 }): PrepareStartResult {
+	const prepared = prepareStartChecks(params)
+	if ('prepared' in prepared) return prepared
+	return {
+		exit: withSettledLines({
+			result: prepared.exit,
+			settle: 'settle' in prepared ? prepared.settle : undefined,
+			json: params.argv.includes(JSON_FLAG),
+		}),
+	}
+}
+
+// dialecte-allow duplicate-read: the body of prepareStart, which names the settled lots on its exits
+/** The checks of `prepareStart`; an exit after the brief check carries what the settle of the met lots found. */
+function prepareStartChecks(params: {
+	cwd: string
+	argv: string[]
+	now?: Date
+	seams?: StartSeams
+}): PrepareStartResult | { exit: CommandResult; settle: MetLotsSettled | undefined } {
 	const now = params.now ?? new Date()
 	const read = readArguments({
 		argv: params.argv,
@@ -218,10 +241,19 @@ export function prepareStart(params: {
 		overlapOk,
 		stackOn,
 		now: params.now,
+		settleMet: function settleMet(met) {
+			return settleMetLots({
+				...met,
+				host: lazyHostOf({ given: seams.host, make: createHost }),
+				now,
+				write: !read.flags.has('dry-run') && simulation === undefined,
+			})
+		},
 	})
 	if (checked.stackRefusal !== undefined)
-		return { exit: lotRefusalExit({ lines: [checked.stackRefusal], json }) }
-	if (!checked.checked) return { exit: refusedOutput({ refused: checked.refused, json }) }
+		return { exit: lotRefusalExit({ lines: [checked.stackRefusal], json }), settle: checked.settle }
+	if (!checked.checked)
+		return { exit: refusedOutput({ refused: checked.refused, json }), settle: checked.settle }
 	const { brief, stack } = stackedBriefOf(checked.checked)
 	const wordRefusal = goAheadRefusalOf({
 		brief,
@@ -230,7 +262,8 @@ export function prepareStart(params: {
 		now,
 		briefFile: resolve(params.cwd, briefPath),
 	})
-	if (wordRefusal) return { exit: lotRefusalExit({ lines: [wordRefusal], json }) }
+	if (wordRefusal)
+		return { exit: lotRefusalExit({ lines: [wordRefusal], json }), settle: checked.settle }
 	const keep = startKeepOf({
 		brief,
 		flag: read.values.get('keep'),
@@ -238,10 +271,15 @@ export function prepareStart(params: {
 		now,
 		briefFile: resolve(params.cwd, briefPath),
 	})
-	if (typeof keep === 'string') return { exit: lotRefusalExit({ lines: [keep], json }) }
+	if (typeof keep === 'string')
+		return { exit: lotRefusalExit({ lines: [keep], json }), settle: checked.settle }
 	// the store list is refused for a dry run too: it says what a real start would meet
 	const listRefusal = storeListRefusal({})
-	if (listRefusal) return { exit: errorOutput({ exitCode: 2, message: listRefusal, json }) }
+	if (listRefusal)
+		return {
+			exit: errorOutput({ exitCode: 2, message: listRefusal, json }),
+			settle: checked.settle,
+		}
 	let derivation: RiskDerivation
 	try {
 		derivation = deriveStartRiskClass({
@@ -249,7 +287,7 @@ export function prepareStart(params: {
 			scope: brief.scope,
 		})
 	} catch (error) {
-		return { exit: thrownOutput({ error, json }) }
+		return { exit: thrownOutput({ error, json }), settle: checked.settle }
 	}
 	return {
 		prepared: {
@@ -266,6 +304,7 @@ export function prepareStart(params: {
 			derivation,
 			stack,
 			keep,
+			settle: checked.settle,
 		},
 	}
 }
@@ -454,6 +493,18 @@ function startDesignNeedOf(params: { brief: CheckedBrief }): DesignNeed {
  * start itself.
  */
 export function finishStart(params: {
+	prepared: PreparedStart
+	asked?: BriefEffort
+}): CommandResult {
+	return withSettledLines({
+		result: finishStartChecked(params),
+		settle: params.prepared.settle,
+		json: params.prepared.json,
+	})
+}
+
+/** The start past its checks (`finishStart`), before the settled lots are named. */
+function finishStartChecked(params: {
 	prepared: PreparedStart
 	asked?: BriefEffort
 }): CommandResult {

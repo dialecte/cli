@@ -6,6 +6,7 @@ import { SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { lostWorkText, workSinceLandingText } from '../landing/lost-work.ts'
 import { landedLineOf } from '../landing/lot-landing.ts'
+import { isClosedState } from '../store/lot-state.ts'
 import { PRUNE_PLAN_TEXTS } from './plan-lot-prune.constants.ts'
 
 import type { HostNouns } from '../host/host.types.ts'
@@ -129,7 +130,7 @@ function planLot(params: { repository: RepositoryFacts; lot: LotFacts }): LotPla
 function holdReason(lot: LotFacts): string | undefined {
 	if (lot.kept !== undefined) return lot.kept
 	if (lot.state === 'damaged') return lot.damage ?? 'damaged'
-	if (lot.state === 'committed' || lot.state === 'canceled') return undefined
+	if (isClosedState(lot.state)) return undefined
 	return fillMessage({
 		template: PRUNE_PLAN_TEXTS.openLot,
 		values: { lot: lot.lot, state: lot.state },

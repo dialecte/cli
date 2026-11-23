@@ -24,11 +24,11 @@ import {
 	readCheckedLotState,
 	registryOfLotFolder,
 } from '../lib/store/lot-records.ts'
-import { lotState } from '../lib/store/lot-state.ts'
+import { isClosedState, lotState } from '../lib/store/lot-state.ts'
 import { folderPlanEntryIds } from '../lib/store/public-text.ts'
 import { noLotRefusal, requiredLotOf } from '../lib/store/resolve-lot.ts'
 import { ownWorktreeRefusal, recordedByOf } from '../lib/store/signer-rules.ts'
-import { LOTS_KEEPING_NOTHING, NEXT_COMMANDS, STORE_FILES } from '../lib/store/store.constants.ts'
+import { NEXT_COMMANDS, STORE_FILES } from '../lib/store/store.constants.ts'
 import {
 	KEEP_CHANGED_KIND,
 	KEEP_VERB_FLAGS,
@@ -244,7 +244,7 @@ function pruneNextOf(params: { target: KeepTarget }): string | null {
 	const { lotFolder, name, checked } = params.target
 	if ('damage' in checked) return null
 	const { state } = lotState(checked.input)
-	if (!LOTS_KEEPING_NOTHING.includes(state)) return null
+	if (!isClosedState(state)) return null
 	const { identity } = checked.input
 	const left = lotItemsLeftOf({ lotFolder, worktree: identity.worktree, branch: identity.branch })
 	return left.worktree || left.branch

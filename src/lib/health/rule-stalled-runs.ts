@@ -1,7 +1,7 @@
 import { INTERRUPTED_OUTCOME } from '../events/unrecorded-steps.constants.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { formatDuration } from '../progress/format-duration.ts'
-import { LOTS_KEEPING_NOTHING } from '../store/store.constants.ts'
+import { isClosedState } from '../store/lot-state.ts'
 import {
 	HEAVY_STEP_STALL_MS,
 	RESUME_COMMANDS,
@@ -40,7 +40,7 @@ export function findStalledRuns(params: {
 /** The lot has a state and keeps something: neither committed nor canceled (a damaged lot is open). */
 function isOpenLot(params: { lot: HealthLot }): boolean {
 	const { state } = params.lot
-	return state !== undefined && !LOTS_KEEPING_NOTHING.some((closed) => closed === state)
+	return state !== undefined && !isClosedState(state)
 }
 
 /** The finding the lot's last run event gives, if it stalled. */
