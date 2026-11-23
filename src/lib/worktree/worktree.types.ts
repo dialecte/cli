@@ -133,18 +133,72 @@ export type PruneItem = {
 		| 'pool left-over'
 	/** The worktree or hand-over path, the branch name. */
 	name: string
+	/** A worktree on a branch, kept or not: its branch. */
+	branch?: string
 	/** Absent: removed by `command`. */
 	kept?: string
 	/** The removal, with its absolute `cd`. */
 	command?: string
 	/**
-	 * A rehearsal clone let go: the folder of the lot that owned it at the plan, whose keep `--yes` reads again on that
-	 * folder right before the move (gone since the plan keeps).
+	 * A rehearsal clone let go: the folder of the lot that owned it at the plan, whose keep the plan `--yes` takes after
+	 * the confirmation reads again on that folder (gone since the plan keeps).
 	 */
 	owner?: string
 }
 
-/** What `worktree prune` decides a rehearsal clone on, read once per plan and once per `--yes` execution. */
+/** What `worktree prune` plans with besides the workspace: the same for the plan and the plan taken again at `--yes`. */
+export type PrunePlanParams = {
+	/** Where rehearsal clones are looked for (rehearsal folders are made there). */
+	scratchRoot: string
+	/**
+	 * Where earlier cli versions made rehearsal clones (the system's temporary folder), looked in too when it is not
+	 * `scratchRoot`.
+	 */
+	formerScratchRoot?: string
+	/** The cli's scratch root, whose leaked folders go to the trash (`scratchRoot` of the scratch module); default: none read. */
+	scratchFolderRoot?: string
+	/** The clock a pool left-over's age, a scratch folder's and `--reclaim`'s idleness are read against; default: now. */
+	now?: Date
+	/**
+	 * Lists the processes and their working folders, for every keep rule that reads them (the tests stand in for it).
+	 * `worktree prune` reads it through `readProcesses`: a lister that throws reads as the processes not known.
+	 * `--reclaim` calls it as it is: a lister that throws ends the run. Default: the system's.
+	 */
+	listProcesses?: () => ProcessFolder[] | string
+	/** Reads a pid's start time for a rehearsal clone's run (the tests stand in for it); default `processStartTime`. */
+	readStartTime?: (pid: number) => string | undefined
+}
+
+/** A removal of a `worktree prune` plan, with the repository whose plan holds it (undefined: a clone or a folder). */
+export type PlannedRemoval = { repository: string | undefined; item: PruneItem }
+
+/**
+ * A planned removal with its presence read after the confirmation: its folder, or its branch's ref, is still there (a
+ * read that fails counts as there).
+ */
+export type PlannedRemovalAtMove = PlannedRemoval & { present: boolean }
+
+/** What `itemAtMove` decides a planned removal on, everything read after the confirmation. */
+export type ItemAtMoveInput = {
+	removal: PlannedRemovalAtMove
+	/** The plan taken again after the confirmation. */
+	fresh: WorkspacePrunePlan
+	/**
+	 * Per repository, the branches of the planned worktrees whose own outcome was neither go nor gone: a planned branch
+	 * among them stays with its worktree.
+	 */
+	stayedWorktreeBranches: ReadonlyMap<string, ReadonlySet<string>>
+	/** Per repository, the gone worktrees the first plan's `git worktree prune` covered. */
+	plannedGoneWorktrees: ReadonlyMap<string, ReadonlySet<string>>
+}
+
+/** A planned removal decided after the confirmation: its command runs, it is gone since the plan, or it stays (why). */
+export type ItemAtMove =
+	| { outcome: 'go'; command: string }
+	| { outcome: 'gone'; line: string }
+	| { outcome: 'kept'; line: string }
+
+/** What `worktree prune` decides a rehearsal clone on, read once per plan. */
 export type PruneCloneReads = {
 	/** The processes and their working folders, or why they are not known. */
 	processes: readonly ProcessFolder[] | string

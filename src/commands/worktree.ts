@@ -24,6 +24,7 @@ import { getArg, hasFlag, positionalArguments } from '../lib/config.ts'
 import { LIST_DEPTH } from '../lib/handover/handover.constants.ts'
 import { findHandoverFolders } from '../lib/handover/list-handovers.ts'
 import { machineScratchRoots } from '../lib/handover/rehearse-handover.ts'
+import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { jsonOf, printOut } from '../lib/print/print.ts'
 import { shellQuote } from '../lib/shell-quote.ts'
 import { COMMIT_PLAN_FOLDER, WORKTREES_FOLDER } from '../lib/workspace.constants.ts'
@@ -33,16 +34,14 @@ import {
 	nodeModulesDetailOf,
 	refuseRepositoryPath,
 } from '../lib/worktree/add-worktree.ts'
-import { listProcessFolders } from '../lib/worktree/process-folders.ts'
 import {
-	decideCloneAgain,
+	decideRemovalsAtMove,
 	executeReclaim,
+	isPlannedRemovalPresent,
 	planPrune,
 	planReclaim,
 	reclaimItemLine,
 	reclaimTotalLine,
-	readPruneCloneReads,
-	trashPoolLeftOver,
 	scratchTrashOf,
 	trashPrunedFolder,
 } from '../lib/worktree/prune-worktrees.ts'
@@ -50,6 +49,7 @@ import { spawnDetached } from '../lib/worktree/trash.ts'
 import {
 	NODE_MODULES_PROBLEMS_SHOWN,
 	PACKAGE_LOCK_FILE,
+	PRUNE_AT_MOVE_TEXTS,
 	RECLAIM_OLDER_THAN_DAYS,
 	RECLAIM_OLDER_THAN_PATTERN,
 	RECLAIM_USAGE,
@@ -60,11 +60,12 @@ import type { CommandResult } from '../lib/command-result.types.ts'
 import type {
 	AddedWorktree,
 	BackgroundSpawner,
+	ItemAtMove,
 	NodeModulesSource,
 	NpmRunner,
-	PruneCloneReads,
+	PlannedRemoval,
 	PruneItem,
-	ProcessFolder,
+	PrunePlanParams,
 	PrunePlan,
 	SiblingLink,
 	WorkspacePrunePlan,
@@ -128,32 +129,16 @@ export function runWorktreeAdd(params: {
 	return { exitCode: 0, output: renderCard({ card: worktreeCard(added), colour: params.colour }) }
 }
 
-export async function runWorktreePrune(params: {
-	argv: string[]
-	cwd: string
-	/** Where rehearsal clones are looked for. */
-	scratchRoot: string
-	/**
-	 * Where earlier cli versions made rehearsal clones (the system's temporary folder), looked in too when
-	 * it is not `scratchRoot`.
-	 */
-	formerScratchRoot?: string
-	/** The cli's scratch root, whose leaked folders go to the trash; default: none read. */
-	scratchFolderRoot?: string
-	isTerminal: boolean
-	confirm: (question: string) => Promise<boolean>
-	/** The clock `--reclaim` measures idleness from, and a pool left-over's age; default: now. */
-	now?: Date
-	/**
-	 * Lists the processes and their working folders for `--reclaim` and the pool left-overs (the tests stand in for it);
-	 * default: the system's.
-	 */
-	listProcesses?: () => ProcessFolder[] | string
-	/** Starts the background removals of the trash, `--reclaim`'s and a pool left-over's (the tests record them); default: `spawnDetached`. */
-	spawner?: BackgroundSpawner
-	/** Reads a pid's start time for a rehearsal clone's run (the tests stand in for it); default `processStartTime`. */
-	readStartTime?: (pid: number) => string | undefined
-}): Promise<CommandResult> {
+export async function runWorktreePrune(
+	params: PrunePlanParams & {
+		argv: string[]
+		cwd: string
+		isTerminal: boolean
+		confirm: (question: string) => Promise<boolean>
+		/** Starts the background removals of the trash, `--reclaim`'s and a pool left-over's (the tests record them); default: `spawnDetached`. */
+		spawner?: BackgroundSpawner
+	},
+): Promise<CommandResult> {
 	const { argv } = params
 	if (hasFlag(argv, 'reclaim')) return runWorktreeReclaim(params)
 	if (hasFlag(argv, 'dry-run') || hasFlag(argv, 'older-than'))
@@ -165,28 +150,10 @@ export async function runWorktreePrune(params: {
 		params.cwd,
 		getArg(argv, 'root') ?? findWorkspace(params.cwd) ?? params.cwd,
 	)
-	const plan = planPrune({
-		workspace,
-		handoverFolders: findHandoverFolders({
-			folder: join(workspace, COMMIT_PLAN_FOLDER),
-			depth: LIST_DEPTH,
-		}),
-		scratchRoot: params.scratchRoot,
-		formerScratchRoot: params.formerScratchRoot,
-		scratchFolderRoot: params.scratchFolderRoot,
-		now: params.now,
-		listProcesses: params.listProcesses,
-		readStartTime: params.readStartTime,
-	})
-	const removals = [
-		...plan.repositories.flatMap((repository) => repository.items),
-		...plan.scratch,
-		...plan.poolLeftOver,
-	]
-		.filter((item) => item.command)
-		.sort((left, right) => removalOrder(left) - removalOrder(right))
+	const plan = planWorkspacePrune({ workspace, params, ownersAtPlan: undefined })
+	const removals = removalsOf(plan)
 	if (hasFlag(argv, 'json')) return { exitCode: 0, output: jsonOf(plan, 2) }
-	const report = renderPrunePlan({ plan, removals })
+	const report = renderPrunePlan({ plan, removals: removals.map((removal) => removal.item) })
 	if (!hasFlag(argv, 'yes') || removals.length === 0)
 		return resultOf({
 			exitCode: 0,
@@ -206,67 +173,11 @@ export async function runWorktreePrune(params: {
 	if (!(await params.confirm(`Remove these ${removals.length} item(s)? [y/N] `)))
 		return resultOf({ exitCode: 0, lines: [...report, 'Nothing removed.'] })
 	const worktreesFolder = join(workspace, WORKTREES_FOLDER)
-	const listProcesses = params.listProcesses ?? listProcessFolders
-	let processes: readonly ProcessFolder[] | string | undefined
-	/** The processes, listed once for the whole run and only when a pool left-over is about to go. */
-	function listProcessesOnce(): readonly ProcessFolder[] | string {
-		processes ??= listProcesses()
-		return processes
-	}
-	let cloneReads: PruneCloneReads | undefined
-	/** What a rehearsal clone is decided on again, read after the confirmation, once for the run, at its first clone. */
-	function cloneReadsOnce(): PruneCloneReads {
-		cloneReads ??= readPruneCloneReads({
-			workspace,
-			scratchRoots: [
-				...new Set([params.scratchRoot, params.formerScratchRoot ?? params.scratchRoot]),
-			],
-			clones: removals.filter((item) => item.kind === 'rehearsal clone').map((item) => item.name),
-			listProcesses,
-		})
-		return cloneReads
-	}
-	const outcomes = removals.map(function remove(item) {
-		// a park that never finished goes to the trash, its keep rules read again just before
-		if (item.kind === 'pool left-over')
-			return trashPoolLeftOver({
-				folder: item.name,
-				worktreesFolder,
-				now: params.now ?? new Date(),
-				spawner: params.spawner ?? spawnDetached,
-				listProcesses: listProcessesOnce,
-			})
-		// a hand-over folder goes to the workspace's trash: the move its line shows, never a removal in place
-		if (item.kind === 'hand-over')
-			return trashPrunedFolder({
-				folder: item.name,
-				worktreesFolder,
-				now: params.now ?? new Date(),
-				spawner: params.spawner ?? spawnDetached,
-			})
-		// a rehearsal clone is decided again right before its move, on what is read after the confirmation
-		const keptAgain =
-			item.kind === 'rehearsal clone'
-				? decideCloneAgain({ item, reads: cloneReadsOnce, readStartTime: params.readStartTime })
-				: undefined
-		if (keptAgain !== undefined) return keptAgain
-		// a rehearsal clone or a scratch folder goes to the trash its line names: the workspace's for its own scratch
-		// root, else the scratch root's own (a move never crosses file systems)
-		if (item.kind === 'rehearsal clone' || item.kind === 'scratch folder') {
-			const trash = scratchTrashOf({ root: dirname(item.name), worktreesFolder })
-			return trashPrunedFolder({
-				folder: item.name,
-				worktreesFolder: dirname(trash),
-				trashName: basename(trash),
-				now: params.now ?? new Date(),
-				spawner: params.spawner ?? spawnDetached,
-			})
-		}
-		const result = spawnSync('sh', ['-c', item.command ?? ''], { encoding: 'utf8' })
-		return result.status === 0
-			? `✓ ${item.command}`
-			: `✗ ${item.command}: ${(result.stderr || result.stdout).trim()}`
-	})
+	// every planned removal decided again, by the plan's own rules, on what is read after the confirmation
+	const decisions = decideAfterConfirmation({ workspace, params, removals })
+	const outcomes = removals.map((removal, index) =>
+		moveRemoval({ removal, decided: decisions[index], worktreesFolder, params }),
+	)
 	return resultOf({
 		exitCode: outcomes.some((line) => line.startsWith('✗')) ? 1 : 0,
 		lines: [...report, ...outcomes],
@@ -274,18 +185,127 @@ export async function runWorktreePrune(params: {
 }
 
 /**
+ * A planned removal carried out on its decision after the confirmation: its line. Only a `go` moves: a folder to the
+ * trash its line names (never a removal in place), a worktree or branch by its command.
+ */
+function moveRemoval(input: {
+	removal: PlannedRemoval
+	decided: ItemAtMove
+	worktreesFolder: string
+	params: Pick<Parameters<typeof runWorktreePrune>[0], 'now' | 'spawner'>
+}): string {
+	const { decided, worktreesFolder, params } = input
+	if (decided.outcome !== 'go') return decided.line
+	const { item } = input.removal
+	// a hand-over folder or a pool left-over goes to the workspace's trash
+	if (item.kind === 'hand-over' || item.kind === 'pool left-over')
+		return trashPrunedFolder({
+			folder: item.name,
+			worktreesFolder,
+			now: params.now ?? new Date(),
+			spawner: params.spawner ?? spawnDetached,
+		})
+	// a rehearsal clone or a scratch folder goes to the trash its line names: the workspace's for its own scratch
+	// root, else the scratch root's own (a move never crosses file systems)
+	if (item.kind === 'rehearsal clone' || item.kind === 'scratch folder') {
+		const trash = scratchTrashOf({ root: dirname(item.name), worktreesFolder })
+		return trashPrunedFolder({
+			folder: item.name,
+			worktreesFolder: dirname(trash),
+			trashName: basename(trash),
+			now: params.now ?? new Date(),
+			spawner: params.spawner ?? spawnDetached,
+		})
+	}
+	const result = spawnSync('sh', ['-c', decided.command], { encoding: 'utf8' })
+	return result.status === 0
+		? `✓ ${decided.command}`
+		: `✗ ${decided.command}: ${(result.stderr || result.stdout).trim()}`
+}
+
+/** The plan of `worktree prune` over `workspace`, its hand-over folders found now. */
+function planWorkspacePrune(input: {
+	workspace: string
+	params: PrunePlanParams
+	ownersAtPlan: ReadonlyMap<string, string> | undefined
+}): WorkspacePrunePlan {
+	const { workspace, params } = input
+	return planPrune({
+		...params,
+		workspace,
+		handoverFolders: findHandoverFolders({
+			folder: join(workspace, COMMIT_PLAN_FOLDER),
+			depth: LIST_DEPTH,
+		}),
+		ownersAtPlan: input.ownersAtPlan,
+	})
+}
+
+/** Every item of the plan with a removal command, with its repository, in `removalOrder`. */
+function removalsOf(plan: WorkspacePrunePlan): PlannedRemoval[] {
+	return [
+		...plan.repositories.flatMap((repository) =>
+			repository.items.map((item) => ({ repository: repository.repository, item })),
+		),
+		...[...plan.scratch, ...plan.poolLeftOver].map((item) => ({ repository: undefined, item })),
+	]
+		.filter((removal) => removal.item.command)
+		.sort((left, right) => removalOrder(left.item) - removalOrder(right.item))
+}
+
+/**
+ * The planned removals decided again after the confirmation: the hand-over folders found again and the plan taken
+ * again (the clones' owners at the plan given), each removal's presence read, then `decideRemovalsAtMove`. A search or a
+ * plan that throws decides nothing: every removal is kept, not decided again.
+ */
+function decideAfterConfirmation(input: {
+	workspace: string
+	params: PrunePlanParams
+	removals: readonly PlannedRemoval[]
+}): ItemAtMove[] {
+	const { removals } = input
+	try {
+		const fresh = planWorkspacePrune({
+			workspace: input.workspace,
+			params: input.params,
+			ownersAtPlan: new Map(
+				removals.flatMap(({ item }) =>
+					item.kind === 'rehearsal clone' && item.owner !== undefined
+						? [[item.name, item.owner] as const]
+						: [],
+				),
+			),
+		})
+		return decideRemovalsAtMove({
+			removals: removals.map((removal) => ({
+				...removal,
+				present: isPlannedRemovalPresent(removal),
+			})),
+			fresh,
+		})
+	} catch (error) {
+		const reason = (error instanceof Error ? error.message : String(error)).trim()
+		return removals.map(({ item }) => ({
+			outcome: 'kept',
+			line: fillMessage({
+				template: PRUNE_AT_MOVE_TEXTS.notDecided,
+				values: { name: item.name, reason },
+			}),
+		}))
+	}
+}
+
+/**
  * `worktree prune --reclaim [--dry-run] [--older-than <days>]`: one line per worktree, the moves done (none with
  * `--dry-run`), the total (worktrees, files, size) at the end.
  */
-function runWorktreeReclaim(params: {
-	argv: string[]
-	cwd: string
-	scratchRoot: string
-	formerScratchRoot?: string
-	now?: Date
-	listProcesses?: () => ProcessFolder[] | string
-	spawner?: BackgroundSpawner
-}): CommandResult {
+function runWorktreeReclaim(
+	params: Pick<PrunePlanParams, 'scratchRoot' | 'formerScratchRoot' | 'now' | 'listProcesses'> & {
+		argv: string[]
+		cwd: string
+		spawner?: BackgroundSpawner
+	},
+): CommandResult {
 	const { argv } = params
 	const olderThanDays = readOlderThanDays(argv)
 	if (olderThanDays === undefined)

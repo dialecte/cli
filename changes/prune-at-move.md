@@ -1,0 +1,11 @@
+### Changed
+
+- **Breaking:** `dialecte worktree prune --yes` decides every item again after the confirmation - worktree, branch, committed hand-over folder, rehearsal clone, scratch and rehearsal hook folder, pool left-over - by the same rules as the plan, on a plan taken again right after the confirmation (the hand-overs found again, the processes, links, lots and markers read then, once, before the first move). An item goes only when that plan removes it with the same command; any other prints `✗ <name> kept: <why>`, `✗ <name>: gone since the plan`, `✗ <name> kept: not offered now`, `✗ <name> kept: removed another way now: <command>`, `✗ <branch> kept: its worktree stays`, `✗ <worktree> kept: git worktree prune would now also unregister <worktrees>` or `✗ <name>: not decided again: <reason>`, nothing is moved for it and the command exits 1, where it used to run the planned command and exit 0. An item only the second plan offers is never removed nor printed. A change made between two moves of one run is not seen; pool left-overs and rehearsal clones, read again right before their own move until now, are read at that one point.
+- **Breaking:** a scratch folder, a rehearsal hook folder or a committed hand-over folder a process works in is now kept at the plan (`a process works in it: pid <pid>`), and kept with why when the processes cannot be listed; the processes are asked after every other rule.
+- `dialecte worktree prune --json` gives every worktree item on a branch its `branch`, kept or not.
+- The `worktree` page lists the exit codes of `worktree prune`.
+
+### Fixed
+
+- `dialecte worktree prune --yes` no longer throws when the process lister throws after the confirmation: a pool left-over it would move is kept with `the processes are not known (<reason>)`, exit 1.
+- `dialecte worktree prune --yes` no longer removes a worktree, deletes a branch or moves a folder kept since the plan: a worktree a process entered, changed or wrote an ignored file in, a branch a lot started on or a hand-over became pending on, a hand-over folder a process entered or a link reaches, a scratch or hook folder a process entered. It no longer deletes a branch whose worktree stayed, nor runs a `git worktree prune` that would unregister a worktree no confirmation covered, and the same branch name in two repositories is decided in each one.
