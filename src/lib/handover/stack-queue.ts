@@ -1,5 +1,6 @@
 /**
- * How `lot approve` queues a lot (R1-16): its change request alone, or a native stack up to it. A lot started on another
+ * How `lot approve` queues a lot (R1-16): its change request alone, or a native stack up to it. `stackRouteOf` decides
+ * the route offline from the stack record; `stackQueueOf` then asks the host only about a stacked lot's parent. A lot started on another
  * (its stack.json) whose change request still merges into the parent's branch queues as a stack only on a host with
  * stacks and only once the parent's change request is queued, so nothing a person has not approved joins the queue; a
  * parent merged, not queued, or a host without stacks is refused. A change request retargeted to the base queues alone.
@@ -15,23 +16,23 @@ import { readStack } from '../store/stack.ts'
 import { STACK_QUEUE_LINES } from './stack-queue.constants.ts'
 
 import type { HostAdapter, ChangeRequest } from '../host/host.types.ts'
-import type { StackQueueRoute } from './stack-queue.types.ts'
+import type { StackRoute } from './stack-queue.types.ts'
 
 /**
- * The queue route of the lot in `lotFolder` whose change request is `changeRequest`; the refusal when it cannot queue now.
- * The host is asked only for a stacked lot whose change request merges into its parent's branch.
+ * The route of the lot in `lotFolder` whose change request is `changeRequest`, read offline from its stack record: alone
+ * when it has none or merges into another branch than its parent's (retargeted once the parent merged); stacked on its
+ * parent when it merges into the parent's branch; the refusal when the record is damaged, the parent's records do not
+ * read, or the host does not say what the change request merges into.
  *
- * @intent queue a stacked lot only behind a queued parent
+ * @intent decide offline whether a lot queues alone or on its parent
  * @internal
  */
-export function stackQueueOf(params: {
+export function stackRouteOf(params: {
 	lot: string
 	lotFolder: string
-	worktree: string
-	host: HostAdapter
 	changeRequest: ChangeRequest
-}): StackQueueRoute | { refusal: string } {
-	const { lot, host, changeRequest } = params
+}): StackRoute {
+	const { lot, changeRequest } = params
 	const record = readStack({ lotFolder: params.lotFolder })
 	if (record === undefined) return { route: 'single' }
 	if ('damage' in record)
@@ -40,8 +41,7 @@ export function stackQueueOf(params: {
 			values: { lot, damage: record.damage },
 		})
 	const { parent } = record
-	const parentFolder = join(dirname(params.lotFolder), parent)
-	const identity = readIdentity({ lotFolder: parentFolder })
+	const identity = readIdentity({ lotFolder: join(dirname(params.lotFolder), parent) })
 	if (identity === undefined)
 		return refusalOf({ template: STACK_QUEUE_LINES.noParent, values: { lot, parent } })
 	if (changeRequest.base === undefined)
@@ -49,8 +49,26 @@ export function stackQueueOf(params: {
 			template: STACK_QUEUE_LINES.noBase,
 			values: { lot, parent, number: String(changeRequest.number) },
 		})
-	// retargeted to the base once the parent merged: it queues alone
 	if (changeRequest.base !== identity.branch) return { route: 'single' }
+	return { route: 'stacked', parent, identity }
+}
+
+/**
+ * Whether a stacked lot (`stacked`, from `stackRouteOf`) may queue as a native stack now: undefined when it may; the
+ * refusal when its parent's change request is missing, merged or not queued, or the host has no stacks. Only the host
+ * is asked here, about the parent.
+ *
+ * @intent queue a stacked lot only behind a queued parent
+ * @internal
+ */
+export function stackQueueOf(params: {
+	lot: string
+	worktree: string
+	host: HostAdapter
+	stacked: Omit<Extract<StackRoute, { route: 'stacked' }>, 'route'>
+}): { refusal: string } | undefined {
+	const { lot, host } = params
+	const { parent, identity } = params.stacked
 	const parentChangeRequest = host.readChangeRequest({
 		root: params.worktree,
 		ref: identity.branch,
@@ -79,7 +97,7 @@ export function stackQueueOf(params: {
 	if ('refusal' in parentQueued) return parentQueued
 	if (!parentQueued.queued)
 		return refusalOf({ template: STACK_QUEUE_LINES.parentNotQueued, values })
-	return { route: 'stack' }
+	return undefined
 }
 
 /** `template` filled with `values`, as a refusal. */

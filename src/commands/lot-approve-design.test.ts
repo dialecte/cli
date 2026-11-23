@@ -37,6 +37,7 @@ function refusalsOf(lot: GatedLot): string[] {
 		},
 		checks: { head, state: 'green', failing: [], pending: [] },
 		landed: head,
+		queue: undefined,
 	})
 }
 

@@ -98,7 +98,6 @@ describe('dialecte lot approve', { timeout: STORE_CASE_TIMEOUT }, () => {
 			queueKind: { kind: 'auto-merge', noun: 'auto-merge' },
 			via: ' (auto-merge)',
 		},
-		{ answer: 'no queue', queueKind: { kind: 'none', noun: 'no queue' }, via: '' },
 		{ answer: 'a refused read', queueKind: { refusal: 'gh api graphql: HTTP 502' }, via: '' },
 	] as const)(
 		'the host answering $answer for the queue → approved, queued, the queue named only when there is one',
@@ -124,6 +123,59 @@ describe('dialecte lot approve', { timeout: STORE_CASE_TIMEOUT }, () => {
 			])
 		},
 	)
+
+	it('the host offering no queue → refused naming it, nothing recorded, nothing sent or queued', () => {
+		const lot = landedLot()
+		const { host, calls } = recordingHost({
+			existing: lot.changeRequest,
+			checks: checksOn({ head: lot.head, state: 'green' }),
+			queueKind: { kind: 'none', noun: 'no queue' },
+		})
+
+		const result = runLotApprove({
+			cwd: lot.workspace.repository,
+			argv: [LOT_NAME, '--by', REVIEWER],
+			host,
+			now: new Date('2026-11-17T10:00:00Z'),
+		})
+
+		expect({
+			exitCode: result.exitCode,
+			output: result.output,
+			approvals: approvalCount(lot.lotFolder),
+			calls,
+		}).toEqual({
+			exitCode: 1,
+			output: `lot approve: ${LOT_NAME} not approved: the host queues no change request here: it allows no auto-merge and its base branch has no queue; turn one on, then approve again; nothing recorded, nothing queued`,
+			approvals: 0,
+			calls: [
+				`read ${REVIEW_CHANGE_REQUEST_NUMBER}`,
+				`checks ${REVIEW_CHANGE_REQUEST_NUMBER}`,
+				`queue-kind ${REVIEW_CHANGE_REQUEST_NUMBER}`,
+			],
+		})
+	})
+
+	it('the host offering a merge queue → the queue kind read once, before the queue', () => {
+		const lot = landedLot()
+		const { host, calls } = recordingHost({
+			existing: lot.changeRequest,
+			checks: checksOn({ head: lot.head, state: 'green' }),
+			queueKind: { kind: 'queue', noun: 'merge queue' },
+		})
+
+		runLotApprove({
+			cwd: lot.workspace.repository,
+			argv: [LOT_NAME, '--by', REVIEWER],
+			host,
+			now: new Date('2026-11-17T10:00:00Z'),
+		})
+
+		expect(calls.filter((call) => call.startsWith('queue'))).toEqual([
+			`queue-kind ${REVIEW_CHANGE_REQUEST_NUMBER}`,
+			`queue ${REVIEW_CHANGE_REQUEST_NUMBER}`,
+		])
+	})
 
 	it('a GitHub origin whose base has a merge queue → the pull request noun and the merge queue named', () => {
 		const lot = landedLot()
