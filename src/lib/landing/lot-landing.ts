@@ -286,7 +286,7 @@ function stackLineFor(params: { lotFolder: string; host: HostAdapter }): string 
 }
 
 /** The lot was pushed: its landing recorded a change request, or origin holds its branch. */
-function isPushed(params: {
+export function isPushed(params: {
 	root: string
 	branch: string
 	changeRequestNumber: number | undefined
@@ -354,7 +354,7 @@ export function settleLotLanding(params: {
  * The lot's landed fact recorded once merged (`recordLanded`); undefined while not merged; why, when the fact cannot be
  * written (a fact not kept decides nothing: no verb acts on it).
  */
-function recordLandedOrWhy(params: {
+export function recordLandedOrWhy(params: {
 	landing: LotLanding
 	now: Date
 }): LandedFact | string | undefined {

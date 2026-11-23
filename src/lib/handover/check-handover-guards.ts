@@ -44,10 +44,9 @@ import { ForbiddenWordsListError } from '../rules/forbidden-words.ts'
 import { shellQuote } from '../shell-quote.ts'
 import { lotFolderOf, storeEntryOf } from '../store/lot-folder.ts'
 import { readCheckedLotState, registryOfLotFolder } from '../store/lot-records.ts'
-import { lotState } from '../store/lot-state.ts'
+import { isTerminalState, lotState } from '../store/lot-state.ts'
 import { SCOPE_GUARD_NAME } from '../store/scope-guard.constants.ts'
 import { heldPathsOf, scopeGuardOf } from '../store/scope-guard.ts'
-import { QUESTIONS_CLOSED_STATES } from '../store/store.constants.ts'
 import { resolveTddBase } from '../tdd/tdd-base.ts'
 import { packagePathsOf } from '../worktree/lot-files.ts'
 import { findCommittedLots } from './find-committed-lots.ts'
@@ -577,7 +576,7 @@ function checkScope(params: {
 	// a lot whose records read as nothing is refused with the damaged line, as the hook refuses it
 	if (checked === undefined) return verdictOf(scopeGuardOf({ lotFolder, paths: [] }))
 	if ('damage' in checked || checked.input.identity.simulated) return undefined
-	if (QUESTIONS_CLOSED_STATES.includes(lotState(checked.input).state)) return undefined
+	if (isTerminalState(lotState(checked.input).state)) return undefined
 	const base = resolveTddBase({ root, packageJson })
 	if ('failure' in base) return { ok: false, detail: base.failure }
 	const prefix = readGit({ root, args: ['rev-parse', '--show-prefix'] }).trim()

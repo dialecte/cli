@@ -1,6 +1,6 @@
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { formatDuration } from '../progress/format-duration.ts'
-import { LOTS_KEEPING_NOTHING } from '../store/store.constants.ts'
+import { isClosedState } from '../store/lot-state.ts'
 import { WORKTREE_IDLE_MS, WORKTREE_INDEX_PATTERN, WORKTREE_TEXTS } from './health.constants.ts'
 import { timeOf } from './record-run.ts'
 
@@ -51,7 +51,7 @@ function heldPathsOf(params: { lots: readonly HealthLot[] }): Set<string> {
 	const held = new Set<string>()
 	for (const lot of params.lots) {
 		if (lot.worktree === undefined || lot.state === undefined) continue
-		if (lot.kept !== true && LOTS_KEEPING_NOTHING.some((closed) => closed === lot.state)) continue
+		if (lot.kept !== true && isClosedState(lot.state)) continue
 		held.add(lot.worktree)
 	}
 	return held

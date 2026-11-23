@@ -15,8 +15,12 @@ import {
 	stubGit,
 	workInLot,
 } from '../../test/forecast-workspace.ts'
+import { LANDING_CHANGE_REQUEST_NUMBER } from '../../test/landing-lot.constants.ts'
+import { addLandingLot, landingLotOf, writeLandingRecord } from '../../test/landing-lot.ts'
+import { mergeOnOrigin } from '../../test/landing-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { readForecastRecord } from '../lib/coordination/forecast-record.ts'
+import { SHORT_SHA_LENGTH } from '../lib/gate-records/gate-records.constants.ts'
 import { lotForecast } from './lot-forecast.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -96,6 +100,25 @@ describe('lot forecast', { timeout: STORE_CASE_TIMEOUT }, () => {
 		})
 	})
 })
+
+describe(
+	'lot forecast, an other lot merged but never closed',
+	{ timeout: STORE_CASE_TIMEOUT },
+	() => {
+		it('an other open lot squash-merged on origin and fetched, never closed -> named not settled yet, holding nothing', () => {
+			const merged = landingLotOf()
+			writeLandingRecord({ lot: merged, number: LANDING_CHANGE_REQUEST_NUMBER })
+			mergeOnOrigin({ repository: merged.repository, how: 'squash' })
+			const other = addLandingLot({ lot: merged, name: '0002-repo-y', branch: 'feat/y' })
+
+			const result = lotForecast({ cwd: other.worktree, argv: [], now: FORECAST_NOW })
+
+			expect(result.output.split('\n')).toContain(
+				`! ${merged.name}: merged on main at ${merged.tip.slice(0, SHORT_SHA_LENGTH)}, not settled yet: it holds nothing (lot close ${merged.name} settles it)`,
+			)
+		})
+	},
+)
 
 describe('lot forecast, the lot and the other lot named', { timeout: STORE_CASE_TIMEOUT }, () => {
 	it('lot forecast <id> --against <lot> from outside every worktree -> that lot against main and the named lot only', () => {

@@ -24,16 +24,12 @@ import { jsonOf } from '../lib/print/print.ts'
 import { lotsOfFeature } from '../lib/store/feature-lots.ts'
 import { readLotItems } from '../lib/store/lot-items.ts'
 import { readCheckedLotState, registryOfLotFolder } from '../lib/store/lot-records.ts'
-import { lotState } from '../lib/store/lot-state.ts'
+import { isClosedState, lotState } from '../lib/store/lot-state.ts'
 import { findWorkspace } from '../lib/workspace.ts'
 import { syncBaseBranch } from '../lib/worktree/base-sync.ts'
 import { listProcessFolders, readProcesses } from '../lib/worktree/process-folders.ts'
 import { spawnDetached } from '../lib/worktree/trash.ts'
-import {
-	CLOSABLE_STATES,
-	LOT_CLOSE_FEATURE_TEXTS,
-	LOT_CLOSE_FEATURE_USAGE,
-} from './lot-close-feature.constants.ts'
+import { LOT_CLOSE_FEATURE_TEXTS, LOT_CLOSE_FEATURE_USAGE } from './lot-close-feature.constants.ts'
 import { itemWordOf, lotsOutputOf, repositoryOf } from './lot-prune.ts'
 
 import type { LotPrunePlan } from '../lib/cleanup/plan-lot-prune.types.ts'
@@ -72,7 +68,7 @@ export function runLotCloseFeature(params: LotCloseFeatureParams): CommandResult
 			lines: [fillMessage({ template: LOT_CLOSE_FEATURE_TEXTS.noLot, values: { feature } })],
 		})
 	const open = lots
-		.filter((lot) => !CLOSABLE_STATES.includes(lot.state))
+		.filter((lot) => !isClosedState(lot.state))
 		.map((lot) => ({ lot: lot.name, state: lot.state }))
 	if (open.length > 0)
 		return printed({

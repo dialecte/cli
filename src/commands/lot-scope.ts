@@ -13,7 +13,14 @@ import { forecastLot } from '../lib/coordination/forecast.ts'
 import { EVENT_LINE_LIMIT } from '../lib/events/events.constants.ts'
 import { makeEnvelope, overLimitMessage, writeEvent } from '../lib/events/write-event.ts'
 import { listLotChangePaths } from '../lib/git.ts'
+import { createHost } from '../lib/host/select-host.ts'
 import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
+import {
+	lazyHostOf,
+	settleMetLots,
+	unsettledOf,
+	withSettledLines,
+} from '../lib/landing/met-lots.ts'
 import { readPackageJson } from '../lib/package-json.ts'
 import { readCliVersion } from '../lib/read-cli-version.ts'
 import { forbiddenWordRefusal, isOneLine } from '../lib/review-rounds/option-checks.ts'
@@ -45,7 +52,7 @@ import {
 	readLotScope,
 	registryOfLotFolder,
 } from '../lib/store/lot-records.ts'
-import { lotState } from '../lib/store/lot-state.ts'
+import { isTerminalState, lotState } from '../lib/store/lot-state.ts'
 import { folderPlanEntryIds } from '../lib/store/public-text.ts'
 import { noLotRefusal, requiredLotOf } from '../lib/store/resolve-lot.ts'
 import {
@@ -62,7 +69,7 @@ import {
 	scopeChangesFileOf,
 } from '../lib/store/scope-changes.ts'
 import { readStackRecord } from '../lib/store/stack.ts'
-import { QUESTIONS_CLOSED_STATES, STORE_FILES } from '../lib/store/store.constants.ts'
+import { STORE_FILES } from '../lib/store/store.constants.ts'
 import { resolveTddBase } from '../lib/tdd/tdd-base.ts'
 import {
 	LOT_SCOPE_LIST_SEPARATOR,
@@ -79,6 +86,7 @@ import {
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { ForecastLine, ForecastRun } from '../lib/coordination/forecast.types.ts'
+import type { LazyHost, MetLotsSettled } from '../lib/landing/met-lots.types.ts'
 import type { LotOverlapRecord } from '../lib/store/lot-overlaps.types.ts'
 import type { ScopeChange } from '../lib/store/scope-changes.types.ts'
 import type { LotOverlap } from '../lib/store/store.types.ts'
@@ -163,7 +171,7 @@ function targetOf(params: { lotFolder: string; id: string }): ScopeTarget | stri
 	if (identity.simulated)
 		return fillMessage({ template: LOT_SCOPE_TEXTS.simulated, values: { name: identity.name } })
 	const { state } = lotState(checked.input)
-	if (QUESTIONS_CLOSED_STATES.includes(state))
+	if (isTerminalState(state))
 		return fillMessage({
 			template: LOT_SCOPE_TEXTS.terminal,
 			values: { name: identity.name, state },
@@ -233,17 +241,40 @@ function changeScope(params: {
 		const coverage = coverageRefusal({ target, scope, dropped, changes })
 		if (coverage !== undefined) return coverage
 	}
-	const overlap = overlapDecisionOf({ request: params.request, target, added, now: params.now })
-	if ('refusal' in overlap) return overlap.refusal
-	return recordChanges({
-		...params,
-		changes,
-		added,
-		removed,
-		accepted: overlap.accepted,
-		recheck: overlap.recheck,
-		run: overlap.run,
+	return recordDecided({ ...params, changes, added, removed })
+}
+
+/**
+ * The change recorded once the add's overlaps allow it (`overlapDecisionOf`), else its refusal; the lots the add met
+ * that merged on the host were settled, named on either exit.
+ */
+function recordDecided(params: {
+	request: ScopeRequest
+	target: ScopeTarget
+	scope: string[]
+	now: Date
+	seams?: ScopeSeams
+	changes: ScopeChange[]
+	added: string[]
+	removed: string[]
+}): CommandResult {
+	const overlap = overlapDecisionOf({
+		request: params.request,
+		target: params.target,
+		added: params.added,
+		now: params.now,
+		host: lazyHostOf({ given: params.seams?.host, make: createHost }),
 	})
+	const result =
+		'refusal' in overlap
+			? overlap.refusal
+			: recordChanges({
+					...params,
+					accepted: overlap.accepted,
+					recheck: overlap.recheck,
+					run: overlap.run,
+				})
+	return withSettledLines({ result, settle: overlap.settle, json: false })
 }
 
 /** Why a dropped path is refused before anything else: it is no entry, or lies inside a wider one; none when each holds entries. */
@@ -327,16 +358,32 @@ function overlapDecisionOf(params: {
 	target: ScopeTarget
 	added: string[]
 	now: Date
-}):
+	/** Asked only for a met lot git cannot tell landed (`settleMetLots`). */
+	host: LazyHost
+}): (
 	| { refusal: CommandResult }
 	| {
 			accepted: LotOverlap[]
 			recheck: (() => LotOverlap | undefined) | undefined
 			run: ForecastRun | undefined
-	  } {
+	  }
+) & { settle?: MetLotsSettled } {
 	const { target, added } = params
 	if (added.length === 0) return { accepted: [], recheck: undefined, run: undefined }
-	const overlaps = addOverlapsOf({ target, added })
+	const met = addOverlapsOf({ target, added })
+	// a met lot merged on the host but never closed holds nothing: settled, it leaves the overlaps
+	const settle =
+		met.length === 0
+			? undefined
+			: settleMetLots({
+					store: dirname(target.lotFolder),
+					met,
+					host: params.host,
+					now: params.now,
+					write: true,
+				})
+	const overlaps = unsettledOf({ met, settle })
+	const settled = settle === undefined ? {} : { settle }
 	const forecast = scopeForecastOf({ target, overlaps, now: params.now })
 	const held = overlaps.flatMap((overlap) => {
 		const hold = scopeHoldOf({ overlap, forecast })
@@ -346,9 +393,11 @@ function overlapDecisionOf(params: {
 		? held.map(({ overlap }) => overlap).filter(isAcceptableOverlap)
 		: []
 	const [unaccepted] = held.filter(({ overlap }) => !accepted.includes(overlap))
-	if (unaccepted !== undefined) return { refusal: overlapRefusalOf({ ...params, ...unaccepted }) }
+	if (unaccepted !== undefined)
+		return { refusal: overlapRefusalOf({ ...params, ...unaccepted }), ...settled }
 	const store = dirname(target.lotFolder)
 	return {
+		...settled,
 		accepted,
 		run: forecast.run,
 		recheck: function recheckAdd() {

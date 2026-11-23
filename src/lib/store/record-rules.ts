@@ -6,15 +6,9 @@ import { basename } from 'node:path'
 
 import { LINE_BREAK_PATTERN } from './brief.constants.ts'
 import { readCheckedLotState, registryOfLotFolder } from './lot-records.ts'
-import { lotState } from './lot-state.ts'
+import { isTerminalState, lotState } from './lot-state.ts'
 import { storeRefusal } from './publish.ts'
-import {
-	BY_OPTION,
-	DAMAGED_LOT_REFUSAL,
-	NEXT_COMMANDS,
-	NUMBER_LOCALE,
-	QUESTIONS_CLOSED_STATES,
-} from './store.constants.ts'
+import { BY_OPTION, DAMAGED_LOT_REFUSAL, NEXT_COMMANDS, NUMBER_LOCALE } from './store.constants.ts'
 
 import type { LotStateInput, LotStateReport } from './store.types.ts'
 
@@ -74,7 +68,7 @@ export function readLotTaking(params: { lotFolder: string; takes: string }): {
 	}
 	const { input } = checked
 	const report = lotState(input)
-	if (QUESTIONS_CLOSED_STATES.includes(report.state))
+	if (isTerminalState(report.state))
 		throw closedLotRefusal({ name: input.identity.name, state: report.state, takes: params.takes })
 	return { input, report }
 }

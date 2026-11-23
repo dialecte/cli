@@ -1,3 +1,4 @@
+import type { MetLotsSettled } from '../landing/met-lots.types.ts'
 import type { LotPlanEntry } from './plan-entry.types.ts'
 import type { StackParent } from './stack.types.ts'
 import type { LotOverlap, Refusal } from './store.types.ts'
@@ -77,6 +78,11 @@ export type CheckedBrief = {
 export type CheckBriefResult = {
 	refused: Refusal[]
 	checked: CheckedBrief | undefined
+	/** What the settle of the met lots found (`settleMet`); none when no settle was asked or no lot was met. */
+	settle?: MetLotsSettled
 	/** `--on <lot>` naming no lot a child may start on (33CI CI4): its line, checked before every other fault. */
 	stackRefusal?: string
 }
+
+/** Settles the open lots a scope meets (`settleMetLots`): what landed leaves the overlaps (FIX-start-settles-landed). */
+export type SettleMet = (params: { store: string; met: readonly LotOverlap[] }) => MetLotsSettled

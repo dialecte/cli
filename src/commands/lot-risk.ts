@@ -30,9 +30,8 @@ import {
 } from '../lib/risk/risk.constants.ts'
 import { lotFolderOf } from '../lib/store/lot-folder.ts'
 import { readCheckedLotState, registryOfLotFolder } from '../lib/store/lot-records.ts'
-import { lotState } from '../lib/store/lot-state.ts'
+import { isTerminalState, lotState } from '../lib/store/lot-state.ts'
 import { UNKNOWN_EFFORT_CAP } from '../lib/store/next-station.constants.ts'
-import { QUESTIONS_CLOSED_STATES } from '../lib/store/store.constants.ts'
 import {
 	LOT_RISK_ALREADY,
 	LOT_RISK_BELOW_REFUSAL,
@@ -289,7 +288,7 @@ function storeLotRefusal(params: { folder: string; refuseTerminal: boolean }): s
 		})
 	if (!params.refuseTerminal) return undefined
 	const { state } = lotState(checked.input)
-	if (!QUESTIONS_CLOSED_STATES.includes(state)) return undefined
+	if (!isTerminalState(state)) return undefined
 	return fillMessage({
 		template: LOT_RISK_TERMINAL_REFUSAL,
 		values: { name: checked.input.identity.name, state },

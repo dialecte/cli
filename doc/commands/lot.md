@@ -94,6 +94,16 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
           change request as the host holds it (open, draft, queued, closed, or the host cannot say:
           <why>), the hand-over card on <parent> (#<change request>) from files only; on <parent>
           (no change request yet) without one
+  start - a met lot that merged on the host but was never closed is settled first: a pushed lot (its
+          landing.json names a change request, or origin holds its branch) read merged by git (its
+          tip in origin/<base>, or a squash read from the tree), else by the host when git cannot
+          tell (origin not fetched), gets its landed.json and no longer holds its scope, printed
+          settled <lot>: merged on <base> at <tip> (<how>); it no longer holds its scope (--json
+          settled[]); a lot with commits on its branch after the landed tip, or uncommitted changes
+          to tracked files in its worktree, still holds, printed ! <lot> merged on <base> at <tip>
+          but <why>: it still holds its scope (--json settleWarnings[]); a dry run or a simulated
+          start writes nothing (would settle <lot>: …); a lot not read merged, never pushed, or that
+          the host cannot read holds as before
   start - a scope meeting another open lot goes ahead when that lot's work reads (its forecast
           against main, run and never written: a new lot has no work, so no conflict can exist),
           printed shares <met> with <lot> (forecast clean); still refused: a damaged lot or one
@@ -316,24 +326,26 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
          no rebase, nothing pushed, no change request; uncommitted work is not held; a lot base that
          cannot be read refuses
   status - the state derived from the lot records (working, input-required, ready, committed,
-           canceled, failed), the worktree and link checks, and the exact next command (and an also:
-           line); a working real lot adds a station line (station <what> · round <r>/<cap> · effort
-           <level>), the next station walked from its station events and checks (step events, else
-           the worktree's tdd ledger and gate records), its next is that station's command and also
-           keeps the manual line, which lot start prints as its next too; the manual line depends on
-           the repository's landing flow: lot land <name> in a CI-first repository, handover write
-           in any other; --json adds station and rounds (review, cap, beyondCap, independent) and
-           effort { level, source, riskClass, below } (source risk-line for an effort recorded by
-           lot risk; an effort below its risk class adds a ! effort <e> below risk class <c> line,
-           ending (by <who>: <reason>) or (no go-ahead recorded)); --json adds forecast { main,
-           pairs }: the newest main line of forecast.jsonl and, per other open lot, the newer of its
-           own line against that lot and that lot's line against it (files only); a lot whose
-           records do not hold reads damaged with its reason and next: lot stop (exit 6); a lot git
-           reads merged (its tip or its work in origin/<base>, a squash included) shows committed,
-           nothing written; --json adds kept: { reason, by, at } for a lot kept on purpose ({
-           unreadable: <n> } or { unreadableFile: <code> } for a keep.jsonl that cannot be trusted,
-           read kept), else null, the text unchanged; a ready landing lot kept on purpose names no
-           lot close in also; writes nothing; exit 2 for an unknown or ambiguous id
+           canceled, failed), the worktree and link checks (a closed lot whose worktree is gone
+           reads removed, no warning; an open one's reads worktree missing), and the exact next
+           command (and an also: line); a working real lot adds a station line (station <what> ·
+           round <r>/<cap> · effort <level>), the next station walked from its station events and
+           checks (step events, else the worktree's tdd ledger and gate records), its next is that
+           station's command and also keeps the manual line, which lot start prints as its next too;
+           the manual line depends on the repository's landing flow: lot land <name> in a CI-first
+           repository, handover write in any other; --json adds station and rounds (review, cap,
+           beyondCap, independent) and effort { level, source, riskClass, below } (source risk-line
+           for an effort recorded by lot risk; an effort below its risk class adds a ! effort <e>
+           below risk class <c> line, ending (by <who>: <reason>) or (no go-ahead recorded)); --json
+           adds forecast { main, pairs }: the newest main line of forecast.jsonl and, per other open
+           lot, the newer of its own line against that lot and that lot's line against it (files
+           only); a lot whose records do not hold reads damaged with its reason and next: lot stop
+           (exit 6); a lot git reads merged (its tip or its work in origin/<base>, a squash
+           included) shows committed, nothing written; --json adds kept: { reason, by, at } for a
+           lot kept on purpose ({ unreadable: <n> } or { unreadableFile: <code> } for a keep.jsonl
+           that cannot be trusted, read kept), else null, the text unchanged; a ready landing lot
+           kept on purpose names no lot close in also; writes nothing; exit 2 for an unknown or
+           ambiguous id
   forecast - the conflict forecast of a lot's work (its worktree's HEAD plus its uncommitted work,
              as one snapshot commit made on a copy of its index with a fixed identity and date; the
              worktree's index, refs and files never written, ignored files left out) against main
@@ -360,7 +372,10 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
              --json { lot, verdict, lines }; exit 0 clean, 1 a conflict or an exclusive path (or the
              run could not be written), 3 unknown, 2 usage, an unknown id, a damaged, closed or
              simulated lot, or --against the lot itself or a lot of another store; a clean forecast
-             does not promise a semantic merge, three lots landing together, or work not written yet
+             does not promise a semantic merge, three lots landing together, or work not written
+             yet; an other open lot that was pushed and that git reads merged on origin/<base>,
+             never closed, is not compared: ! <lot>: merged on <base> at <tip>, not settled yet: it
+             holds nothing (lot close <lot> settles it), the host never asked, nothing written
   risk - reads the lot folder's (or hand-over folder's) risk.jsonl and the worktree's diff against
          the lot's base, writing nothing: the risk class derived now with its reasons (high: a
          changed file in the package's dialecte.risk.high list, the base's and the worktree's
@@ -424,7 +439,9 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
           the effective scope (the brief's with the changes) is what the overlap guard, lot status
           and the card read; a damaged, simulated, committed, canceled or failed lot, a forbidden
           word and a change line that does not read are refused (exit 2), nothing written; a line
-          that cannot be written exits 1
+          that cannot be written exits 1; an added path meeting a lot that merged on the host but
+          was never closed settles that lot first, as lot start does (settled <lot>: …), and the add
+          goes on
   keep - keeps a lot's items on purpose (its worktree, review throwaways and branches stay after it
          is committed or canceled): appends { schema, at, op: keep, by, reason } to the lot folder's
          keep.jsonl and a keep.changed event, in any state, damaged included; --by and --reason
@@ -626,11 +643,12 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
           byte-equal to the main checkout's go), a process or a mutation run works there, lot close
           itself runs from inside it, or the processes are not known, or the final record cannot be
           kept or the lot's commit is not known; the branch never touched; a hand-over already
-          closed, or a lot whose worktree a recorded removal moved, answers already closed, exit 0,
-          nothing moved (a lot whose worktree is gone with no such removal: nothing to close), its
-          lot's landed fact still recorded when the host proves the merge (its landed line beside
-          already closed); exit 1 when one is kept, 2 when a name or index is neither a hand-over
-          nor a lot (the others are still closed)
+          closed, or a lot whose worktree a recorded removal moved, answers <the id given> already
+          closed (<the other id of the same lot>), exit 0 (--json: handover the id given, also the
+          other id), nothing moved (a lot whose worktree is gone with no such removal: nothing to
+          close), its lot's landed fact still recorded when the host proves the merge (its landed
+          line beside already closed); exit 1 when one is kept, 2 when a name or index is neither a
+          hand-over nor a lot (the others are still closed)
   close - --feature <name> closes a feature at a pipeline's last step: its lots in every store of
           the list (simulated ones left out); none answers no lot of the feature, exit 1; a lot of
           it neither committed nor canceled refuses the whole close, listing each with its state,

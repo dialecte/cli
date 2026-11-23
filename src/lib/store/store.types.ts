@@ -193,8 +193,11 @@ export type LotOverlap = {
 	exclusive?: string[]
 }
 
-/** What `lot status` reports of the worktree and its `.dialecte/lot` link; null for a simulated lot. */
-export type WorktreeCheck = 'present' | 'missing'
+/**
+ * What `lot status` reports of the worktree and its `.dialecte/lot` link; null for a simulated lot. `removed`: a closed
+ * lot's worktree gone, as a close leaves it (nothing to warn about); `missing`: an open lot's worktree gone.
+ */
+export type WorktreeCheck = 'present' | 'missing' | 'removed'
 export type LinkCheck = 'present' | 'missing' | 'dangling' | 'wrong'
 
 /** The command a lot's state calls for next (null: none), and the further ones. */

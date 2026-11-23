@@ -1,3 +1,5 @@
+import type { HostAdapter } from '../lib/host/host.types.ts'
+
 /** What `lot scope` was asked, its usage checked: the paths to drop and to add as given, who and why (both required). */
 export type ScopeRequest = {
 	id: string
@@ -21,4 +23,6 @@ export type ScopeTarget = {
 export type ScopeSeams = {
 	/** Called once the change is appended, before the add re-reads the other open lots. */
 	afterAppend?: () => void
+	/** Where a met lot's landing is asked when git cannot tell; the repository's host, made only then, when left out. */
+	host?: HostAdapter
 }
