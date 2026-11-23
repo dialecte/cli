@@ -80,6 +80,43 @@ Flags: `--base`, `--json`, `--flags`, `--legend`
     `__pycache__` or `.pytest_cache`, and xdist is off for it. A pytest case moved to another file is a new
     case. No pytest in the interpreter: the run fails naming the folder.
   - `red` given only `<file>::<case>` targets runs only those cases, whatever the runner.
+  - vitest projects: `red`, `green` and the collect behind `status`, the gate and the hook run each vitest test file
+    in the projects the package's CI runs it in, read from the package itself, no setting: its own test workflow
+    (`.github/workflows/_test.yml`, every step of every job, whatever its `if:`) and the npm scripts its steps reach
+    (`npm run <script>`, `npm run-script`, `npm test` / `npm t`, with their `pre` and `post` scripts, the arguments
+    after `--` joining the script's last command), down to the `vitest run --project <name>` / `--project=<name>`
+    they run (`npx vitest`, `npm exec vitest`, `node_modules/.bin/vitest` and a bare `vitest` alike, leading
+    `NAME=value` assignments read past). A run is split into commands on newlines, `&&`, `||`, `;` and `|`, outside
+    quotes and `$(...)`. The names match the projects as vitest matches them (case-insensitive, `*` any text, a
+    browser project's name keeping all its instances), against the projects the package's own vitest resolves from
+    its config (asked once per command, on first use, bounded, no test run, no browser started; inside the vitest
+    step, else as a `vitest projects` step of its own). `red` and `green` print `vitest projects: <names> (as
+    <source> runs them)` first; `status`, the gate and the hook print no note (the case labels name the projects). A
+    file a CI project holds runs there only; a file none holds still runs where its config holds it, said as `not in
+    CI's projects: <file>`. Whenever CI cannot be read whole, every project runs, as before, and the command says
+    why (`vitest projects: all (<reason>)`, when the config has more than one project): no test workflow, a workflow
+    that does not parse or runs no vitest project, a vitest run naming no project, naming one through an expansion
+    (`$VAR`, `${{ matrix.x }}`), filtering its files (`vitest run src/fast`) or passing `--config` / `-c`, `--root`
+    / `-r` or `--dir`, `pnpm` or `yarn`, an npm command with `-w` / `--workspace` / `--prefix`, another
+    `working-directory` (a step's, a job's or the workflow's `defaults`) or a `cd` elsewhere than `.`, a job calling
+    a reusable workflow or a step a local `uses: ./...`, or a command of no known form (anything but `echo` and the
+    other shell builtins, `node -e`, `npx playwright install`, and in a step `npm ci` / `npm install`), which may
+    run vitest. A CI name the config does not declare fails the run: `tdd: CI runs vitest --project <name>
+    (<source>), which this config does not declare`. A run in a copy of the base selects the same names; a name the
+    base config lacks (a lot adding or renaming a project) fails that run with `the base config declares no vitest
+    project <name>` (the base config is read once per command). Without a `node_modules/.bin/vitest` beside a vitest
+    package (the `npx` fallback), every project runs, the projects are not read, and the module mock check below is
+    skipped, said in a note.
+  - Module mocks: a changed test file calling `vi.mock(...)` or `vi.doMock(...)` (on vitest's `vi`, under any local
+    name) that a project sharing modules between files runs (`isolate: false` outside the vm pools, or a browser
+    project with `browser.isolate: false`) proves nothing there: CI may load the module in the same worker before
+    the file's mock. The project is a CI project holding the file, or, when every project runs or no CI project
+    holds the file, any project holding it. `red` refuses the file before its run with `refused <file>  mocks a
+    module (vi.mock, line <n>) in the <project> project, which shares modules between files: CI loads the module
+    before the mock - test it without a module mock, or move the file to a project that isolates files`, and records
+    no red. `green` runs it, then refuses every case of it with the reason `module mock` (before any other reason)
+    and prints that line once. A file refused at red is never frozen: the gate's tdd step fails on it as test code
+    changed outside `tdd red`.
   - `red` runs every case of the changed test files (or of the files named). A case that fails on an
     assertion (a snapshot mismatch included), on a stub's error (a message starting with
     `not implemented`) or on an error existing code throws, inside an `expect(...)` a matcher completes,

@@ -608,3 +608,65 @@ describe(
 		})
 	},
 )
+
+describe('gate --hook: a module mock refused at red', { timeout: 240_000 }, () => {
+	/** CI runs the node project, which shares modules between files (forks, isolate false). */
+	const SHARING_CONFIG = [
+		"import { defineConfig } from 'vitest/config'",
+		"export default defineConfig({ test: { projects: [{ test: { name: 'node', include: ['src/**/*.test.ts'], isolate: false, pool: 'forks' } }] } })",
+		'',
+	].join('\n')
+	const NODE_WORKFLOW = [
+		'name: _test',
+		'',
+		'on:',
+		'  workflow_call:',
+		'',
+		'jobs:',
+		'  test:',
+		'    runs-on: ubuntu-24.04',
+		'    steps:',
+		'      - uses: actions/checkout@v6',
+		'      - name: Run Tests',
+		'        run: npx vitest run --project node',
+		'',
+	].join('\n')
+	const MOCKING_TEST = [
+		"import { add } from './add.ts'",
+		"import { expect, it, vi } from 'vitest'",
+		"vi.mock('./log.ts', () => ({ log: () => '' }))",
+		"it('one plus two → three', () => { expect(add(1, 2)).toBe(3) })",
+		'',
+	].join('\n')
+
+	it('a staged vi.mock file refused at red, production implemented → FAIL tdd: test code changed outside tdd red, no declared step', async () => {
+		const counter = createCounter()
+		const check: GateStep = countingStep({ counter, name: 'check' })
+		const root = createVitestPackage({
+			dialecte: { gate: { full: [check], hook: [check] } },
+			files: {
+				'vitest.config.ts': SHARING_CONFIG,
+				'.github/workflows/_test.yml': NODE_WORKFLOW,
+				'src/log.ts': 'export function log(message: string): string {\n\treturn message\n}\n',
+			},
+		})
+		writeFiles({ root, files: { 'src/add.ts': STUB, 'src/add.test.ts': MOCKING_TEST } })
+		const red = await tdd({ root, argv: ['red'] })
+		writeFileSync(join(root, 'src/add.ts'), IMPLEMENTED)
+		git({ root, args: ['add', '-A'] })
+
+		const result = await runHookIn({ cwd: root })
+
+		expect({
+			redExitCode: red.exitCode,
+			exitCode: result.exitCode,
+			first: result.output.split('\n')[0],
+			runs: countRuns(counter),
+		}).toEqual({
+			redExitCode: 1,
+			exitCode: 1,
+			first: 'FAIL  tdd  test code changed outside tdd red: src/add.test.ts',
+			runs: 0,
+		})
+	})
+})

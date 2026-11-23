@@ -50,7 +50,7 @@ export async function runTestCases(
 }
 
 /** A test file with its text as it is now (empty when it is gone: its name alone decides then). */
-function testFileOf(params: { root: string; file: string }): ChangedTestFile {
+export function testFileOf(params: { root: string; file: string }): ChangedTestFile {
 	const path = join(params.root, params.file)
 	return {
 		file: params.file,
