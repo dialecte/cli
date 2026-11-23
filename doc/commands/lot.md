@@ -46,7 +46,7 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
   dialecte lot describe <id> [--print] [--json]
   dialecte lot review <id> [--no-open] | lot review <id> --comments --round <n>
   dialecte lot approve <id> --by <who> [--reason <text>]
-  dialecte lot design <id> [--from <file> | --from-plan | --approve --by <who> [--reason <text>] | --waive --by <who> --reason <text>] [--json]
+  dialecte lot design <id> [--from <file> | --from-plan | --approve --by <who> [--reason <text>] [--verdict <file>]... | --waive --by <who> --reason <text>] [--json]
   dialecte lot land <id>
   dialecte lot close <hand-over name|lot id|index>... [--json]
   dialecte lot close --feature <name> [--json]
@@ -205,24 +205,47 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
            its block names the same spec (write this lot's own design) or the lot carries out no
            entry with a spec; --approve --by <who> [--reason <text>] appends an approval of the last
            recorded hash with the need it was given against, refused when nothing is recorded or the
-           source exists with other bytes (record it again); --waive --by <who> --reason <text>
-           appends a waiver with the current need, refused on a lot that needs no design; both
-           refused from the lot's own worktree or its review throwaway (approve from the main
-           checkout), and on a --by or --reason holding a forbidden word or a --by holding what a
-           public record never holds (exit 2); the orchestrator in any casing is recorded as
+           source exists with other bytes (record it again), then unless a saved review passes
+           exactly that hash: the reviews are the *.md files directly in the recorded file's folder
+           (links followed; one unreadable, empty, not UTF-8 or under a scratch or temporary folder
+           skipped; the design itself and a file of its hash left out) plus each --verdict <file>
+           (repeatable, added to the folder, which is read whenever it exists; one unreadable,
+           empty, not UTF-8, under a scratch or temporary folder, naming another hash or holding no
+           Verdict: line refused), each read once; a review names a hash by a line Design: <12 to 64
+           hex characters> (a prefix of the sha256) and says its verdict on its last Verdict: line
+           (READY, alone or before notes, a stop or a dash; NOT READY; anything else unrecognized),
+           fenced and quoted lines never read, a fence left open unrecognized; the approval needs a
+           READY review naming the hash and none naming it with another verdict (a READY of an
+           earlier recorded hash never carries over: a review of the new bytes is needed), every
+           refusal at once (exit 2, nothing written): no review naming it (the folder, the hash, the
+           two lines to save, --verdict and --waive named, then ! a READY review of an earlier
+           revision and ! a review naming it without a Verdict: line), each review that does not
+           pass it, the folder gone with nothing named, more reviews than one line holds; the
+           approved line records reviews: [{ name, hash }] and each review passing it is copied
+           whole as design-reviews/<sha256>.md from the bytes checked, before the line; a review
+           edited after the approval changes nothing; --waive --by <who> --reason <text> appends a
+           waiver with the current need, refused on a lot that needs no design and has none
+           recorded; both refused from the lot's own worktree or its review throwaway (approve from
+           the main checkout), and on a --by or --reason holding a forbidden word or a --by holding
+           what a public record never holds (exit 2); the orchestrator in any casing is recorded as
            orchestrator; a lot no longer at work is refused (exit 1); without an option it prints
-           design <state>[ by <kind>][ · <reasons>] and the next command, --json { required,
-           reasons, state, by, uncovered } (by the kind, never a name)
+           design <state>[ by <kind>][ · <reasons>], while not approved the verdict line of the
+           folder's reviews (verdict READY in <names>, verdict missing: ... with its ! hints,
+           verdict <verdict> in <name> for each review that does not pass, or the folder gone), and
+           the next command; --from prints the same verdict line after recording; --json { required,
+           reasons, state, by, uncovered, verdict } (by the kind, never a name; verdict { state:
+           ready|missing|blocked, files } while not approved, else null)
   design - the need, computed by every reader and never stored: required when a scope entry (or a
            path) lies in a dialecte.risk.high area or is broader than one, or the lot carries out a
            plan entry of kind lot; an approval or a waiver holds only for the need it was given
            against (a reason of a new kind or glob reads unapproved or missing again); a recorded
-           design gates the lot whatever its need; states approved, waived, unapproved (shown not
-           approved), stale (shown stale since its approval: the source edited after its approval),
-           missing, not-required (shown not required); lot start and its dry run print design
-           required (<reasons>) or design not required, lot forecast and lot status the state line,
-           the hand-over card a design line (passed or a warning, never failed), review.jsonl a
-           design row and the change request body Design: <state> by <kind>
+           design gates the lot whatever its need, and a covering waiver lets it go on whatever its
+           need; states approved, waived, unapproved (shown not approved), stale (shown stale since
+           its approval: the source edited after its approval), missing, not-required (shown not
+           required); lot start and its dry run print design required (<reasons>) or design not
+           required, lot forecast and lot status the state line, the hand-over card a design line
+           (passed or a warning, never failed), review.jsonl a design row and the change request
+           body Design: <state> by <kind>
   design - the gate: while a lot's required design is missing, unapproved or stale, tdd red in its
            own worktree refuses (exit 2, nothing run), gate --hook's design step fails a commit of
            the lot's branch, from any worktree, holding a production path (after the scope step,
@@ -1215,6 +1238,28 @@ it is approved again. A lot needs a design when its scope lies in a `dialecte.ri
 concepts) or is broader than one, or when it carries out a plan entry of kind `lot`; `--waive --by <who> --reason
 <text>` lets such a lot go on without one, recorded and shown. `lot start`, `lot status`, `lot forecast`, the card and
 the change request body say where the design stands.
+
+An approval rests on a saved review of exactly the bytes approved. A reviewer is anyone: a person, an agent, another
+session. The review is a markdown file beside the design (any `*.md` file in its folder) or one named with
+`--verdict <file>`. It holds two lines:
+
+```text
+Design: <the first 12 characters of the hash lot design printed, or more>
+Verdict: READY
+```
+
+The last `Verdict:` line is the review's verdict. It reads READY when it is `READY` alone or `READY` followed by notes,
+a stop or a dash. It reads NOT READY when it starts with `NOT READY`. Anything else is unrecognized, and fenced or
+quoted lines are never read. The approval needs one READY review naming the recorded hash, and no review naming that
+hash with another verdict.
+
+A READY review of an earlier revision does not carry over. After folding fixes, record the design again and have a
+reviewer save a review that names the new hash. `--verdict` adds files to the folder's reviews and never replaces
+them; it is how to point at a review once the design's folder is gone. The approval keeps a copy of each review it
+rests on in the lot folder. A refusal names what is missing and the two lines to save.
+
+`--waive` stays the way around, and it also covers a design recorded on a lot that needs none. While a design is not
+approved, `lot design <id>` and `--from` print the verdict line of its folder's reviews.
 
 While a required design is missing, not approved or stale, the lot does not move: `tdd red` in its worktree refuses,
 the commit hook's `design` step fails a commit of production code on the lot's branch, `lot land` refuses after its rebase and pushes

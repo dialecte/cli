@@ -10,7 +10,7 @@ import { EVENT_LINE_LIMIT } from '../events/events.constants.ts'
 import { appendLine } from '../events/write-event.ts'
 import { replaceWhole } from '../store/publish.ts'
 import { STORE_FILES } from '../store/store.constants.ts'
-import { DESIGN_COPY_EXTENSION, DESIGN_LINE_SCHEMA } from './design.constants.ts'
+import { DESIGN_COPY_EXTENSION, DESIGN_LINE_SCHEMA, REVIEW_EXTENSION } from './design.constants.ts'
 
 import type { DesignLine, DesignSourceHash } from './design.types.ts'
 
@@ -36,9 +36,24 @@ export function readDesignLines(params: { lotFolder: string }): DesignLine[] {
 export function appendDesignLine(params: { lotFolder: string; line: DesignLine }): void {
 	appendLine({
 		file: join(params.lotFolder, STORE_FILES.design),
-		line: Buffer.from(`${JSON.stringify(params.line)}\n`, 'utf8'),
+		line: designLineBytes(params.line),
 		limit: EVENT_LINE_LIMIT,
 	})
+}
+
+/**
+ * Whether the line fits one `design.jsonl` write (`appendDesignLine` refuses a longer one).
+ *
+ * @intent refuse an approval before anything is written when its line would not fit
+ * @internal
+ */
+export function designLineFits(params: { line: DesignLine }): boolean {
+	return designLineBytes(params.line).length <= EVENT_LINE_LIMIT
+}
+
+/** A design line as `design.jsonl` holds it: its JSON and a line break, in UTF-8. */
+function designLineBytes(line: DesignLine): Buffer {
+	return Buffer.from(`${JSON.stringify(line)}\n`, 'utf8')
 }
 
 /**
@@ -51,6 +66,18 @@ export function writeDesignCopy(params: { lotFolder: string; hash: string; text:
 	const folder = join(params.lotFolder, STORE_FILES.designCopies)
 	mkdirSync(folder, { recursive: true })
 	replaceWhole({ path: join(folder, `${params.hash}${DESIGN_COPY_EXTENSION}`), text: params.text })
+}
+
+/**
+ * Writes a saved review's copy, `design-reviews/<hash>.md`, whole, from the text read once for the check.
+ *
+ * @intent keep the exact review a design approval rests on
+ * @internal
+ */
+export function writeReviewCopy(params: { lotFolder: string; hash: string; text: string }): void {
+	const folder = join(params.lotFolder, STORE_FILES.designReviews)
+	mkdirSync(folder, { recursive: true })
+	replaceWhole({ path: join(folder, `${params.hash}${REVIEW_EXTENSION}`), text: params.text })
 }
 
 /**

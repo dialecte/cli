@@ -272,6 +272,52 @@ const needCases: StateCase[] = [
 	},
 ]
 
+describe('designStateOf - a waiver covers a recorded design whatever the need', () => {
+	it('a design recorded on a light lot and a covering waiver -> waived by its waiver', () => {
+		expect(
+			designStateOf({
+				need: LIGHT,
+				lines: [recorded({ hash: FIRST_HASH }), waived({ need: [] })],
+				source: FIRST_HASH,
+			}),
+		).toEqual({
+			need: LIGHT,
+			state: 'waived',
+			by: 'person-a',
+			uncovered: [],
+			file: DESIGN_FILE,
+			hash: FIRST_HASH,
+		})
+	})
+
+	it('a design recorded on a light lot, approved, and a waiver -> approved: the approval wins', () => {
+		expect(
+			designStateOf({
+				need: LIGHT,
+				lines: [
+					recorded({ hash: FIRST_HASH }),
+					waived({ need: [] }),
+					approved({ hash: FIRST_HASH, need: [] }),
+				],
+				source: FIRST_HASH,
+			}),
+		).toEqual({
+			need: LIGHT,
+			state: 'approved',
+			by: 'orchestrator',
+			uncovered: [],
+			file: DESIGN_FILE,
+			hash: FIRST_HASH,
+		})
+	})
+
+	it('a light lot with nothing recorded and an old waiver -> not required', () => {
+		expect(
+			designStateOf({ need: LIGHT, lines: [waived({ need: [] })], source: undefined }),
+		).toEqual({ need: LIGHT, state: 'not-required', uncovered: [] })
+	})
+})
+
 describe('designStateOf - recording and approval', () => {
 	it.each(recordingCases)('$name', ({ need, lines, source, expected }) => {
 		expect(designStateOf({ need, lines, source })).toEqual(expected)

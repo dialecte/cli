@@ -7,9 +7,15 @@
  */
 import { createHash } from 'node:crypto'
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
-import { DECLARED_GLOB, DESIGN_TEXT, DESIGN_TIME } from '../../test/design-workspace.constants.ts'
+import {
+	DECLARED_GLOB,
+	DESIGN_PATH,
+	DESIGN_TEXT,
+	DESIGN_TIME,
+	EDITED_DESIGN_TEXT,
+} from '../../test/design-workspace.constants.ts'
 import {
 	baseDeclaringLot,
 	declaringManifest,
@@ -19,6 +25,8 @@ import {
 	designLinesOf,
 	designLot,
 	landingLot,
+	saveReadyVerdict,
+	saveVerdict,
 } from '../../test/design-workspace.ts'
 import { landOnOrigin } from '../../test/land-lot.ts'
 import { git, temporaryFolder, writeFiles } from '../../test/scratch-repository.ts'
@@ -247,6 +255,97 @@ describe('lot design <id> - the standing', { timeout: STORE_CASE_TIMEOUT }, () =
 			state: 'missing',
 			by: null,
 			uncovered: [],
+			verdict: null,
+		})
+	})
+
+	it('--from with no saved review -> the verdict line names the hash a review must name', () => {
+		const lot = designLot({ declared: true })
+		const short = DESIGN_HASH.slice(0, 12)
+
+		expect(design({ lot, words: ['--from', lot.designFile] }).output.split('\n')).toContain(
+			`verdict missing: a review saved in ${dirname(lot.designFile)} names it with "Design: ${short}" and "Verdict: READY"`,
+		)
+	})
+
+	it('the standing of a design not approved with a READY review -> the verdict line names it, --json too', () => {
+		const lot = designLot({ declared: true })
+		expect(design({ lot, words: ['--from', lot.designFile] }).exitCode).toBe(0)
+		saveReadyVerdict({ designFile: lot.designFile })
+
+		expect(design({ lot, words: [] }).output.split('\n')).toContain('verdict READY in critic-1.md')
+		expect(JSON.parse(design({ lot, words: ['--json'] }).output)).toMatchObject({
+			state: 'unapproved',
+			verdict: { state: 'ready', files: ['critic-1.md'] },
+		})
+	})
+
+	it('the standing of a design not approved with a NOT READY review -> the verdict line names it, --json blocked', () => {
+		const lot = designLot({ declared: true })
+		expect(design({ lot, words: ['--from', lot.designFile] }).exitCode).toBe(0)
+		saveVerdict({ designFile: lot.designFile, name: 'critic-2.md', verdict: 'Verdict: NOT READY' })
+
+		expect(design({ lot, words: [] }).output.split('\n')).toContain(
+			'verdict NOT READY in critic-2.md',
+		)
+		expect(JSON.parse(design({ lot, words: ['--json'] }).output)).toMatchObject({
+			verdict: { state: 'blocked', files: ['critic-2.md'] },
+		})
+	})
+
+	it('the standing of a design not approved, only an earlier revision reviewed -> missing, the hint, --json missing', () => {
+		const lot = designLot({ declared: true })
+		expect(design({ lot, words: ['--from', lot.designFile] }).exitCode).toBe(0)
+		saveReadyVerdict({ designFile: lot.designFile })
+		writeFiles({ root: lot.cwd, files: { [DESIGN_PATH]: EDITED_DESIGN_TEXT } })
+		expect(design({ lot, words: ['--from', lot.designFile] }).exitCode).toBe(0)
+		const edited = createHash('sha256').update(EDITED_DESIGN_TEXT).digest('hex').slice(0, 12)
+
+		expect(design({ lot, words: [] }).output.split('\n')).toEqual(
+			expect.arrayContaining([
+				`verdict missing: a review saved in ${dirname(lot.designFile)} names it with "Design: ${edited}" and "Verdict: READY"`,
+				`! critic-1.md is READY for ${DESIGN_HASH.slice(0, 12)}, recorded before: the design changed since, so a review of ${edited} is needed`,
+			]),
+		)
+		expect(JSON.parse(design({ lot, words: ['--json'] }).output)).toMatchObject({
+			verdict: { state: 'missing', files: [] },
+		})
+	})
+
+	it('the standing of a design not approved, its folder gone -> the folder named in the verdict line', () => {
+		const lot = designLot({ declared: true })
+		expect(design({ lot, words: ['--from', lot.designFile] }).exitCode).toBe(0)
+		rmSync(dirname(lot.designFile), { recursive: true })
+
+		expect(design({ lot, words: [] }).output.split('\n')).toContain(
+			`verdict: ${dirname(lot.designFile)} is gone: name the review with --verdict <file>, or waive`,
+		)
+	})
+
+	it('the standing of a missing design -> no verdict line', () => {
+		const lot = designLot({ declared: true })
+
+		expect(design({ lot, words: [] }).output).not.toMatch(/^verdict /m)
+	})
+
+	it('a design recorded from the plan -> the reviews read beside the spec', () => {
+		const lot = designLot()
+		const spec = lotWithPlan({ lot, others: 0 })
+		expect(design({ lot, words: ['--from-plan'] }).exitCode).toBe(0)
+		saveReadyVerdict({ designFile: spec })
+
+		expect(design({ lot, words: ['--approve', '--by', 'person-a'] }).exitCode).toBe(0)
+	})
+
+	it('the standing of an approved design -> --json holds verdict null', () => {
+		const lot = designLot({ declared: true })
+		expect(design({ lot, words: ['--from', lot.designFile] }).exitCode).toBe(0)
+		saveReadyVerdict({ designFile: lot.designFile })
+		expect(design({ lot, words: ['--approve', '--by', 'person-a'] }).exitCode).toBe(0)
+
+		expect(JSON.parse(design({ lot, words: ['--json'] }).output)).toMatchObject({
+			state: 'approved',
+			verdict: null,
 		})
 	})
 

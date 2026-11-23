@@ -38,3 +38,12 @@ export const TEST_FILE = 'src/add.test.ts'
 
 /** The store lot of a landing repository. */
 export const LANDING_LOT = '0001-repo-x'
+
+/** The review file a case saves beside the design. */
+export const REVIEW_NAME = 'critic-1.md'
+
+/** The verdict line of a review that passes the design. */
+export const READY_VERDICT_LINE = 'Verdict: READY'
+
+/** The verdict line of a review that does not. */
+export const NOT_READY_VERDICT_LINE = 'Verdict: NOT READY'

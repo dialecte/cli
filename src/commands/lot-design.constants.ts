@@ -3,6 +3,9 @@
 /** The options `lot design` takes followed by a value, without the dashes. */
 export const DESIGN_VALUE_OPTIONS = ['from', 'by', 'reason'] as const
 
+/** The options `lot design` takes followed by a value, each as often as given, without the dashes. */
+export const DESIGN_REPEATABLE_OPTIONS = ['verdict'] as const
+
 /** The flags `lot design` takes, without the dashes. */
 export const DESIGN_FLAGS = ['from-plan', 'approve', 'waive', 'json'] as const
 
@@ -36,4 +39,46 @@ export const LOT_DESIGN_LINES = {
 	approved: 'lot design: {lot} approved by {by} ({hash})',
 	waived: 'lot design: {lot} waived by {by}',
 	failed: 'lot design: {reason}',
+	reviewMissing:
+		'lot design: no saved verdict names design {hash} of {lot} in {folder}: save the review there with the lines "Design: {hash}" and "Verdict: READY", or name it with --verdict <file>, or waive: dialecte lot design {lot} --waive --by <who> --reason <text>; nothing written',
+	reviewBlocking:
+		'lot design: {name} says {verdict} for design {hash} of {lot}: record a new revision, or waive; nothing written',
+	reviewFolderGone:
+		'lot design: {folder} is gone: name the review with --verdict <file>, or waive; nothing written',
+	reviewNamesOther: 'lot design: {file} names no design {hash} of {lot}; nothing written',
+	reviewNoVerdict:
+		'lot design: {file} names design {hash} but holds no Verdict: line; nothing written',
+	reviewTooMany: 'lot design: {count} reviews do not fit one approval line; nothing written',
+	verdictUnreadable: 'lot design: review {file} cannot be read; nothing written',
+	verdictEmpty: 'lot design: review {file} is empty; nothing written',
+	verdictNotText: 'lot design: review {file} is not UTF-8 text; nothing written',
+	verdictInScratch:
+		'lot design: review {file} is in a temporary or scratch folder, which is wiped: keep it beside the design; nothing written',
+	hintEarlierReady:
+		'! {name} is READY for {earlier}, recorded before: the design changed since, so a review of {hash} is needed',
+	hintNoVerdict: '! {name} names design {hash} but holds no Verdict: line',
+	verdictReady: 'verdict READY in {names}',
+	verdictMissing:
+		'verdict missing: a review saved in {folder} names it with "Design: {hash}" and "Verdict: READY"',
+	verdictBlocking: 'verdict {verdict} in {name}',
+	verdictFolderGone: 'verdict: {folder} is gone: name the review with --verdict <file>, or waive',
+} as const
+
+/** Between two review names of the verdict line. */
+export const REVIEW_NAME_SEPARATOR = ', '
+
+/** A design file's refusal line by its kind. */
+export const DESIGN_FILE_REFUSAL_LINES = {
+	unreadable: LOT_DESIGN_LINES.unreadable,
+	empty: LOT_DESIGN_LINES.empty,
+	'not-text': LOT_DESIGN_LINES.notText,
+	'in-scratch': LOT_DESIGN_LINES.inScratch,
+} as const
+
+/** A named review's refusal line by its kind. */
+export const REVIEW_FILE_REFUSAL_LINES = {
+	unreadable: LOT_DESIGN_LINES.verdictUnreadable,
+	empty: LOT_DESIGN_LINES.verdictEmpty,
+	'not-text': LOT_DESIGN_LINES.verdictNotText,
+	'in-scratch': LOT_DESIGN_LINES.verdictInScratch,
 } as const

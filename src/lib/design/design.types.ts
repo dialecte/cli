@@ -1,5 +1,11 @@
 import type { PlanEntry, PlanEntryKind } from '../plan/plan-block.types.ts'
-import type { DESIGN_GATE_VERBS, DESIGN_STATES } from './design.constants.ts'
+import type {
+	DESIGN_FILE_REFUSALS,
+	DESIGN_GATE_VERBS,
+	DESIGN_STATES,
+	VERDICT_STANDING_STATES,
+	VERDICT_WORDS,
+} from './design.constants.ts'
 
 /**
  * Why a lot needs a design: a path of its scope (or of a commit) in a shared area its repository declares
@@ -36,7 +42,12 @@ export type DesignApprovedLine = {
 	reason?: string
 	hash: string
 	need: DesignNeedReason[]
+	/** The saved reviews the approval rests on (absent on approvals recorded before reviews were read). */
+	reviews?: DesignReview[]
 }
+
+/** A saved review an approval rests on: its file's basename and the sha256 of the bytes read. */
+export type DesignReview = { name: string; hash: string }
 
 /** A required lot let go without a design, for the need it was given against. */
 export type DesignWaivedLine = {
@@ -87,3 +98,60 @@ export type DesignGateVerb = keyof typeof DESIGN_GATE_VERBS
 
 /** The gate's answer: the standing it read, and the refusal when the design does not let the lot go on. */
 export type DesignGate = { standing: DesignStanding; refusal?: string }
+
+/** Why a design or review file is refused (or, in a folder scan, skipped). */
+export type DesignFileRefusalKind = (typeof DESIGN_FILE_REFUSALS)[number]
+
+/** A design or review file read once: its real path, its bytes and its text. */
+export type DesignFileContent = { file: string; bytes: Buffer; text: string }
+
+/** A design or review file refused, and why. */
+export type DesignFileRefusal = { refused: DesignFileRefusalKind; file: string }
+
+/** How a review's last `Verdict:` line reads. */
+export type VerdictWord = (typeof VERDICT_WORDS)[number]
+
+/** What a review file says: the design hashes its `Design:` lines name, and its verdict when it holds one. */
+export type VerdictRead = {
+	/** Each named hash prefix, lower case. */
+	designs: string[]
+	verdict?: { word: VerdictWord; written: string }
+}
+
+/** A review file read once: its real path, basename, the sha256 and text of the bytes read, and what it says. */
+export type VerdictFile = {
+	file: string
+	name: string
+	hash: string
+	text: string
+	read: VerdictRead
+}
+
+/** Where the reviews of a recorded hash stand. */
+export type VerdictStandingState = (typeof VERDICT_STANDING_STATES)[number]
+
+/**
+ * The reviews of a recorded hash: the READY files naming it, the files naming it with another verdict, the READY
+ * files naming only an earlier recorded hash, and the files naming it without a verdict.
+ */
+export type VerdictStanding = {
+	state: VerdictStandingState
+	ready: VerdictFile[]
+	blocking: VerdictFile[]
+	earlierReady: { name: string; hash: string }[]
+	noVerdict: string[]
+}
+
+/**
+ * The reviews an approval reads: the scanned folder's and the named files together (the folder `gone` when it is),
+ * the named files refused, those naming another hash, those naming it without a verdict, and the standing.
+ */
+export type DesignReviews = {
+	folder: 'read' | 'gone'
+	refusals: DesignFileRefusal[]
+	/** The real paths of named files that name no design of the recorded hash. */
+	namesOther: string[]
+	/** The real paths of named files that name it without a `Verdict:` line. */
+	namedNoVerdict: string[]
+	standing: VerdictStanding
+}

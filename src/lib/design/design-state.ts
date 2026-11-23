@@ -19,8 +19,9 @@ import type {
 /**
  * The standing of a lot's design: `stale` when its last recorded content was approved and the source still exists with
  * other bytes (a source gone is not stale: the stored copy rules); `approved` by the newest approval of that content
- * covering the need; else `waived` by a covering waiver when the lot needs a design; else `unapproved`. With nothing
- * recorded: `waived`, `missing` or `not-required`. `uncovered` names what the newest go-ahead was not given against.
+ * covering the need; else `waived` by a covering waiver when the lot needs a design or one is recorded; else
+ * `unapproved`. With nothing recorded: `waived`, `missing` or `not-required`. `uncovered` names what the newest
+ * go-ahead was not given against.
  *
  * @intent tell whether a lot's design lets it go on, and why not
  * @internal
@@ -37,8 +38,9 @@ export function designStateOf(params: {
 		waiver === undefined
 			? undefined
 			: uncoveredReasonsOf({ current: need.reasons, given: waiver.need })
+	// a waiver covers a lot that needs a design, and a recorded design whatever the need: it gates the lot either way
 	const waivedStanding: DesignStanding | undefined =
-		need.required && waiver !== undefined && waiverGap?.length === 0
+		(need.required || last !== undefined) && waiver !== undefined && waiverGap?.length === 0
 			? { need, state: 'waived', by: waiver.by, uncovered: [] }
 			: undefined
 	if (last === undefined) {
