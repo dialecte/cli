@@ -3,13 +3,16 @@
  * a native stack once the parent's pull request is queued; otherwise refused, nothing recorded, nothing queued.
  */
 import { existsSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 
 import { parentChangeRequest, recordingHost } from '../../test/land-lot.ts'
 import { LOT_NAME } from '../../test/lot-describe.constants.ts'
-import { REVIEW_CHANGE_REQUEST_NUMBER, REVIEWER } from '../../test/lot-review.constants.ts'
-import { landedLot } from '../../test/lot-review.ts'
-import { git, writeFiles } from '../../test/scratch-repository.ts'
+import {
+	REVIEW_CHANGE_REQUEST_NUMBER,
+	REVIEWER,
+	STACK_PARENT_LOT as PARENT,
+} from '../../test/lot-review.constants.ts'
+import { stackedLandedLot } from '../../test/lot-review.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { STORE_FILES } from '../lib/store/store.constants.ts'
 import { runLotApprove } from './lot-approve.ts'
@@ -17,41 +20,6 @@ import { runLotApprove } from './lot-approve.ts'
 import { describe, expect, it } from 'vitest'
 
 import type { ChangeRequest, QueueSupport } from '../lib/host/host.types.ts'
-
-const PARENT = '0000-repo-p'
-
-/** A landed lot started on `PARENT` (its stack.json), the parent's identity on `feat/p` and its pull request #5. */
-function stackedLandedLot() {
-	const lot = landedLot()
-	// the parent's branch, which the lot's tdd base reads from
-	git({ root: lot.workspace.repository, args: ['branch', 'feat/p', 'main'] })
-	writeFiles({
-		root: dirname(lot.lotFolder),
-		files: {
-			[`${PARENT}/identity.json`]: JSON.stringify({
-				name: PARENT,
-				branch: 'feat/p',
-				base: {
-					ref: 'main',
-					commit: git({ root: lot.workspace.repository, args: ['rev-parse', 'main'] }).trim(),
-				},
-			}),
-			[`${PARENT}/landing.json`]: JSON.stringify({
-				schema: 1,
-				number: 5,
-				url: 'https://host.test/pull/5',
-				branch: 'feat/p',
-				head: '',
-				at: '',
-			}),
-		},
-	})
-	writeFiles({
-		root: lot.lotFolder,
-		files: { 'stack.json': JSON.stringify({ schema: 1, parent: PARENT }) },
-	})
-	return lot
-}
 
 /** Approve the lot as a person, its pull request merging into `feat/p`, the parent `parent`, on a host with stacks. */
 function approveOnParent(params: { parent: ChangeRequest; queueKind?: QueueSupport }) {

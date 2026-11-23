@@ -13,7 +13,6 @@ import { resultOf } from '../lib/command-result.ts'
 import { SHORT_SHA_LENGTH } from '../lib/gate-records/gate-records.constants.ts'
 import { readGit } from '../lib/git.ts'
 import { readLanding } from '../lib/handover/land-record.ts'
-import { stackRouteOf } from '../lib/handover/stack-queue.ts'
 import { createHost, hostNounsOf } from '../lib/host/select-host.ts'
 import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { readDecisions } from '../lib/review-rounds/decisions-file.ts'
@@ -25,7 +24,7 @@ import { parseRound, readArguments } from '../lib/review-rounds/round-arguments.
 import { readStandardLine } from '../lib/standard/read-standard-line.ts'
 import { STORE_FILES } from '../lib/store/store.constants.ts'
 import { readTestsRecord } from '../lib/tdd/tests-record.ts'
-import { approvalRefusals, queueReadOf } from './lot-approve.ts'
+import { approvalReadinessOf } from './lot-approve-readiness.ts'
 import { resolveLotPlace } from './lot-describe.ts'
 import { LOT_REVIEW_FLAGS, LOT_REVIEW_LINES, LOT_REVIEW_OPTIONS } from './lot-review.constants.ts'
 
@@ -389,7 +388,7 @@ function standardLine(folder: string): string {
 	})
 }
 
-/** Whether `lot approve` would approve now, else every refusal it would give. */
+/** Whether `lot approve` would approve now, else every refusal it would give (`approvalReadinessOf`, its own reader). */
 function approveLine(params: {
 	host: HostAdapter
 	place: LotPlace
@@ -397,21 +396,13 @@ function approveLine(params: {
 	landed: string
 	checks: ChangeRequestChecks | { refusal: string }
 }): string {
-	const { checks, place, changeRequest } = params
-	const route = stackRouteOf({ lot: place.lot, lotFolder: place.lotFolder, changeRequest })
-	const reasons =
-		'refusal' in checks
-			? [checks.refusal]
-			: [
-					...approvalRefusals({ ...params, checks, queue: queueReadOf({ ...params, route }) }),
-					...('refusal' in route ? [route.refusal] : []),
-				]
-	return reasons.length === 0
-		? fillMessage({ template: LOT_REVIEW_LINES.approveReady, values: { lot: params.place.lot } })
-		: fillMessage({
+	const readiness = approvalReadinessOf(params)
+	return 'reasons' in readiness
+		? fillMessage({
 				template: LOT_REVIEW_LINES.approveRefused,
-				values: { reasons: reasons.join('; ') },
+				values: { reasons: readiness.reasons.join('; ') },
 			})
+		: fillMessage({ template: LOT_REVIEW_LINES.approveReady, values: { lot: params.place.lot } })
 }
 
 /** The changed files' page, opened unless `open` is false; a refusal of the opener named, never an exit. */
