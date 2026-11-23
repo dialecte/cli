@@ -136,6 +136,65 @@ const MATRIX_WORKFLOW = [
 	'',
 ].join('\n')
 
+const RETRY_ACTION_WORKFLOW = [
+	'name: _test',
+	'',
+	'on:',
+	'  workflow_call:',
+	'',
+	'jobs:',
+	'  test-node:',
+	'    runs-on: ubuntu-24.04',
+	'    steps:',
+	'      - uses: actions/checkout@v6',
+	'      - name: Node tests',
+	'        run: npm run test:node',
+	'  test-browser:',
+	'    runs-on: ubuntu-24.04',
+	'    steps:',
+	'      - uses: actions/checkout@v6',
+	'      - name: Browser tests, retried',
+	'        uses: nick-fields/retry@v3',
+	'        with:',
+	'          timeout_minutes: 30',
+	'          max_attempts: 2',
+	'          command: npm run test:browser:all',
+	'',
+].join('\n')
+
+const SETUP_ACTIONS_WORKFLOW = [
+	'name: _test',
+	'',
+	'on:',
+	'  workflow_call:',
+	'',
+	'jobs:',
+	'  test:',
+	'    runs-on: ubuntu-24.04',
+	'    steps:',
+	'      - uses: actions/checkout@v6',
+	'      - uses: actions/setup-node@v6',
+	'        with:',
+	"          node-version-file: '.nvmrc'",
+	'      - uses: actions/setup-python@v6',
+	'        with:',
+	"          python-version: '3.12'",
+	'      - uses: actions/cache@v5',
+	'        with:',
+	'          path: node_modules',
+	'          key: modules',
+	'      - uses: actions/download-artifact@v4',
+	'        with:',
+	'          name: inputs',
+	'      - name: Run Tests',
+	'        run: npm run test:node',
+	'      - uses: actions/upload-artifact@v4',
+	'        with:',
+	'          name: results',
+	'          path: out',
+	'',
+].join('\n')
+
 const WORKING_DIRECTORY_WORKFLOW = [
 	'name: _test',
 	'',
@@ -471,14 +530,53 @@ const SCENARIOS: {
 	},
 	{
 		title:
-			'scripts vitest bench, vitest typecheck and vitest init naming projects beside a run of node → not runs: projects [node]',
+			'scripts vitest bench and vitest init naming projects beside a run of node → not runs: projects [node]',
 		scripts: {
 			...NODE_SCRIPTS,
-			'test:other':
-				'vitest bench --project b && vitest typecheck --project c && vitest init browser',
+			'test:other': 'vitest bench --project b && vitest init browser',
 		},
 		workflow: oneStepWorkflow('npm run test:other && npm run test:node'),
 		answer: projectsAnswer(['node']),
+	},
+	{
+		title:
+			'a script vitest typecheck --project c beside a run of node → vitest 4.1 has no typecheck command (a run filtering on typecheck): all, the reason naming typecheck',
+		scripts: { ...NODE_SCRIPTS, 'test:types': 'vitest typecheck --project c' },
+		workflow: oneStepWorkflow('npm run test:types && npm run test:node'),
+		answer: allAnswer('typecheck'),
+	},
+	{
+		title:
+			'a node job beside a job whose remote action runs a command (nick-fields/retry with.command) → all, the reason naming the action',
+		scripts: { ...NODE_SCRIPTS, 'test:browser:all': 'vitest run --project browser-all' },
+		workflow: RETRY_ACTION_WORKFLOW,
+		answer: allAnswer('nick-fields/retry@v3'),
+	},
+	{
+		title:
+			'only allowlisted setup actions (checkout, setup-node, setup-python, cache, upload-artifact, download-artifact) beside npm run test:node → projects [node]',
+		scripts: NODE_SCRIPTS,
+		workflow: SETUP_ACTIONS_WORKFLOW,
+		answer: projectsAnswer(['node']),
+	},
+	{
+		title: 'a script vitest run --project node --no-isolate → all, the reason naming --no-isolate',
+		scripts: { 'test:node': 'vitest run --project node --no-isolate' },
+		workflow: oneStepWorkflow('npm run test:node'),
+		answer: allAnswer('--no-isolate'),
+	},
+	{
+		title: 'a script vitest run --project node --pool=vmForks → all, the reason naming --pool',
+		scripts: { 'test:node': 'vitest run --project node --pool=vmForks' },
+		workflow: oneStepWorkflow('npm run test:node'),
+		answer: allAnswer('--pool'),
+	},
+	{
+		title:
+			'a script vitest run --project node --browser.isolate=false → all, the reason naming --browser.isolate',
+		scripts: { 'test:node': 'vitest run --project node --browser.isolate=false' },
+		workflow: oneStepWorkflow('npm run test:node'),
+		answer: allAnswer('--browser.isolate'),
 	},
 	{
 		title: 'a step npm run test:node -w inner → all, the reason naming -w',

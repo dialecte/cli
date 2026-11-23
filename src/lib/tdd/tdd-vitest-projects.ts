@@ -8,9 +8,14 @@ import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
+import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import {
 	PROBE_INPUT_VARIABLE,
+	PROBE_MISSING_API,
 	REPORT_ENVIRONMENT_VARIABLE,
+	VITEST_NODE_EXPORT,
+	VITEST_PROBE_APIS,
+	VITEST_VERSION_UNKNOWN,
 	VITEST_VM_POOLS,
 } from './tdd.constants.ts'
 
@@ -34,12 +39,27 @@ export async function probeVitestProjects(): Promise<void> {
 }
 
 async function reportOf(input: VitestProbeInput): Promise<VitestProbeReport> {
+	const version = versionOf(input.vitest)
+	/** The refusal of a vitest whose API is not the one the probe calls: its version and the API named. */
+	function missing(api: string): VitestProbeReport {
+		return { unresolved: fillMessage({ template: PROBE_MISSING_API, values: { version, api } }) }
+	}
 	try {
-		const vitestNode = (await import(nodeEntryOf(input.vitest))) as typeof import('vitest/node')
+		const entry = nodeEntryOf(input.vitest)
+		if (entry === undefined) return missing(VITEST_PROBE_APIS.nodeEntry)
+		const vitestNode = (await import(entry)) as Partial<typeof import('vitest/node')>
+		if (typeof vitestNode.createVitest !== 'function')
+			return missing(VITEST_PROBE_APIS.createVitest)
 		// the config loaded in memory first (vite's bundle loader writes a file under node_modules/.vite-temp): the
 		// probe leaves the tree as it found it; a config only the bundle loader reads still resolves
-		const vitest = await createLeavingTree({ vitestNode, root: input.root })
+		const vitest = await createLeavingTree({
+			createVitest: vitestNode.createVitest,
+			root: input.root,
+		})
 		try {
+			if (!Array.isArray(vitest.projects)) return missing(VITEST_PROBE_APIS.projects)
+			if (vitest.projects.some((project) => typeof project.matchesTestGlob !== 'function'))
+				return missing(VITEST_PROBE_APIS.matchesTestGlob)
 			// vitest resolves the root's real path: the asked files are matched under it
 			const root = realpathSync(input.root)
 			return {
@@ -60,14 +80,14 @@ async function reportOf(input: VitestProbeInput): Promise<VitestProbeReport> {
  * creation hands back nothing to close: what it left open ends with the process (`probeVitestProjects`).
  */
 async function createLeavingTree(params: {
-	vitestNode: typeof import('vitest/node')
+	createVitest: (typeof import('vitest/node'))['createVitest']
 	root: string
 }): Promise<Vitest> {
-	const { vitestNode, root } = params
+	const { createVitest, root } = params
 	try {
-		return await vitestNode.createVitest('test', { watch: false, root, configLoader: 'runner' })
+		return await createVitest('test', { watch: false, root, configLoader: 'runner' })
 	} catch {
-		return await vitestNode.createVitest('test', { watch: false, root })
+		return await createVitest('test', { watch: false, root })
 	}
 }
 
@@ -97,19 +117,29 @@ function probedProject(params: {
 	}
 }
 
-/** The `vitest/node` entry of the vitest package folder, as its package.json exports it. */
-function nodeEntryOf(folder: string): string {
-	const manifest = JSON.parse(readFileSync(join(folder, 'package.json'), 'utf8')) as {
+/** The vitest package's manifest: its version and exports. */
+function manifestOf(folder: string): { version?: unknown; exports?: Record<string, unknown> } {
+	return JSON.parse(readFileSync(join(folder, 'package.json'), 'utf8')) as {
+		version?: unknown
 		exports?: Record<string, unknown>
 	}
-	const exported = manifest.exports?.['./node']
+}
+
+/** The vitest package's version, as its manifest says. */
+function versionOf(folder: string): string {
+	const { version } = manifestOf(folder)
+	return typeof version === 'string' ? version : VITEST_VERSION_UNKNOWN
+}
+
+/** The `vitest/node` entry of the vitest package folder, as its package.json exports it; undefined without one. */
+function nodeEntryOf(folder: string): string | undefined {
+	const exported = manifestOf(folder).exports?.[VITEST_NODE_EXPORT]
 	const target =
 		typeof exported === 'string'
 			? exported
 			: ((exported as { import?: unknown; default?: unknown } | undefined)?.default ??
 				(exported as { import?: { default?: unknown } } | undefined)?.import?.default)
-	if (typeof target !== 'string') throw new Error(`${folder} exports no vitest/node entry`)
-	return pathToFileURL(join(folder, target)).href
+	return typeof target === 'string' ? pathToFileURL(join(folder, target)).href : undefined
 }
 
 await probeVitestProjects()

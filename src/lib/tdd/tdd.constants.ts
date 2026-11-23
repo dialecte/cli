@@ -987,7 +987,7 @@ export const VITEST_EXECUTABLES: readonly string[] = [
 ]
 
 /** vitest subcommands that run no test: a `--project` of theirs selects nothing CI runs. */
-export const VITEST_NON_RUN_SUBCOMMANDS: readonly string[] = ['list', 'bench', 'typecheck', 'init']
+export const VITEST_NON_RUN_SUBCOMMANDS: readonly string[] = ['list', 'bench', 'init']
 
 /** vitest subcommands that run tests: the words after them are the run's. */
 export const VITEST_RUN_SUBCOMMANDS: readonly string[] = ['run', 'watch', 'dev', 'related']
@@ -1014,6 +1014,7 @@ export const CI_PROJECTS_REASONS = {
 	noVitestRun: '{path} runs no vitest project',
 	expansion: '{command} names its project through {word}, which is not read',
 	fileFilter: '{command} filters its files ({word}), which is not read',
+	sharing: '{command} sets how its files share modules ({flag}), which is not read',
 	otherPackage: '{command} runs another package ({flag})',
 	otherConfig: '{command} runs another config than the package one ({flag})',
 	noProject: '{command} names no project',
@@ -1128,3 +1129,57 @@ export const VITEST_PROJECTS_STEP = 'vitest projects'
 
 /** A probe that answered no projects: its failure named as the probe's, never the test run's. */
 export const PROBE_FAILURE = 'tdd: the probe of the vitest projects of {root}: {failure}'
+
+/** Step actions that set the job up and run no test: any other `uses:` may run vitest. Matched by name, any ref. */
+export const STEP_SETUP_ACTIONS: readonly string[] = [
+	'actions/checkout',
+	'actions/setup-node',
+	'actions/setup-python',
+	'actions/cache',
+	'actions/upload-artifact',
+	'actions/download-artifact',
+]
+
+/** The separator of an action's name and its ref (`actions/checkout@v6`). */
+export const ACTION_REF_SEPARATOR = '@'
+
+/** vitest options that change how a run's files share modules: the probed isolation no longer holds. */
+export const VITEST_SHARING_FLAGS: readonly string[] = [
+	'--no-isolate',
+	'--isolate=false',
+	'--browser.isolate=false',
+	'--no-browser.isolate',
+]
+
+/** vitest's pool option: any pool chosen on the command line overrides the config's. */
+export const VITEST_POOL_FLAG = '--pool'
+
+/** vitest's own export of `vi` under its other name (`import { vitest } from 'vitest'`). */
+export const VITEST_VITEST_BINDING = 'vitest'
+
+/** The global object: `globalThis.vi` is vitest's global `vi`. */
+export const GLOBAL_THIS = 'globalThis'
+
+/** The probe wrote no report: the failure it is named with. */
+export const PROBE_NO_REPORT = 'it wrote no report'
+
+/** vitest could not resolve the projects of the package. */
+export const PROBE_UNRESOLVED = 'tdd: vitest could not resolve the projects of {root}: {reason}'
+
+/** The vitest of the package lacks an API the probe calls: its version and the API named. */
+export const PROBE_MISSING_API =
+	'vitest {version} has no {api}: the probe of the vitest projects expects vitest 4 ({api})'
+
+/** The vitest APIs the probe calls, named in its refusal when the package's vitest lacks one. */
+export const VITEST_PROBE_APIS = {
+	nodeEntry: 'vitest/node export',
+	createVitest: 'createVitest',
+	projects: 'Vitest.projects',
+	matchesTestGlob: 'TestProject.matchesTestGlob',
+} as const
+
+/** The export of the vitest package the probe imports. */
+export const VITEST_NODE_EXPORT = './node'
+
+/** A vitest package whose manifest names no version. */
+export const VITEST_VERSION_UNKNOWN = '(version unknown)'

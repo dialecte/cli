@@ -1,3 +1,4 @@
+import { fillMessage } from '../knowledge/standard/fill-message.ts'
 /**
  * The vitest projects one tdd command runs its files in: CI's projects (`readCiTestProjects`) matched to the
  * projects vitest resolves (the probe), the files a selected project holds and those none does. Read once per command,
@@ -5,7 +6,6 @@
  * the same selection.
  */
 import { readCiTestProjects } from './ci-test-projects.ts'
-import { fillTemplate } from './moved-cases.ts'
 import { packageVitestFolder } from './package-vitest.ts'
 import { reporterPath, runReportingChild } from './run-reporting-child.ts'
 import { testFileOf } from './run-test-cases.ts'
@@ -15,8 +15,10 @@ import {
 	NO_VITEST_TO_PROBE,
 	PROBE_FAILURE,
 	PROBE_FILE_NAMES,
+	PROBE_NO_REPORT,
 	PROBE_INPUT_VARIABLE,
 	PROBE_TIMEOUT_MS,
+	PROBE_UNRESOLVED,
 	UNDECLARED_CI_PROJECT,
 	VITEST_RUN_ENVIRONMENT,
 	VITEST_SELECTION_NOTES,
@@ -78,7 +80,7 @@ export async function readVitestSelection(params: {
 	)
 	if (undeclared !== undefined)
 		return {
-			failure: fillTemplate({
+			failure: fillMessage({
 				template: UNDECLARED_CI_PROJECT,
 				values: { name: undeclared, source: read.source },
 			}),
@@ -92,15 +94,13 @@ export async function readVitestSelection(params: {
 		held,
 		outside,
 		notes: [
-			fillTemplate({
+			fillMessage({
 				template: VITEST_SELECTION_NOTES.projects,
 				values: { names: read.names.join(', '), source: read.source },
 			}),
 			...outside
 				.filter((file) => noted.includes(file))
-				.map((file) =>
-					fillTemplate({ template: VITEST_SELECTION_NOTES.outside, values: { file } }),
-				),
+				.map((file) => fillMessage({ template: VITEST_SELECTION_NOTES.outside, values: { file } })),
 		],
 	}
 }
@@ -198,7 +198,7 @@ export function selectionNotes(params: {
 	if (!selection || 'failure' in selection) return []
 	const unnoted = new Set(
 		params.refused.map((file) =>
-			fillTemplate({ template: VITEST_SELECTION_NOTES.outside, values: { file } }),
+			fillMessage({ template: VITEST_SELECTION_NOTES.outside, values: { file } }),
 		),
 	)
 	return selection.notes.filter((note) => !unnoted.has(note))
@@ -258,7 +258,7 @@ async function checkBaseProjects(params: {
 	return missing === undefined
 		? undefined
 		: {
-				failure: fillTemplate({
+				failure: fillMessage({
 					template: BASE_LACKS_CI_PROJECT,
 					values: { name: missing, base: params.base },
 				}),
@@ -294,21 +294,24 @@ async function probeProjects(params: {
 	if (isRunFailure(report))
 		return {
 			...report,
-			failure: fillTemplate({
+			failure: fillMessage({
 				template: PROBE_FAILURE,
 				values: { root: params.root, failure: report.failure },
 			}),
 		}
 	if (!isProbeReport(report))
 		return {
-			failure: fillTemplate({
+			failure: fillMessage({
 				template: PROBE_FAILURE,
-				values: { root: params.root, failure: 'it wrote no report' },
+				values: { root: params.root, failure: PROBE_NO_REPORT },
 			}),
 		}
 	if ('unresolved' in report)
 		return {
-			failure: `tdd: vitest could not resolve the projects of ${params.root}: ${report.unresolved}`,
+			failure: fillMessage({
+				template: PROBE_UNRESOLVED,
+				values: { root: params.root, reason: report.unresolved },
+			}),
 		}
 	return report
 }
@@ -369,5 +372,5 @@ function wildcardPattern(pattern: string): RegExp {
 }
 
 function allNote(reason: string): string {
-	return fillTemplate({ template: VITEST_SELECTION_NOTES.all, values: { reason } })
+	return fillMessage({ template: VITEST_SELECTION_NOTES.all, values: { reason } })
 }

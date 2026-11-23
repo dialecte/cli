@@ -200,7 +200,7 @@ export function baseCollectLine(moves: TddMoves): string | undefined {
  * The template with each `{name}` replaced by its value, in one pass and by a replacer: a value (a case name,
  * a runner call) is never read as a replacement pattern (`$&`) nor filled again.
  */
-export function fillTemplate(params: {
+function fillTemplate(params: {
 	template: string
 	values: Readonly<Record<string, string>>
 }): string {

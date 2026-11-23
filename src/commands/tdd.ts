@@ -39,6 +39,7 @@ import { designGateOf, ownLotFolderOf } from '../lib/design/design-gate.ts'
 import { startStep } from '../lib/events/record-step.ts'
 import { realPathOf } from '../lib/file-system.ts'
 import { computeStateHash } from '../lib/gate-records/state-hash.ts'
+import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { TDD_LEGEND_TERMS } from '../lib/legend/legend.constants.ts'
 import { renderLegend } from '../lib/legend/render-legend.ts'
 import { readPackageJson } from '../lib/package-json.ts'
@@ -75,7 +76,7 @@ import {
 	revisionOfHelper,
 } from '../lib/tdd/lot-declaration.ts'
 import { createModuleResolver } from '../lib/tdd/module-resolver.ts'
-import { fillTemplate, movedCaseLabels } from '../lib/tdd/moved-cases.ts'
+import { movedCaseLabels } from '../lib/tdd/moved-cases.ts'
 import { listOwnCode, targetResolverOf } from '../lib/tdd/own-code.ts'
 import {
 	filesMovedBack,
@@ -1904,7 +1905,7 @@ function moduleMockLine(refusal: ModuleMockRefusal): string {
 	return statusLine({
 		label: 'refused',
 		id: refusal.file,
-		detail: fillTemplate({
+		detail: fillMessage({
 			template: MODULE_MOCK_REFUSAL,
 			values: { call: refusal.call, line: String(refusal.line), project: refusal.project },
 		}),

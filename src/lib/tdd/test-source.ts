@@ -4,6 +4,7 @@ import {
 	ASSERTION_CALLEE,
 	CASE_FUNCTIONS,
 	CONDITION_MODIFIERS,
+	GLOBAL_THIS,
 	META_GLOB_NAME,
 	MODULE_MOCK_METHODS,
 	NEGATED_GLOB_PREFIX,
@@ -17,6 +18,7 @@ import {
 	TEST_FUNCTIONS,
 	VITEST_PACKAGE,
 	VITEST_VI_BINDING,
+	VITEST_VITEST_BINDING,
 } from './tdd.constants.ts'
 
 import ts from 'typescript'
@@ -731,11 +733,13 @@ function isViReceiver(params: {
 }): boolean {
 	const { expression, receivers } = params
 	if (ts.isIdentifier(expression)) return receivers.names.has(expression.text)
+	// `.vi` of a namespace import of `vitest`, or of the global object (`globalThis.vi`)
 	return (
 		ts.isPropertyAccessExpression(expression) &&
 		expression.name.text === VITEST_VI_BINDING &&
 		ts.isIdentifier(expression.expression) &&
-		receivers.namespaces.has(expression.expression.text)
+		(receivers.namespaces.has(expression.expression.text) ||
+			expression.expression.text === GLOBAL_THIS)
 	)
 }
 
@@ -757,7 +761,12 @@ function viBindingsOf(source: ts.SourceFile): { names: Set<string>; namespaces: 
 		if (bindings && ts.isNamespaceImport(bindings)) namespaces.add(bindings.name.text)
 		if (bindings && ts.isNamedImports(bindings))
 			for (const element of bindings.elements)
-				if ((element.propertyName ?? element.name).text === VITEST_VI_BINDING)
+				// `vi`, or its other name `vitest`, under any local name
+				if (
+					[VITEST_VI_BINDING, VITEST_VITEST_BINDING].includes(
+						(element.propertyName ?? element.name).text,
+					)
+				)
 					names.add(element.name.text)
 	}
 	return { names, namespaces }

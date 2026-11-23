@@ -314,6 +314,14 @@ describe('moduleMockCalls', () => {
 			text: "import * as vitest from 'vitest'\nvitest.vi.mock('x')\n",
 			calls: [{ method: 'mock', line: 2 }],
 		},
+		"import { vitest } from 'vitest' then vitest.mock('x') → its line": {
+			text: "import { vitest } from 'vitest'\nvitest.mock('x')\n",
+			calls: [{ method: 'mock', line: 2 }],
+		},
+		"globalThis.vi.mock('x') → its line": {
+			text: "\nglobalThis.vi.mock('x')\n",
+			calls: [{ method: 'mock', line: 2 }],
+		},
 		"the global vi (no import) vi.mock('x') → its line": {
 			text: "vi.mock('x')\n",
 			calls: [{ method: 'mock', line: 1 }],

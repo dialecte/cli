@@ -8,10 +8,11 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { OWN_TEST_PATH } from '../ci/ci-template.constants.ts'
+import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { firstLine } from './classify-failure.ts'
-import { fillTemplate } from './moved-cases.ts'
 import { shellCommands } from './shell-words.ts'
 import {
+	ACTION_REF_SEPARATOR,
 	ARGUMENTS_SEPARATOR,
 	CI_PROJECTS_REASONS,
 	CI_PROJECTS_SOURCE_WITH_SCRIPTS,
@@ -35,11 +36,14 @@ import {
 	SHELL_DUPLICATION_PATTERN,
 	SHELL_EXPANSION_MARK,
 	SHELL_REDIRECTION_PATTERN,
+	STEP_SETUP_ACTIONS,
 	VITEST_EXECUTABLES,
 	VITEST_NON_RUN_SUBCOMMANDS,
 	VITEST_OTHER_CONFIG_FLAGS,
 	VITEST_PROJECT_FLAG,
+	VITEST_POOL_FLAG,
 	VITEST_RUN_SUBCOMMANDS,
+	VITEST_SHARING_FLAGS,
 	VITEST_VALUE_FLAGS,
 } from './tdd.constants.ts'
 
@@ -77,7 +81,7 @@ export function readCiTestProjects(params: {
 		kind: 'projects',
 		names: read.names,
 		source: read.scripts.length
-			? fillTemplate({
+			? fillMessage({
 					template: CI_PROJECTS_SOURCE_WITH_SCRIPTS,
 					values: { path: OWN_TEST_PATH, scripts: read.scripts.join(', ') },
 				})
@@ -114,7 +118,12 @@ function readStep(params: {
 }): CiCommandsRead {
 	const step = recordOf(params.step)
 	if (!step) return { names: [], scripts: [] }
-	if (typeof step.uses === 'string' && step.uses.startsWith(LOCAL_PATH_PREFIX))
+	// a local action, or one that is not a known setup action, may run vitest
+	if (
+		typeof step.uses === 'string' &&
+		(step.uses.startsWith(LOCAL_PATH_PREFIX) ||
+			!STEP_SETUP_ACTIONS.includes(step.uses.split(ACTION_REF_SEPARATOR)[0] ?? step.uses))
+	)
 		return { reason: usesReason(step.uses) }
 	const directory = folderReason(step['working-directory'])
 	if (directory !== undefined) return { reason: directory }
@@ -167,7 +176,7 @@ function readCommand(params: {
 		return none
 	if (OTHER_PACKAGE_MANAGERS.includes(first))
 		return {
-			reason: fillTemplate({
+			reason: fillMessage({
 				template: CI_PROJECTS_REASONS.otherManager,
 				values: { command, manager: first },
 			}),
@@ -186,11 +195,11 @@ function readCommand(params: {
 	return {
 		reason:
 			script === undefined
-				? fillTemplate({
+				? fillMessage({
 						template: CI_PROJECTS_REASONS.unreadStep,
 						values: { path: OWN_TEST_PATH, command },
 					})
-				: fillTemplate({ template: CI_PROJECTS_REASONS.unreadScript, values: { script, command } }),
+				: fillMessage({ template: CI_PROJECTS_REASONS.unreadScript, values: { script, command } }),
 	}
 }
 
@@ -212,14 +221,14 @@ function readNpm(params: {
 	)
 	if (otherPackage !== undefined)
 		return {
-			reason: fillTemplate({
+			reason: fillMessage({
 				template: CI_PROJECTS_REASONS.otherPackage,
 				values: { command, flag: otherPackage.split('=')[0] ?? otherPackage },
 			}),
 		}
 	if (second !== undefined && NPM_RUN_SUBCOMMANDS.includes(second))
 		return third === undefined
-			? { reason: fillTemplate({ template: CI_PROJECTS_REASONS.noScript, values: { command } }) }
+			? { reason: fillMessage({ template: CI_PROJECTS_REASONS.noScript, values: { command } }) }
 			: readScript({ ...params, name: third, extra: argumentsAfterDashes(words.slice(3)) })
 	if (second !== undefined && NPM_TEST_SUBCOMMANDS.includes(second))
 		return readScript({
@@ -252,7 +261,7 @@ function readScript(params: {
 	const text = scripts[name]
 	if (text === undefined)
 		return {
-			reason: fillTemplate({
+			reason: fillMessage({
 				template: CI_PROJECTS_REASONS.noScript,
 				values: { command: params.command },
 			}),
@@ -302,9 +311,23 @@ function readVitest(params: { words: readonly string[]; command: string }): CiCo
 	)
 	if (otherConfig !== undefined)
 		return {
-			reason: fillTemplate({
+			reason: fillMessage({
 				template: CI_PROJECTS_REASONS.otherConfig,
 				values: { command, flag: otherConfig.split('=')[0] ?? otherConfig },
+			}),
+		}
+	// an option changing how the files share modules: the probed isolation, and so the mock check, no longer holds
+	const sharing = runWords.find(
+		(word) =>
+			VITEST_SHARING_FLAGS.includes(word) ||
+			word === VITEST_POOL_FLAG ||
+			word.startsWith(`${VITEST_POOL_FLAG}=`),
+	)
+	if (sharing !== undefined)
+		return {
+			reason: fillMessage({
+				template: CI_PROJECTS_REASONS.sharing,
+				values: { command, flag: sharing.split('=')[0] ?? sharing },
 			}),
 		}
 	// a word neither an option nor an option's value filters the run's files: CI runs only part of a project
@@ -314,7 +337,7 @@ function readVitest(params: { words: readonly string[]; command: string }): CiCo
 	)
 	if (filter !== undefined)
 		return {
-			reason: fillTemplate({
+			reason: fillMessage({
 				template: CI_PROJECTS_REASONS.fileFilter,
 				values: { command, word: filter },
 			}),
@@ -328,14 +351,14 @@ function readVitest(params: { words: readonly string[]; command: string }): CiCo
 	const expanded = names.find((name) => name.includes(SHELL_EXPANSION_MARK))
 	if (expanded !== undefined)
 		return {
-			reason: fillTemplate({
+			reason: fillMessage({
 				template: CI_PROJECTS_REASONS.expansion,
 				values: { command, word: expanded },
 			}),
 		}
 	if (names.length === 0)
 		return {
-			reason: fillTemplate({ template: CI_PROJECTS_REASONS.noProject, values: { command } }),
+			reason: fillMessage({ template: CI_PROJECTS_REASONS.noProject, values: { command } }),
 		}
 	return { names, scripts: [] }
 }
@@ -385,7 +408,7 @@ function argumentsAfterDashes(words: readonly string[]): string[] {
 
 /** The reason of a `uses:` the reader does not follow. */
 function usesReason(uses: string): string {
-	return fillTemplate({ template: CI_PROJECTS_REASONS.uses, values: { path: OWN_TEST_PATH, uses } })
+	return fillMessage({ template: CI_PROJECTS_REASONS.uses, values: { path: OWN_TEST_PATH, uses } })
 }
 
 /** The reason of a `defaults.run.working-directory` other than the package's; undefined for none or `.`. */
@@ -396,7 +419,7 @@ function otherDirectory(defaults: unknown): string | undefined {
 /** The reason of a working directory other than the package's; undefined for none or `.`. */
 function folderReason(directory: unknown): string | undefined {
 	if (directory === undefined || SAME_FOLDERS.includes(String(directory))) return undefined
-	return fillTemplate({
+	return fillMessage({
 		template: CI_PROJECTS_REASONS.workingDirectory,
 		values: { path: OWN_TEST_PATH, directory: String(directory) },
 	})
@@ -409,7 +432,7 @@ function allOf(params: {
 }): CiTestProjects {
 	return {
 		kind: 'all',
-		reason: fillTemplate({
+		reason: fillMessage({
 			template: params.template,
 			values: { path: OWN_TEST_PATH, ...params.values },
 		}),
