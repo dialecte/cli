@@ -12,3 +12,6 @@ export const REVIEWER = 'person-a'
 
 /** A head the pull request may hold that is not the lot's landed one. */
 export const OTHER_HEAD = 'ffffffffffffffffffffffffffffffffffffffff'
+
+/** The lot a stacked lot is started on (its stack.json's parent), with its identity on `feat/p` and pull request #5. */
+export const STACK_PARENT_LOT = '0000-repo-p'

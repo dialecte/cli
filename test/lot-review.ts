@@ -1,12 +1,16 @@
 /** A store lot landed as a draft pull request, for `lot review` and `lot approve` to read. */
 import { writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 import { LANDING_FILE } from '../src/lib/handover/land-lot.constants.ts'
 import { CLI_PACKAGE } from '../src/lib/skills/cli-invocations.constants.ts'
 import { changeRequestLot } from './lot-describe.ts'
-import { REVIEW_CHANGE_REQUEST_NUMBER, REVIEW_CHANGE_REQUEST_URL } from './lot-review.constants.ts'
-import { git } from './scratch-repository.ts'
+import {
+	REVIEW_CHANGE_REQUEST_NUMBER,
+	REVIEW_CHANGE_REQUEST_URL,
+	STACK_PARENT_LOT,
+} from './lot-review.constants.ts'
+import { git, writeFiles } from './scratch-repository.ts'
 import { transitionOf } from './store-records.ts'
 
 import type { LandedLot, LandedLotState } from './lot-review.types.ts'
@@ -65,4 +69,40 @@ function stateRecordsOf(
 	if (state === 'canceled')
 		return { later: [transitionOf({ seq: 2, state: 'canceled', kind: 'stop' })] }
 	return {}
+}
+
+/**
+ * A landed lot started on `STACK_PARENT_LOT` (its stack.json), the parent's identity on `feat/p` and its pull request
+ * #5 recorded.
+ */
+export function stackedLandedLot(): LandedLot {
+	const lot = landedLot()
+	// the parent's branch, which the lot's tdd base reads from
+	git({ root: lot.workspace.repository, args: ['branch', 'feat/p', 'main'] })
+	writeFiles({
+		root: dirname(lot.lotFolder),
+		files: {
+			[`${STACK_PARENT_LOT}/identity.json`]: JSON.stringify({
+				name: STACK_PARENT_LOT,
+				branch: 'feat/p',
+				base: {
+					ref: 'main',
+					commit: git({ root: lot.workspace.repository, args: ['rev-parse', 'main'] }).trim(),
+				},
+			}),
+			[`${STACK_PARENT_LOT}/landing.json`]: JSON.stringify({
+				schema: 1,
+				number: 5,
+				url: 'https://host.test/pull/5',
+				branch: 'feat/p',
+				head: '',
+				at: '',
+			}),
+		},
+	})
+	writeFiles({
+		root: lot.lotFolder,
+		files: { 'stack.json': JSON.stringify({ schema: 1, parent: STACK_PARENT_LOT }) },
+	})
+	return lot
 }

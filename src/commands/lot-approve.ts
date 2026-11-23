@@ -1,40 +1,33 @@
 /**
  * `dialecte lot approve <id> --by <who> [--reason <text>]`: a person's approval of the lot's change request (33CI CI7).
- * Refused, nothing recorded and nothing queued, unless the change request is open at the lot's landed head, its checks
- * are green there, no blocking or should-fix finding is open and, for a lot queued alone, the host offers a queue or
- * auto-merge for it (its queue kind read once, `queueReadOf`; a refused read does not refuse). Then the approval is appended to the lot folder's `approvals.jsonl`
+ * Refused, nothing recorded and nothing queued, on every reason `approvalReadinessOf` gives (the reader `lot review`'s
+ * approve line prints too). Then the approval is appended to the lot folder's `approvals.jsonl`
  * (a person's verdict row of `review.jsonl`), the change request's text rendered again from the records and the change
  * request queued (made ready when a draft): the only verb that queues, `lot land` never does. A lot started on another
- * whose change request still merges into its parent's branch queues as a native stack, only behind a queued parent
- * (`stackQueueOf`). `--by orchestrator` approves the cli's own lots only.
+ * whose change request still merges into its parent's branch queues as a native stack. `--by orchestrator` approves the
+ * cli's own lots only.
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { prepareChangeRequest } from '../lib/change-request/change-request-sources.ts'
-import { keptPartOf } from '../lib/change-request/compose-change-request.ts'
 import { renderLotUsage } from '../lib/command-map/render-help.ts'
 import { resultOf } from '../lib/command-result.ts'
-import { designGateOf } from '../lib/design/design-gate.ts'
-import { designStateWithReasons } from '../lib/design/design-line.ts'
-import { DESIGN_APPROVE_REASON } from '../lib/design/design.constants.ts'
 import { EVENT_LINE_LIMIT } from '../lib/events/events.constants.ts'
 import { appendLine } from '../lib/events/write-event.ts'
 import { SHORT_SHA_LENGTH } from '../lib/gate-records/gate-records.constants.ts'
-import { readGit } from '../lib/git.ts'
 import { readLanding } from '../lib/handover/land-record.ts'
-import { stackQueueOf, stackRouteOf } from '../lib/handover/stack-queue.ts'
 import { createHost, hostNounsOf } from '../lib/host/select-host.ts'
 import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { readPackageJson } from '../lib/package-json.ts'
 import { forbiddenWordRefusal, isOneLine } from '../lib/review-rounds/option-checks.ts'
-import { openBlockingFindings, refreshReviewRecord } from '../lib/review-rounds/review-record.ts'
+import { refreshReviewRecord } from '../lib/review-rounds/review-record.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
 import { PUBLIC_TEXT_REFUSAL } from '../lib/store/public-text.constants.ts'
 import { folderPlanEntryIds, publicTextLabel } from '../lib/store/public-text.ts'
 import { approvalSignerRefusal, recordedByOf } from '../lib/store/signer-rules.ts'
 import { STORE_FILES } from '../lib/store/store.constants.ts'
-import { resolveTddBase } from '../lib/tdd/tdd-base.ts'
+import { approvalReadinessOf } from './lot-approve-readiness.ts'
 import {
 	APPROVABLE_STATES,
 	APPROVAL_LINE_SCHEMA,
@@ -46,12 +39,7 @@ import { resolveLotPlace, sendRenderedText } from './lot-describe.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { StackRoute } from '../lib/handover/stack-queue.types.ts'
-import type {
-	HostAdapter,
-	HostRefusal,
-	ChangeRequest,
-	ChangeRequestChecks,
-} from '../lib/host/host.types.ts'
+import type { HostAdapter, HostRefusal, ChangeRequest } from '../lib/host/host.types.ts'
 import type { ApprovalLine, QueueRead } from './lot-approve.types.ts'
 import type { LotPlace } from './lot-describe.types.ts'
 
@@ -77,7 +65,7 @@ export function runLotApprove(params: {
 	if ('exitCode' in place) return place
 	const optionRefusal = approverRefusal({ place, by, reason })
 	if (optionRefusal !== undefined) return lineOf({ exitCode: 2, line: optionRefusal })
-	// a lot no longer at work is refused before the host is asked (approvalRefusals names it too, for lot review)
+	// a lot no longer at work is refused before the host is asked (approvalReadinessOf names it too, for lot review)
 	if (!APPROVABLE_STATES.includes(place.state))
 		return lineOf({
 			exitCode: 1,
@@ -94,25 +82,20 @@ export function runLotApprove(params: {
 	const host = params.host ?? createHost()
 	const changeRequest = openChangeRequestOf({ host, place, number: landing.number })
 	if ('exitCode' in changeRequest) return changeRequest
-	const checks = host.readChecks({ root: place.worktree, number: changeRequest.number })
-	if ('refusal' in checks)
-		return lineOf({ exitCode: 1, line: `${LOT_APPROVE_LINES.prefix}${checks.refusal}` })
-	const route = stackRouteOf({ lot: place.lot, lotFolder: place.lotFolder, changeRequest })
-	const queue = queueReadOf({ host, place, changeRequest, route })
-	const reasons = approvalRefusals({ place, changeRequest, checks, landed: landing.head, queue })
-	if (reasons.length > 0) return refusedLine({ place, reasons })
-	if ('refusal' in route) return refusedLine({ place, reasons: [route.refusal] })
-	// the text must render over the live body before the approval is recorded: a refusal leaves nothing behind
-	const early = prepareChangeRequest({ ...place, templateRefs: ['HEAD'] })
-	const kept = 'refusal' in early ? early : keptPartOf({ ...early, body: changeRequest.body })
-	if ('refusal' in kept)
-		return lineOf({ exitCode: 1, line: `${LOT_APPROVE_LINES.prefix}${kept.refusal}` })
+	const readiness = approvalReadinessOf({
+		host,
+		place,
+		changeRequest,
+		checks: host.readChecks({ root: place.worktree, number: changeRequest.number }),
+		landed: landing.head,
+	})
+	if ('reasons' in readiness) return refusedLine({ place, reasons: readiness.reasons })
 	return recordAndQueue({
 		host,
 		place,
 		changeRequest,
-		route,
-		queue,
+		route: readiness.route,
+		queue: readiness.queue,
 		approval: {
 			schema: APPROVAL_LINE_SCHEMA,
 			at: (params.now ?? new Date()).toISOString(),
@@ -125,85 +108,6 @@ export function runLotApprove(params: {
 	})
 }
 
-/**
- * Why `lot approve` would refuse the lot now: the lot is no longer at work, its change request is not open or not at the
- * head the lot landed, its checks are not green on that head, or a finding other than a nit is open; none when it
- * would approve.
- *
- * @intent tell what stands between a lot and its approval
- * @internal
- */
-export function approvalRefusals(params: {
-	place: LotPlace
-	changeRequest: ChangeRequest
-	checks: ChangeRequestChecks
-	landed: string
-	/** The queue the host offers the change request (`readQueueKind`); undefined when not read (a stacked lot). */
-	queue: QueueRead
-}): string[] {
-	const { place, changeRequest } = params
-	return [
-		...(APPROVABLE_STATES.includes(place.state)
-			? []
-			: [
-					fillMessage({
-						template: LOT_APPROVE_LINES.lotNotApprovable,
-						values: { state: place.state },
-					}),
-				]),
-		...(changeRequest.state === 'open'
-			? []
-			: [
-					fillMessage({
-						template: LOT_APPROVE_LINES.notOpen,
-						values: {
-							...hostNounsOf({ root: place.worktree }),
-							number: String(changeRequest.number),
-							state: changeRequest.state,
-						},
-					}),
-				]),
-		...headReasons(params),
-		...worktreeReasons(params),
-		...checksReasons(params),
-		...blockingReasons({ folder: place.lotFolder }),
-		...designReasons({ place }),
-		...queueReasons(params),
-	]
-}
-
-/**
- * The queue the host offers the change request, read once for a lot on the single route (a stacked lot merges through
- * the host's stack tool, never auto-merge, so its kind is not read); undefined for any other route.
- *
- * @intent read the host's queue kind once, before an approval is recorded
- * @internal
- */
-export function queueReadOf(params: {
-	host: HostAdapter
-	place: LotPlace
-	changeRequest: ChangeRequest
-	route: StackRoute
-}): QueueRead {
-	if (!('route' in params.route) || params.route.route !== 'single') return undefined
-	return params.host.readQueueKind({
-		root: params.place.worktree,
-		number: params.changeRequest.number,
-	})
-}
-
-/** Why the change request cannot be queued: the host offers no queue for it; none for a refused or unread kind. */
-function queueReasons(params: { place: LotPlace; queue: QueueRead }): string[] {
-	const { queue } = params
-	if (queue === undefined || 'refusal' in queue || queue.kind !== 'none') return []
-	return [
-		fillMessage({
-			template: LOT_APPROVE_LINES.noQueue,
-			values: hostNounsOf({ root: params.place.worktree }),
-		}),
-	]
-}
-
 /** The refused line of `lot approve`: the lot and every reason, nothing recorded. */
 function refusedLine(params: { place: LotPlace; reasons: readonly string[] }): CommandResult {
 	return lineOf({
@@ -213,33 +117,6 @@ function refusedLine(params: { place: LotPlace; reasons: readonly string[] }): C
 			values: { lot: params.place.lot, reasons: params.reasons.join('; ') },
 		}),
 	})
-}
-
-/**
- * The lot's design when it does not let the lot go on, as one reason (DESIGN-GATE section 3): read at the lot base its
- * worktree resolves; none for a lot whose design is approved, waived or not needed.
- */
-function designReasons(params: { place: LotPlace }): string[] {
-	const { place } = params
-	const base = resolveTddBase({
-		root: place.worktree,
-		packageJson: readPackageJson(place.worktree),
-	})
-	if ('failure' in base) return [base.failure]
-	const gate = designGateOf({
-		lotFolder: place.lotFolder,
-		root: place.worktree,
-		base: base.commit,
-		verb: 'approve',
-	})
-	return gate.refusal === undefined
-		? []
-		: [
-				fillMessage({
-					template: DESIGN_APPROVE_REASON,
-					values: { state: designStateWithReasons(gate.standing) },
-				}),
-			]
 }
 
 /**
@@ -302,120 +179,23 @@ function openChangeRequestOf(params: {
 	return read
 }
 
-/** Why the change request's head is not the one approved: it is not the head the lot landed. */
-function headReasons(params: {
-	place: LotPlace
-	changeRequest: ChangeRequest
-	landed: string
-}): string[] {
-	const { changeRequest, landed } = params
-	if (changeRequest.head === landed) return []
-	return [
-		fillMessage({
-			template: LOT_APPROVE_LINES.headElsewhere,
-			values: {
-				...hostNounsOf({ root: params.place.worktree }),
-				number: String(changeRequest.number),
-				pushed: changeRequest.head.slice(0, SHORT_SHA_LENGTH),
-				landed: landed.slice(0, SHORT_SHA_LENGTH),
-				lot: params.place.lot,
-			},
-		}),
-	]
-}
-
-/** Why the worktree's head is not the one approved: it holds commits the lot has not landed (pushed) yet. */
-function worktreeReasons(params: { place: LotPlace; landed: string }): string[] {
-	const { place, landed } = params
-	const head = readGit({ root: place.worktree, args: ['rev-parse', 'HEAD'] }).trim()
-	if (head === landed) return []
-	return [
-		fillMessage({
-			template: LOT_APPROVE_LINES.worktreeElsewhere,
-			values: {
-				head: head.slice(0, SHORT_SHA_LENGTH),
-				landed: landed.slice(0, SHORT_SHA_LENGTH),
-				lot: place.lot,
-			},
-		}),
-	]
-}
-
-/**
- * Why the checks do not let the approval through: they ran on another head than the landed one (a push between the
- * two reads), one failed, one still runs, or the head has none.
- */
-function checksReasons(params: {
-	changeRequest: ChangeRequest
-	checks: ChangeRequestChecks
-	landed: string
-}): string[] {
-	const { checks, landed } = params
-	// a change request at another head is named once, by headReasons
-	if (params.changeRequest.head === landed && checks.head !== landed)
-		return [
-			fillMessage({
-				template: LOT_APPROVE_LINES.checksElsewhere,
-				values: {
-					checked: checks.head.slice(0, SHORT_SHA_LENGTH),
-					landed: landed.slice(0, SHORT_SHA_LENGTH),
-				},
-			}),
-		]
-	if (checks.state === 'green') return []
-	if (checks.state === 'none') return [LOT_APPROVE_LINES.checksNone]
-	const failing =
-		checks.failing.length === 0
-			? []
-			: [
-					fillMessage({
-						template: LOT_APPROVE_LINES.checksFailing,
-						values: { names: checks.failing.join(', ') },
-					}),
-				]
-	const pending =
-		checks.state === 'pending'
-			? [
-					fillMessage({
-						template: LOT_APPROVE_LINES.checksPending,
-						values: { names: checks.pending.join(', ') },
-					}),
-				]
-			: []
-	return [...failing, ...pending]
-}
-
-/** The findings other than nits still open, each with its severity, as one reason. */
-function blockingReasons(params: { folder: string }): string[] {
-	const rows = openBlockingFindings(params)
-	if (rows.length === 0) return []
-	return [
-		fillMessage({
-			template: LOT_APPROVE_LINES.blocking,
-			values: { rows: rows.map((row) => `${row.id} ${row.severity}`).join(', ') },
-		}),
-	]
-}
-
 /**
  * The approval appended and the review record written, the text rendered again and sent, and the queue asked: the
- * change request alone (named by the queue kind read before), or the native stack up to it. A stacked lot queues only
- * behind a queued parent (`stackQueueOf`): refused before anything is recorded.
+ * change request alone (named by the queue kind read before), or the native stack up to it (its parent checked by
+ * `approvalReadinessOf` before).
  */
 function recordAndQueue(params: {
 	host: HostAdapter
 	place: LotPlace
 	changeRequest: ChangeRequest
-	/** The route `stackRouteOf` answered: single or stacked (a refusal is refused before). */
+	/** The route `approvalReadinessOf` answered: single or stacked (a refusal is refused before). */
 	route: Exclude<StackRoute, { refusal: string }>
-	/** The queue the host offers, read once (`queueReadOf`); undefined for a stacked lot. */
+	/** The queue the host offers, read once (`approvalReadinessOf`); undefined for a stacked lot. */
 	queue: QueueRead
 	approval: ApprovalLine
 }): CommandResult {
 	const { host, place, changeRequest, approval, route } = params
-	const stacked = 'route' in route && route.route === 'stacked' ? route : undefined
-	const stackRefusal = stacked === undefined ? undefined : stackQueueOf({ ...place, host, stacked })
-	if (stackRefusal !== undefined) return refusedLine({ place, reasons: [stackRefusal.refusal] })
+	const stacked = route.route === 'stacked'
 	const already = isApproved({ folder: place.lotFolder, approval })
 	try {
 		if (!already)
@@ -448,7 +228,7 @@ function recordAndQueue(params: {
 	const queued =
 		'refusal' in sent
 			? sent
-			: stacked !== undefined
+			: stacked
 				? host.queueStack(queueParams)
 				: host.queueChangeRequest(queueParams)
 	const line = queuedLineOf({ queued, already, values, via: viaOf({ queue: params.queue }) })
@@ -478,7 +258,7 @@ function queuedLineOf(params: {
 }
 
 /**
- * The queue the queued line names, from the one read (`queueReadOf`): ` (<noun>)`; nothing when the read was refused or
+ * The queue the queued line names, from the one read (`approvalReadinessOf`): ` (<noun>)`; nothing when the read was refused or
  * the kind was not read (a stacked lot), so no noun is guessed. A host offering none was refused before.
  */
 function viaOf(params: { queue: QueueRead }): string {

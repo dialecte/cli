@@ -3,7 +3,7 @@ import { STORE_GLOB, STORE_NEED } from '../../test/design-workspace.constants.ts
 import { approvedDesign, gatedLot } from '../../test/design-workspace.ts'
 import { git } from '../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
-import { approvalRefusals } from './lot-approve.ts'
+import { approvalRefusals } from './lot-approve-readiness.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
