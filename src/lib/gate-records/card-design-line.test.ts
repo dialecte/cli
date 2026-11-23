@@ -7,7 +7,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { APPROVER, DECLARED_GLOB, OUTSIDE_GLOB } from '../../../test/design-workspace.constants.ts'
-import { design, designLot } from '../../../test/design-workspace.ts'
+import { design, designLot, saveReadyVerdict } from '../../../test/design-workspace.ts'
 import { storeLotFolder } from '../../../test/handover-store-scenario.ts'
 import { headOf, hooksRepository, writeGreenRecords } from '../../../test/mutation-hooks.ts'
 import { noRepositoryCli } from '../../../test/repository-cli-probe.ts'
@@ -39,6 +39,7 @@ describe("the card's design line", { timeout: STORE_CASE_TIMEOUT }, () => {
 	it('a design approved by a person -> passed, approved by person, never the name', () => {
 		const lot = designLot({ declared: true })
 		design({ lot, words: ['--from', lot.designFile] })
+		saveReadyVerdict({ designFile: lot.designFile })
 		design({ lot, words: ['--approve', '--by', APPROVER] })
 
 		expect(buildDesignLine({ folder: lot.lotFolder, root: lot.cwd })).toEqual({

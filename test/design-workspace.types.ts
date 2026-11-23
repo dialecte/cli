@@ -1,8 +1,18 @@
 import type { LandingRepository } from './land-lot.types.ts'
 import type { StationLot } from './lot-station-workspace.types.ts'
 
-/** A store lot for the `lot design` cases, and the real path of its design file. */
-export type DesignLot = StationLot & { designFile: string }
+/** The fresh folders `TMPDIR` and `DIALECTE_SCRATCH` point at once isolated. */
+export type IsolatedFolders = { temporary: string; scratch: string }
+
+/**
+ * A store lot for the `lot design` cases: the real path of its design file, a folder outside the design's for a review
+ * a case names (made before the isolation: no scratch file), and the isolated temporary folders.
+ */
+export type DesignLot = StationLot & {
+	designFile: string
+	reviewFolder: string
+	isolated: IsolatedFolders
+}
 
 /** A store lot whose own worktree is a vitest package, for the gate's cases. */
 export type GatedLot = {

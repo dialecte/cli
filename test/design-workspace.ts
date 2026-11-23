@@ -9,6 +9,7 @@ import {
 	designHashOf,
 	writeDesignCopy,
 } from '../src/lib/design/design-records.ts'
+import { DESIGN_SHOWN_HASH_LENGTH } from '../src/lib/design/design.constants.ts'
 import { commonGitFolderOf } from '../src/lib/git.ts'
 import { STORE_FILES, STORE_FOLDER } from '../src/lib/store/store.constants.ts'
 import { writeStoreLot } from './brief-workspace.ts'
@@ -18,6 +19,8 @@ import {
 	DESIGN_TEXT,
 	DESIGN_TIME,
 	LANDING_LOT,
+	READY_VERDICT_LINE,
+	REVIEW_NAME,
 } from './design-workspace.constants.ts'
 import { headOf, storeLotFolder, storeOf } from './handover-store-scenario.ts'
 import { landingRepository } from './land-lot.ts'
@@ -31,7 +34,7 @@ import { vi } from 'vitest'
 
 import type { CommandResult } from '../src/lib/command-result.types.ts'
 import type { DesignNeedReason } from '../src/lib/design/design.types.ts'
-import type { DesignLot, GatedLot, LandingLot } from './design-workspace.types.ts'
+import type { DesignLot, GatedLot, IsolatedFolders, LandingLot } from './design-workspace.types.ts'
 
 /**
  * A working store lot (scope `src/`) whose repository holds the design at `DESIGN_PATH`; with `declared`, its
@@ -42,6 +45,8 @@ export function designLot(
 	params: { declared?: boolean; state?: 'working' | 'committed' } = {},
 ): DesignLot {
 	const lot = createStationLot({ state: params.state })
+	// a folder outside the design's, made before the temporary folders are isolated: a review there is no scratch file
+	const reviewFolder = realpathSync(temporaryFolder('design-review-'))
 	writeFiles({
 		root: lot.cwd,
 		files: {
@@ -49,20 +54,21 @@ export function designLot(
 			...(params.declared && { 'package.json': declaringManifest() }),
 		},
 	})
-	isolateTemporaryFolders()
-	return { ...lot, designFile: realpathSync(join(lot.cwd, DESIGN_PATH)) }
+	const isolated = isolateTemporaryFolders()
+	return { ...lot, designFile: realpathSync(join(lot.cwd, DESIGN_PATH)), reviewFolder, isolated }
 }
 
 /**
  * Points the system's temporary folder (`TMPDIR`) and the cli's scratch root (`DIALECTE_SCRATCH`) at fresh folders, so
  * the files a case made before are in neither: a design there is accepted, one made after under them is refused. The
- * caller restores the environment (`vi.unstubAllEnvs`).
+ * caller restores the environment (`vi.unstubAllEnvs`). Returns both folders.
  */
-export function isolateTemporaryFolders(): void {
+export function isolateTemporaryFolders(): IsolatedFolders {
 	const temporary = temporaryFolder('design-tmp-')
 	const scratch = temporaryFolder('design-scratch-')
 	vi.stubEnv('TMPDIR', temporary)
 	vi.stubEnv('DIALECTE_SCRATCH', scratch)
+	return { temporary, scratch }
 }
 
 /**
@@ -121,6 +127,32 @@ export function approvedDesign(params: {
 			need: params.need,
 		},
 	})
+}
+
+/**
+ * Writes a review named `name` (default `critic-1.md`) in `folder` (default the design's) naming `hash` (default the
+ * design file's sha256) by its first 12 characters, with the `verdict` line (default `Verdict: READY`). Returns its
+ * real path.
+ */
+export function saveVerdict(params: {
+	designFile: string
+	name?: string
+	folder?: string
+	hash?: string
+	verdict?: string
+}): string {
+	const hash = params.hash ?? designHashOf(readFileSync(params.designFile))
+	const file = join(params.folder ?? dirname(params.designFile), params.name ?? REVIEW_NAME)
+	writeFileSync(
+		file,
+		`Design: ${hash.slice(0, DESIGN_SHOWN_HASH_LENGTH)}\n${params.verdict ?? READY_VERDICT_LINE}\n\nThe review.\n`,
+	)
+	return realpathSync(file)
+}
+
+/** A READY review beside the design, naming its current bytes: what a lot needs before `lot design --approve`. */
+export function saveReadyVerdict(params: { designFile: string }): string {
+	return saveVerdict({ designFile: params.designFile })
 }
 
 /** `lot design <lot's full name> <words...>` from `cwd` (the repository unless given), at `DESIGN_TIME`. */

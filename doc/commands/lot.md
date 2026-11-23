@@ -46,7 +46,7 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
   dialecte lot describe <id> [--print] [--json]
   dialecte lot review <id> [--no-open] | lot review <id> --comments --round <n>
   dialecte lot approve <id> --by <who> [--reason <text>]
-  dialecte lot design <id> [--from <file> | --from-plan | --approve --by <who> [--reason <text>] | --waive --by <who> --reason <text>] [--json]
+  dialecte lot design <id> [--from <file> | --from-plan | --approve --by <who> [--reason <text>] [--verdict <file>]... | --waive --by <who> --reason <text>] [--json]
   dialecte lot land <id>
   dialecte lot close <hand-over name|lot id|index>... [--json]
   dialecte lot close --feature <name> [--json]
@@ -131,21 +131,23 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
              change-request template (its host's path; with no host known, the first host template
              the tree holds): the title is the brief's first commit message (changed with lot
              brief), the body its summary and other commit messages, step titles and behaviours, the
-             changelog fragments the lot adds, tests.json (a part of another tree reads stale),
-             review.jsonl (findings and how each closed, the verdicts by reviewer kind, never a
-             name; a row value its writer never writes refused), the risk class and effort, the
-             overlaps it accepted (the other lot by its index, and why), the issue it closes, and
-             the author's checklist ticked from the records; a missing record reads not recorded; a
-             lot that changes package.json's version is refused when its title does not name the new
-             version (read at the lot's own fork point: a lot started on an open release lot sets
-             none), naming lot brief; the record text is checked first (a reference, a forbidden
-             word, a plan entry id, a link or a path outside the tree refused, naming the word and
-             the record); the open change request (landing.json's, else the branch's newest) is
-             edited only when its title or body reads otherwise, a person's part after the kept
-             marker kept (a body without that heading holding a person's text refused, never
-             dropped); a damaged lot refused; --print prints and sends nothing; no change request
-             yet prints the text and names lot land; --json { title, body, changeRequest, head, sent
-             }
+             changelog fragments the lot adds (every part read from the lot's own base: its fork
+             from the base branch, or for a lot started on another its parent's line, joined with
+             the base branch when it merged it, so a lot on an open parent lists its own work only),
+             tests.json (a part of another tree reads stale), review.jsonl (findings and how each
+             closed, the verdicts by reviewer kind, never a name; a row value its writer never
+             writes refused), the risk class and effort, the overlaps it accepted (the other lot by
+             its index, and why), the issue it closes, and the author's checklist ticked from the
+             records; a missing record reads not recorded; a lot that changes package.json's version
+             is refused when its title does not name the new version (read at the lot's own fork
+             point: a lot started on an open release lot sets none), naming lot brief; the record
+             text is checked first (a reference, a forbidden word, a plan entry id, a link or a path
+             outside the tree refused, naming the word and the record); the open change request
+             (landing.json's, else the branch's newest) is edited only when its title or body reads
+             otherwise, a person's part after the kept marker kept (a body without that heading
+             holding a person's text refused, never dropped); a damaged lot refused; --print prints
+             and sends nothing; no change request yet prints the text and names lot land; --json {
+             title, body, changeRequest, head, sent }
   review - the private half of the lot's review, read-only (nothing written): the lot's state and
            branch, its change request (landing.json's) with the head it is at, the head the lot
            landed and the worktree's HEAD, its checks, the brief's goal and steps (title, spec,
@@ -203,24 +205,50 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
            its block names the same spec (write this lot's own design) or the lot carries out no
            entry with a spec; --approve --by <who> [--reason <text>] appends an approval of the last
            recorded hash with the need it was given against, refused when nothing is recorded or the
-           source exists with other bytes (record it again); --waive --by <who> --reason <text>
-           appends a waiver with the current need, refused on a lot that needs no design; both
-           refused from the lot's own worktree or its review throwaway (approve from the main
-           checkout), and on a --by or --reason holding a forbidden word or a --by holding what a
-           public record never holds (exit 2); the orchestrator in any casing is recorded as
-           orchestrator; a lot no longer at work is refused (exit 1); without an option it prints
-           design <state>[ by <kind>][ · <reasons>] and the next command, --json { required,
-           reasons, state, by, uncovered } (by the kind, never a name)
+           source exists with other bytes (record it again), then unless a saved review passes
+           exactly that hash: the reviews are the *.md files directly in the recorded file's folder
+           (links followed; one unreadable, empty, not UTF-8 or under a scratch or temporary folder
+           skipped; the design itself and a file of its hash left out) plus each --verdict <file>
+           (repeatable, added to the folder, which is read whenever it exists; one unreadable,
+           empty, not UTF-8, under a scratch or temporary folder, naming another hash or holding no
+           Verdict: line refused), each read once; a review names a hash by a line Design: <12 to 64
+           hex characters> (a prefix of the sha256) and says its verdict on its Verdict: lines
+           (READY, alone or before notes, a stop or a dash; NOT READY; anything else unrecognized):
+           lines that disagree read unrecognized, a READY from quoted lines only reads none, lines
+           inside a code fence (CommonMark: closed only by a run of the same character at least as
+           long) are never read, quote, heading and list markers are stripped before the key, and a
+           fence left open reads unrecognized; the approval needs a READY review naming the hash and
+           none naming it with another verdict (a READY of an earlier recorded hash never carries
+           over: a review of the new bytes is needed), every refusal at once (exit 2, nothing
+           written): no review naming it (the folder, the hash, the two lines to save, --verdict and
+           --waive named, then ! a READY review of an earlier revision and ! a review naming it
+           without a Verdict: line), each review that does not pass it (its own line for lines that
+           disagree and for an open fence), the folder gone with nothing named, more reviews than
+           one line holds; the approved line records reviews: [{ name, hash }] and each review
+           passing it is copied whole as design-reviews/<sha256>.md from the bytes checked, before
+           the line; a review edited after the approval changes nothing; --waive --by <who> --reason
+           <text> appends a waiver with the current need, refused on a lot that needs no design and
+           has none recorded; both refused from the lot's own worktree or its review throwaway
+           (approve from the main checkout), and on a --by or --reason holding a forbidden word or a
+           --by holding what a public record never holds (exit 2); the orchestrator in any casing is
+           recorded as orchestrator; a lot no longer at work is refused (exit 1); without an option
+           it prints design <state>[ by <kind>][ · <reasons>], while not approved the verdict line
+           of the folder's reviews (verdict READY in <names>, verdict missing: ... with its ! hints,
+           verdict <verdict> in <name> for each review that does not pass, or the folder gone), and
+           the next command; --from prints the same verdict line after recording; --json { required,
+           reasons, state, by, uncovered, verdict } (by the kind, never a name; verdict { state:
+           ready|missing|blocked, files } while not approved, else null)
   design - the need, computed by every reader and never stored: required when a scope entry (or a
            path) lies in a dialecte.risk.high area or is broader than one, or the lot carries out a
            plan entry of kind lot; an approval or a waiver holds only for the need it was given
            against (a reason of a new kind or glob reads unapproved or missing again); a recorded
-           design gates the lot whatever its need; states approved, waived, unapproved (shown not
-           approved), stale (shown stale since its approval: the source edited after its approval),
-           missing, not-required (shown not required); lot start and its dry run print design
-           required (<reasons>) or design not required, lot forecast and lot status the state line,
-           the hand-over card a design line (passed or a warning, never failed), review.jsonl a
-           design row and the change request body Design: <state> by <kind>
+           design gates the lot whatever its need, and a covering waiver lets it go on whatever its
+           need; states approved, waived, unapproved (shown not approved), stale (shown stale since
+           its approval: the source edited after its approval), missing, not-required (shown not
+           required); lot start and its dry run print design required (<reasons>) or design not
+           required, lot forecast and lot status the state line, the hand-over card a design line
+           (passed or a warning, never failed), review.jsonl a design row and the change request
+           body Design: <state> by <kind>
   design - the gate: while a lot's required design is missing, unapproved or stale, tdd red in its
            own worktree refuses (exit 2, nothing run), gate --hook's design step fails a commit of
            the lot's branch, from any worktree, holding a production path (after the scope step,
@@ -239,15 +267,19 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
          request is linked on the parent's; without, a note says why; it is never queued (lot
          approve queues it); before each landing it is rebased onto the parent branch's newest tip
          (the local branch or origin's) when it does not hold it, from its fork point (git
-         merge-base --fork-point: only its own commits move, whatever the parent's amend or rebase);
-         once the parent merged (its landing state: a merge, a squash read offline, or its change
-         request merged; never the registry's committed alone, which a hand-over run writes before
-         anything reaches the base), the parent's landed fact is recorded and the child is rebased
-         with git rebase --onto origin/<base> <fork point>, only its own commits moved, and its
-         change request retargeted to the base when the host did not; when the host already rewrote
-         its branch on origin (a native stack), it follows that rewrite (local commits beyond its
-         last push rebased onto it, that head the lease); a conflict names its files, the rebase
-         undone, nothing pushed, exit 2
+         merge-base --fork-point: only its own commits move, whatever the parent's amend or rebase;
+         a lot that merged the base branch forks at the join of the lines it holds, a commit no ref
+         names, so the base's commits are never its own, and lines that do not merge clean refuse,
+         naming the ways out, except a merged parent's landed tip the lot holds against the base,
+         where the base's content wins; a parent that may have landed though git alone cannot prove
+         it refuses naming how to record its landing); once the parent merged (its landing state: a
+         merge, a squash read offline, or its change request merged; never the registry's committed
+         alone, which a hand-over run writes before anything reaches the base), the parent's landed
+         fact is recorded and the child is rebased with git rebase --onto origin/<base> <fork
+         point>, only its own commits moved, and its change request retargeted to the base when the
+         host did not; when the host already rewrote its branch on origin (a native stack), it
+         follows that rewrite (local commits beyond its last push rebased onto it, that head the
+         lease); a conflict names its files, the rebase undone, nothing pushed, exit 2
   land - the lot lands through its change request: its committed HEAD (uncommitted files stay in the
          worktree, named), rebased onto origin/<base> when behind (a conflict undone and named,
          nothing pushed; with uncommitted tracked changes it is pushed as committed, the rebase left
@@ -1213,6 +1245,33 @@ it is approved again. A lot needs a design when its scope lies in a `dialecte.ri
 concepts) or is broader than one, or when it carries out a plan entry of kind `lot`; `--waive --by <who> --reason
 <text>` lets such a lot go on without one, recorded and shown. `lot start`, `lot status`, `lot forecast`, the card and
 the change request body say where the design stands.
+
+An approval rests on a saved review of exactly the bytes approved. A reviewer is anyone: a person, an agent, another
+session. The review is a markdown file beside the design (any `*.md` file in its folder) or one named with
+`--verdict <file>`. It holds two lines:
+
+```text
+Design: <the first 12 characters of the hash lot design printed, or more>
+Verdict: READY
+```
+
+A `Verdict:` line reads READY when it is `READY` alone or `READY` followed by notes, a stop or a dash. It reads
+NOT READY when it starts with `NOT READY`, and anything else is unrecognized. All of a review's `Verdict:` lines must
+agree. If two disagree, the review is unrecognized and blocks, so a reviewer who changes their mind writes a new
+review file.
+
+Lines inside a code fence are never read. The fence closes only on a run of the same character at least as long as
+the one that opened it, and a fence left open makes the review unrecognized. Quote, heading and list markers are
+stripped before the key, so a quoted or listed sample counts. A READY that only quoted lines give passes nothing. The approval needs one READY review naming the recorded hash, and no review naming that
+hash with another verdict.
+
+A READY review of an earlier revision does not carry over. After folding fixes, record the design again and have a
+reviewer save a review that names the new hash. `--verdict` adds files to the folder's reviews and never replaces
+them; it is how to point at a review once the design's folder is gone. The approval keeps a copy of each review it
+rests on in the lot folder. A refusal names what is missing and the two lines to save.
+
+`--waive` stays the way around, and it also covers a design recorded on a lot that needs none. While a design is not
+approved, `lot design <id>` and `--from` print the verdict line of its folder's reviews.
 
 While a required design is missing, not approved or stale, the lot does not move: `tdd red` in its worktree refuses,
 the commit hook's `design` step fails a commit of production code on the lot's branch, `lot land` refuses after its rebase and pushes

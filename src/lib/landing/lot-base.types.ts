@@ -26,4 +26,26 @@ export type LotBase = {
 	ref: string
 	label: string
 	forkPoint: string
+	/**
+	 * The commits a joined base joins, in order (the parent's line, then the base), when the lot holds lines none of
+	 * which holds the others (a merge of the base branch): `forkPoint` is then a commit no ref names, whose parents they
+	 * are. Absent for a single fork point.
+	 */
+	joined?: readonly string[]
+}
+
+/**
+ * A commit a lot's line forks at, with the label of that line and its side: the parent's (its refs and its landed tip)
+ * or the base's.
+ */
+export type LotLineFork = { commit: string; label: string; side: 'parent' | 'base' }
+
+/** What a join of two lines needs beyond them: the parent's landed tip HEAD holds, and how to word a conflict. */
+export type LotJoinContext = {
+	root: string
+	/** The merged parent's landed tip, when HEAD holds it (`landedParentTipOf`); else undefined. */
+	landedTip: string | undefined
+	/** The parent read unlanded offline though it may have landed (`proof: 'offline-unproven'`): its branch. */
+	unprovenParent: string | undefined
+	baseLabel: string
 }
