@@ -1,15 +1,16 @@
 /**
- * `dialecte lot design <id> [--from <file> | --from-plan | --approve --by <who> [--reason <text>] | --waive --by <who>
- * --reason <text>] [--json]` (DESIGN-GATE section 2): a lot's design recorded by its content's sha256 (a copy kept in
- * the lot folder), approved or waived from the main checkout for the need it was given against, and its standing
- * printed. Each write refreshes `review.jsonl`. It refuses nothing of the lot's other verbs.
+ * `dialecte lot design <id> [--from <file> | --from-plan | --approve --by <who> [--reason <text>] [--verdict <file>]... |
+ * --waive --by <who> --reason <text>] [--json]` (DESIGN-GATE section 2): a lot's design recorded by its content's
+ * sha256 (a copy kept in the lot folder), approved from the main checkout on a saved review that passes exactly that
+ * content, or waived, for the need it was given against, and its standing printed. Each write refreshes `review.jsonl`.
+ * It refuses nothing of the lot's other verbs.
  */
-import { existsSync, readFileSync, statSync } from 'node:fs'
-import { basename, resolve, sep } from 'node:path'
+import { basename, dirname, resolve } from 'node:path'
 
 import { renderLotUsage } from '../lib/command-map/render-help.ts'
 import { resultOf } from '../lib/command-result.ts'
 import { lotGitDeclaredHighOf } from '../lib/design/base-declared.ts'
+import { designFileContentOf, isDesignFileRefusal } from '../lib/design/design-file.ts'
 import { designNextOf, designStatusJson, designStatusLine } from '../lib/design/design-line.ts'
 import {
 	appendDesignLine,
@@ -18,12 +19,15 @@ import {
 	readDesignLines,
 	sourceHashOf,
 	writeDesignCopy,
+	designLineFits,
+	writeReviewCopy,
 } from '../lib/design/design-records.ts'
 import {
 	lotDesignNeedOf,
 	lotDesignStandingOf,
 	lotPlanEntryOf,
 } from '../lib/design/design-standing.ts'
+import { designReviewsOf } from '../lib/design/design-verdicts.ts'
 import {
 	DESIGN_LINE_SCHEMA,
 	DESIGN_NEXT_PREFIX,
@@ -35,7 +39,6 @@ import { jsonOf } from '../lib/print/print.ts'
 import { forbiddenWordRefusal, isOneLine } from '../lib/review-rounds/option-checks.ts'
 import { refreshReviewRecord } from '../lib/review-rounds/review-record.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
-import { scratchReadRoots } from '../lib/scratch/scratch-roots.ts'
 import { readIdentity } from '../lib/store/identity.ts'
 import { lotRefusalExit } from '../lib/store/lot-exits.ts'
 import {
@@ -50,21 +53,37 @@ import { requiredLotOf } from '../lib/store/resolve-lot.ts'
 import { ownWorktreeRefusal, recordedByOf } from '../lib/store/signer-rules.ts'
 import { APPROVABLE_STATES } from './lot-approve.constants.ts'
 import {
+	DESIGN_FILE_REFUSAL_LINES,
 	DESIGN_FLAGS,
+	DESIGN_REPEATABLE_OPTIONS,
 	SYSTEM_TEMPORARY_ROOTS,
 	DESIGN_VALUE_OPTIONS,
 	DESIGN_VERB,
 	LOT_DESIGN_LINES,
+	REVIEW_FILE_REFUSAL_LINES,
+	REVIEW_NAME_SEPARATOR,
 } from './lot-design.constants.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type {
+	DesignApprovedLine,
+	DesignFileRefusal,
+	DesignFileRefusalKind,
 	DesignLine,
 	DesignNeed,
 	DesignRecordedLine,
+	DesignReviews,
 	DesignStanding,
+	VerdictFile,
+	VerdictStanding,
 } from '../lib/design/design.types.ts'
-import type { DesignLotPlace, DesignRequest } from './lot-design.types.ts'
+import type {
+	DesignFileRoots,
+	DesignLotPlace,
+	DesignRequest,
+	DesignShowJson,
+	DesignVerdictJson,
+} from './lot-design.types.ts'
 
 export function runLotDesign(params: {
 	cwd: string
@@ -76,14 +95,23 @@ export function runLotDesign(params: {
 	const read = readArguments({
 		argv: params.argv,
 		valueOptions: DESIGN_VALUE_OPTIONS,
+		repeatable: DESIGN_REPEATABLE_OPTIONS,
 		flags: DESIGN_FLAGS,
 	})
 	if (typeof read === 'string' || read.words.length !== 1) return usage()
-	const request = requestOf({ values: read.values, flags: read.flags })
+	const request = requestOf({
+		values: read.values,
+		flags: read.flags,
+		verdicts: read.lists.get('verdict') ?? [],
+	})
 	if (request === undefined) return usage()
 	const place = placeOf({ cwd: params.cwd, id: read.words[0], json: read.flags.has('json') })
 	if ('exitCode' in place) return place
-	if (request.kind === 'show') return showStanding({ place, json: read.flags.has('json') })
+	const roots: DesignFileRoots = {
+		cwd: params.cwd,
+		sharedTemporaryRoots: params.sharedTemporaryRoots ?? SYSTEM_TEMPORARY_ROOTS,
+	}
+	if (request.kind === 'show') return showStanding({ place, roots, json: read.flags.has('json') })
 	if (!APPROVABLE_STATES.includes(place.state))
 		return lineOf({
 			exitCode: 1,
@@ -93,14 +121,7 @@ export function runLotDesign(params: {
 			}),
 		})
 	const at = (params.now ?? new Date()).toISOString()
-	if (request.kind === 'record')
-		return recordDesign({
-			place,
-			cwd: params.cwd,
-			file: request.file,
-			at,
-			sharedTemporaryRoots: params.sharedTemporaryRoots ?? SYSTEM_TEMPORARY_ROOTS,
-		})
+	if (request.kind === 'record') return recordDesign({ place, roots, file: request.file, at })
 	const refusal =
 		byRefusal({ place, by: request.by, reason: request.reason }) ??
 		ownWorktreeRefusal({
@@ -113,16 +134,24 @@ export function runLotDesign(params: {
 		})
 	if (refusal !== undefined) return lineOf({ exitCode: 2, line: refusal })
 	return request.kind === 'approve'
-		? approveDesign({ place, by: request.by, reason: request.reason, at })
-		: waiveDesign({ place, by: request.by, reason: request.reason, at })
+		? approveDesign({
+				place,
+				roots,
+				by: request.by,
+				reason: request.reason,
+				verdicts: request.verdicts,
+				at,
+			})
+		: waiveDesign({ place, roots, by: request.by, reason: request.reason, at })
 }
 
 /** The one request the options make; undefined for none that fits (two at once, a missing or blank value). */
 function requestOf(params: {
 	values: Map<string, string>
 	flags: Set<string>
+	verdicts: string[]
 }): DesignRequest | undefined {
-	const { values, flags } = params
+	const { values, flags, verdicts } = params
 	const from = values.get('from')
 	const by = values.get('by')
 	const reason = values.get('reason')
@@ -134,10 +163,12 @@ function requestOf(params: {
 	]
 	if (asked.filter(Boolean).length > 1) return undefined
 	if (reason !== undefined && !isOneLine(reason)) return undefined
+	if (verdicts.some(isBlank)) return undefined
 	if (flags.has('approve'))
 		return isOneLine(by)
-			? { kind: 'approve', by, ...(reason !== undefined && { reason }) }
+			? { kind: 'approve', by, ...(reason !== undefined && { reason }), verdicts }
 			: undefined
+	if (verdicts.length > 0) return undefined
 	if (flags.has('waive'))
 		return isOneLine(by) && reason !== undefined ? { kind: 'waive', by, reason } : undefined
 	if (by !== undefined || reason !== undefined) return undefined
@@ -172,15 +203,29 @@ function placeOf(params: {
 	}
 }
 
-/** The standing's lines: the status line, then what to run next when the lot cannot go on; or its JSON. */
-function showStanding(params: { place: DesignLotPlace; json: boolean }): CommandResult {
+/**
+ * The standing's lines: the status line, the verdict lines while the design is not approved, then what to run next when
+ * the lot cannot go on; or its JSON, the reviews' verdict in it.
+ */
+function showStanding(params: {
+	place: DesignLotPlace
+	roots: DesignFileRoots
+	json: boolean
+}): CommandResult {
 	const standing = gitStandingOf(params.place)
-	if (params.json) return { exitCode: 0, output: jsonOf(designStatusJson(standing)) }
+	const reviews = shownReviewsOf({ place: params.place, standing, roots: params.roots })
+	if (params.json) {
+		const json: DesignShowJson = {
+			...designStatusJson(standing),
+			verdict: reviews === undefined ? null : verdictJsonOf(reviews.standing),
+		}
+		return { exitCode: 0, output: jsonOf(json) }
+	}
 	const { note } = lotGitDeclaredHighOf({ lotFolder: params.place.lotFolder })
 	return resultOf({
 		exitCode: 0,
 		lines: [
-			...standingLines({ standing, lot: params.place.lot }),
+			...standingLines({ standing, lot: params.place.lot, reviews }),
 			...(note === undefined ? [] : [note]),
 		],
 	})
@@ -189,21 +234,20 @@ function showStanding(params: { place: DesignLotPlace; json: boolean }): Command
 /** The file (or, without one, the plan entry's spec) recorded: its line, its copy, the review record refreshed. */
 function recordDesign(params: {
 	place: DesignLotPlace
-	cwd: string
+	roots: DesignFileRoots
 	file: string | undefined
 	at: string
-	sharedTemporaryRoots: readonly string[]
 }): CommandResult {
-	const { place } = params
+	const { place, roots } = params
 	const source =
-		params.file === undefined ? planSpecOf(place) : { file: resolve(params.cwd, params.file) }
+		params.file === undefined ? planSpecOf(place) : { file: resolve(roots.cwd, params.file) }
 	if ('exitCode' in source) return source
-	const content = designContentOf({
-		file: source.file,
-		cwd: params.cwd,
-		sharedTemporaryRoots: params.sharedTemporaryRoots,
-	})
-	if ('exitCode' in content) return content
+	const content = designFileContentOf({ file: source.file, ...roots })
+	if (isDesignFileRefusal(content))
+		return lineOf({
+			exitCode: 2,
+			line: fileRefusalLine({ refusal: content, templates: DESIGN_FILE_REFUSAL_LINES }),
+		})
 	const hash = designHashOf(content.bytes)
 	try {
 		writeDesignCopy({ lotFolder: place.lotFolder, hash, text: content.text })
@@ -223,6 +267,7 @@ function recordDesign(params: {
 	}
 	return written({
 		place,
+		roots,
 		line: fillMessage({
 			template: LOT_DESIGN_LINES.recorded,
 			values: { lot: place.lot, file: content.file, hash: hash.slice(0, DESIGN_SHOWN_HASH_LENGTH) },
@@ -250,106 +295,70 @@ function planSpecOf(place: DesignLotPlace): { file: string } | CommandResult {
 	return { file: spec }
 }
 
-/**
- * The file's real path, bytes and text; refused when it cannot be read, is empty, is not UTF-8 text, or lies in a
- * scratch or temporary folder (wiped there, and nobody else reads it).
- */
-function designContentOf(params: {
-	file: string
-	cwd: string
-	sharedTemporaryRoots: readonly string[]
-}): { file: string; bytes: Buffer; text: string } | CommandResult {
-	const { file, cwd, sharedTemporaryRoots } = params
-	if (!existsSync(file) || !statSync(file).isFile())
-		return fileRefusal({ template: LOT_DESIGN_LINES.unreadable, file })
-	const real = realPathOf(file)
-	if (isInScratch({ file: real, cwd, sharedTemporaryRoots }))
-		return fileRefusal({ template: LOT_DESIGN_LINES.inScratch, file })
-	const bytes = readFileSync(real)
-	if (bytes.length === 0) return fileRefusal({ template: LOT_DESIGN_LINES.empty, file: real })
-	try {
-		return { file: real, bytes, text: new TextDecoder('utf-8', { fatal: true }).decode(bytes) }
-	} catch {
-		return fileRefusal({ template: LOT_DESIGN_LINES.notText, file: real })
-	}
-}
-
-/**
- * Whether the file lies under the cli's scratch roots, the system's temporary folder (`scratchReadRoots`) or the
- * system's shared temporary folders (`/tmp`, `/private/tmp`, each by its real path): wiped there, and nobody else
- * reads it. A file outside every git work tree is no refusal: plans live there.
- */
-function isInScratch(params: {
-	file: string
-	cwd: string
-	sharedTemporaryRoots: readonly string[]
-}): boolean {
-	const roots = [...scratchReadRoots({ cwd: params.cwd }), ...params.sharedTemporaryRoots]
-	return roots.some(function holdsFile(root) {
-		const real = realPathOf(root)
-		return params.file === real || params.file.startsWith(`${real}${sep}`)
+/** A design or review file's refusal as the line its kind names says it. */
+function fileRefusalLine(params: {
+	refusal: DesignFileRefusal
+	templates: Record<DesignFileRefusalKind, string>
+}): string {
+	return fillMessage({
+		template: params.templates[params.refusal.refused],
+		values: { file: params.refusal.file },
 	})
 }
 
-/** A refusal naming the file (exit 2). */
-function fileRefusal(params: { template: string; file: string }): CommandResult {
-	return lineOf({
-		exitCode: 2,
-		line: fillMessage({ template: params.template, values: { file: params.file } }),
-	})
-}
-
-/** An approval of the last recorded content for the current need; refused with nothing recorded or a changed source. */
+/**
+ * An approval of the last recorded content for the current need, resting on the saved reviews that pass exactly that
+ * content (FIX-design-needs-critic D3); refused with nothing recorded, a changed source, or reviews that do not pass it.
+ * Each review is read once: its copy is written from the bytes checked, then the line.
+ */
 function approveDesign(params: {
 	place: DesignLotPlace
+	roots: DesignFileRoots
 	by: string
 	reason: string | undefined
+	verdicts: readonly string[]
 	at: string
 }): CommandResult {
-	const { place } = params
-	const last = readDesignLines({ lotFolder: place.lotFolder }).filter(isRecorded).at(-1)
+	const { place, roots } = params
+	const recordedLines = readDesignLines({ lotFolder: place.lotFolder }).filter(isRecorded)
+	const last = recordedLines.at(-1)
 	if (last === undefined)
 		return lineOf({
 			exitCode: 2,
 			line: fillMessage({ template: LOT_DESIGN_LINES.nothingRecorded, values: { lot: place.lot } }),
 		})
-	const now = sourceHashOf(last.file)
-	// a source gone is no refusal while the stored copy holds the text approved; with the copy gone too, nothing does
-	if (now === undefined && !hasDesignCopy({ lotFolder: place.lotFolder, hash: last.hash }))
-		return lineOf({
-			exitCode: 2,
-			line: fillMessage({
-				template: LOT_DESIGN_LINES.goneWithCopy,
-				values: { file: last.file, lot: place.lot },
-			}),
-		})
-	if (now !== undefined && now !== last.hash)
-		return lineOf({
-			exitCode: 2,
-			line: fillMessage({
-				template: LOT_DESIGN_LINES.changedSinceRecorded,
-				values: { file: last.file, lot: place.lot },
-			}),
-		})
+	const recordedRefusal = sourceRefusalOf({ place, last })
+	if (recordedRefusal !== undefined) return lineOf({ exitCode: 2, line: recordedRefusal })
+	const reviews = reviewsOf({
+		last,
+		recordedLines,
+		named: params.verdicts.map(function resolved(file) {
+			return resolve(roots.cwd, file)
+		}),
+		roots,
+	})
+	const refusals = approvalRefusalsOf({ reviews, last, lot: place.lot })
+	if (refusals.length > 0) return resultOf({ exitCode: 2, lines: refusals })
 	const by = recordedByOf({ by: params.by })
-	try {
-		appendDesignLine({
-			lotFolder: place.lotFolder,
-			line: {
-				schema: DESIGN_LINE_SCHEMA,
-				kind: 'approved',
-				at: params.at,
-				by,
-				...(params.reason !== undefined && { reason: params.reason }),
-				hash: last.hash,
-				need: gitNeedOf(place).reasons,
-			},
+	const line = approvedLineOf({ place, last, reviews, by, reason: params.reason, at: params.at })
+	if (!designLineFits({ line }))
+		return lineOf({
+			exitCode: 2,
+			line: fillMessage({
+				template: LOT_DESIGN_LINES.reviewTooMany,
+				values: { count: String(reviews.standing.ready.length) },
+			}),
 		})
+	try {
+		for (const file of reviews.standing.ready)
+			writeReviewCopy({ lotFolder: place.lotFolder, hash: file.hash, text: file.text })
+		appendDesignLine({ lotFolder: place.lotFolder, line })
 	} catch (error) {
 		return failed(error)
 	}
 	return written({
 		place,
+		roots,
 		line: fillMessage({
 			template: LOT_DESIGN_LINES.approved,
 			values: { lot: place.lot, by, hash: last.hash.slice(0, DESIGN_SHOWN_HASH_LENGTH) },
@@ -357,16 +366,242 @@ function approveDesign(params: {
 	})
 }
 
-/** A waiver of the current need; refused when the lot needs no design. */
+/** Why the recorded source cannot be approved: it and its copy both gone, or it changed since; undefined when it can. */
+function sourceRefusalOf(params: {
+	place: DesignLotPlace
+	last: DesignRecordedLine
+}): string | undefined {
+	const { place, last } = params
+	const now = sourceHashOf(last.file)
+	// a source gone is no refusal while the stored copy holds the text approved; with the copy gone too, nothing does
+	if (now === undefined && !hasDesignCopy({ lotFolder: place.lotFolder, hash: last.hash }))
+		return fillMessage({
+			template: LOT_DESIGN_LINES.goneWithCopy,
+			values: { file: last.file, lot: place.lot },
+		})
+	if (now !== undefined && now !== last.hash)
+		return fillMessage({
+			template: LOT_DESIGN_LINES.changedSinceRecorded,
+			values: { file: last.file, lot: place.lot },
+		})
+	return undefined
+}
+
+/** The approved line of the last recorded content for the current need, with the reviews passing it. */
+function approvedLineOf(params: {
+	place: DesignLotPlace
+	last: DesignRecordedLine
+	reviews: DesignReviews
+	by: string
+	reason: string | undefined
+	at: string
+}): DesignApprovedLine {
+	return {
+		schema: DESIGN_LINE_SCHEMA,
+		kind: 'approved',
+		at: params.at,
+		by: params.by,
+		...(params.reason !== undefined && { reason: params.reason }),
+		hash: params.last.hash,
+		need: gitNeedOf(params.place).reasons,
+		reviews: params.reviews.standing.ready.map(function reviewOf(file) {
+			return { name: file.name, hash: file.hash }
+		}),
+	}
+}
+
+/** The saved reviews of the last recorded content: its folder's and the `named` ones, against the earlier hashes. */
+function reviewsOf(params: {
+	last: DesignRecordedLine
+	recordedLines: readonly DesignRecordedLine[]
+	named: readonly string[]
+	roots: DesignFileRoots
+}): DesignReviews {
+	const { last } = params
+	return designReviewsOf({
+		folder: dirname(last.file),
+		recorded: last.file,
+		recordedHash: last.hash,
+		earlier: [
+			...new Set(
+				params.recordedLines.map(hashOf).filter(function isEarlier(hash) {
+					return hash !== last.hash
+				}),
+			),
+		],
+		named: params.named,
+		...params.roots,
+	})
+}
+
+/**
+ * Every reason the reviews do not let the approval through, at once: each named file refused, naming another hash or
+ * naming it without a verdict; each review naming it that does not pass it; or, with none passing it, the folder gone
+ * when it is, else the missing line and its hints.
+ */
+function approvalRefusalsOf(params: {
+	reviews: DesignReviews
+	last: DesignRecordedLine
+	lot: string
+}): string[] {
+	const { reviews, last, lot } = params
+	const hash = last.hash.slice(0, DESIGN_SHOWN_HASH_LENGTH)
+	const named = [
+		...reviews.refusals.map(function refusedLine(refusal) {
+			return fileRefusalLine({ refusal, templates: REVIEW_FILE_REFUSAL_LINES })
+		}),
+		...reviews.namesOther.map(function otherLine(file) {
+			return fillMessage({
+				template: LOT_DESIGN_LINES.reviewNamesOther,
+				values: { file, hash, lot },
+			})
+		}),
+		...reviews.namedNoVerdict.map(function noVerdictLine(file) {
+			return fillMessage({ template: LOT_DESIGN_LINES.reviewNoVerdict, values: { file, hash } })
+		}),
+	]
+	const folder = dirname(last.file)
+	const { standing } = reviews
+	if (standing.state === 'ready') return named
+	if (standing.state === 'blocked')
+		return [
+			...named,
+			...standing.blocking.map(function blockingLine(file) {
+				return fillMessage({
+					template: blockingTemplateOf({
+						file,
+						templates: {
+							disagree: LOT_DESIGN_LINES.reviewDisagree,
+							'open-fence': LOT_DESIGN_LINES.reviewOpenFence,
+							other: LOT_DESIGN_LINES.reviewBlocking,
+						},
+					}),
+					values: { name: file.name, verdict: file.read.verdict?.written ?? '', hash, lot },
+				})
+			}),
+		]
+	if (reviews.folder === 'gone')
+		return [
+			...named,
+			fillMessage({ template: LOT_DESIGN_LINES.reviewFolderGone, values: { folder } }),
+		]
+	return [
+		...named,
+		fillMessage({ template: LOT_DESIGN_LINES.reviewMissing, values: { hash, lot, folder } }),
+		...hintLines({ standing, hash }),
+	]
+}
+
+/** The hints after a missing verdict: each READY review of an earlier revision, each review naming it without a verdict. */
+function hintLines(params: { standing: VerdictStanding; hash: string }): string[] {
+	const { standing, hash } = params
+	return [
+		...standing.earlierReady.map(function earlierLine(entry) {
+			return fillMessage({
+				template: LOT_DESIGN_LINES.hintEarlierReady,
+				values: {
+					name: entry.name,
+					earlier: entry.hash.slice(0, DESIGN_SHOWN_HASH_LENGTH),
+					hash,
+				},
+			})
+		}),
+		...standing.noVerdict.map(function noVerdictLine(name) {
+			return fillMessage({ template: LOT_DESIGN_LINES.hintNoVerdict, values: { name, hash } })
+		}),
+	]
+}
+
+/** The reviews a standing shows: those of the last recorded content, read from its folder, while it is not approved. */
+function shownReviewsOf(params: {
+	place: DesignLotPlace
+	standing: DesignStanding
+	roots: DesignFileRoots
+}): DesignReviews | undefined {
+	if (params.standing.state !== 'unapproved') return undefined
+	const recordedLines = readDesignLines({ lotFolder: params.place.lotFolder }).filter(isRecorded)
+	const last = recordedLines.at(-1)
+	if (last === undefined) return undefined
+	return reviewsOf({ last, recordedLines, named: [], roots: params.roots })
+}
+
+/** The verdict lines of a standing's reviews: READY in its files, missing with its hints, or each file blocking. */
+function verdictLinesOf(params: { reviews: DesignReviews; standing: DesignStanding }): string[] {
+	const { reviews } = params
+	const file = params.standing.file ?? ''
+	const hash = (params.standing.hash ?? '').slice(0, DESIGN_SHOWN_HASH_LENGTH)
+	const folder = dirname(file)
+	const verdicts = reviews.standing
+	if (verdicts.state === 'ready')
+		return [
+			fillMessage({
+				template: LOT_DESIGN_LINES.verdictReady,
+				values: { names: verdicts.ready.map(nameOfReview).join(REVIEW_NAME_SEPARATOR) },
+			}),
+		]
+	if (verdicts.state === 'blocked')
+		return verdicts.blocking.map(function blockingLine(review) {
+			return fillMessage({
+				template: blockingTemplateOf({
+					file: review,
+					templates: {
+						disagree: LOT_DESIGN_LINES.verdictDisagree,
+						'open-fence': LOT_DESIGN_LINES.verdictOpenFence,
+						other: LOT_DESIGN_LINES.verdictBlocking,
+					},
+				}),
+				values: { verdict: review.read.verdict?.written ?? '', name: review.name },
+			})
+		})
+	if (reviews.folder === 'gone')
+		return [fillMessage({ template: LOT_DESIGN_LINES.verdictFolderGone, values: { folder } })]
+	return [
+		fillMessage({ template: LOT_DESIGN_LINES.verdictMissing, values: { folder, hash } }),
+		...hintLines({ standing: verdicts, hash }),
+	]
+}
+
+/** The template of a review that does not pass: its own for lines that disagree or an open fence, else the one naming the verdict. */
+function blockingTemplateOf(params: {
+	file: VerdictFile
+	templates: { disagree: string; 'open-fence': string; other: string }
+}): string {
+	const cause = params.file.read.verdict?.cause
+	return cause === 'disagree' || cause === 'open-fence'
+		? params.templates[cause]
+		: params.templates.other
+}
+
+/** The reviews' verdict as `--json` gives it: the state and the files that decide it. */
+function verdictJsonOf(standing: VerdictStanding): DesignVerdictJson {
+	const files = standing.state === 'ready' ? standing.ready : standing.blocking
+	return { state: standing.state, files: files.map(nameOfReview) }
+}
+
+function nameOfReview(review: { name: string }): string {
+	return review.name
+}
+
+function hashOf(line: DesignRecordedLine): string {
+	return line.hash
+}
+
+function isBlank(value: string): boolean {
+	return value.trim() === ''
+}
+
+/** A waiver of the current need; refused when the lot needs no design and has none recorded (D6). */
 function waiveDesign(params: {
 	place: DesignLotPlace
+	roots: DesignFileRoots
 	by: string
 	reason: string
 	at: string
 }): CommandResult {
 	const { place } = params
 	const need = gitNeedOf(place)
-	if (!need.required)
+	const recorded = readDesignLines({ lotFolder: place.lotFolder }).some(isRecorded)
+	if (!need.required && !recorded)
 		return lineOf({
 			exitCode: 2,
 			line: fillMessage({ template: LOT_DESIGN_LINES.notRequired, values: { lot: place.lot } }),
@@ -389,6 +624,7 @@ function waiveDesign(params: {
 	}
 	return written({
 		place,
+		roots: params.roots,
 		line: fillMessage({ template: LOT_DESIGN_LINES.waived, values: { lot: place.lot, by } }),
 	})
 }
@@ -446,25 +682,37 @@ function isRecorded(line: DesignLine): line is DesignRecordedLine {
 }
 
 /** A write's answer: its line, the standing after it, and the review record's warning when it could not be written. */
-function written(params: { place: DesignLotPlace; line: string }): CommandResult {
+function written(params: {
+	place: DesignLotPlace
+	roots: DesignFileRoots
+	line: string
+}): CommandResult {
 	const { place } = params
 	const warning = refreshReviewRecord({ folder: place.lotFolder })
 	const standing = gitStandingOf(place)
+	const reviews = shownReviewsOf({ place, standing, roots: params.roots })
 	return resultOf({
 		exitCode: 0,
 		lines: [
 			params.line,
-			...standingLines({ standing, lot: place.lot }),
+			...standingLines({ standing, lot: place.lot, reviews }),
 			...(warning === undefined ? [] : [warning]),
 		],
 	})
 }
 
-/** The status line, then the next line when the design does not let the lot go on. */
-function standingLines(params: { standing: DesignStanding; lot: string }): string[] {
+/** The status line, the verdict lines when reviews are shown, then the next line when the design does not let the lot go on. */
+function standingLines(params: {
+	standing: DesignStanding
+	lot: string
+	reviews: DesignReviews | undefined
+}): string[] {
 	const next = designNextOf(params)
 	return [
 		designStatusLine(params.standing),
+		...(params.reviews === undefined
+			? []
+			: verdictLinesOf({ reviews: params.reviews, standing: params.standing })),
 		...(next === undefined ? [] : [`${DESIGN_NEXT_PREFIX}${next}`]),
 	]
 }

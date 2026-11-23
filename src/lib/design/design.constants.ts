@@ -9,6 +9,88 @@ export const DESIGN_LINE_SCHEMA = 1
 /** The extension of a recorded content's copy. */
 export const DESIGN_COPY_EXTENSION = '.md'
 
+/** Why a design or review file is refused: it cannot be read, is empty, is not UTF-8, or lies where files are wiped. */
+export const DESIGN_FILE_REFUSALS = ['unreadable', 'empty', 'not-text', 'in-scratch'] as const
+
+/** How a review's last `Verdict:` line reads. */
+export const VERDICT_WORDS = ['ready', 'not-ready', 'unrecognized'] as const
+
+/** Why a review's verdict is unrecognized: its lines disagree, a fence is left open, or its word is neither. */
+export const VERDICT_CAUSES = ['disagree', 'open-fence', 'word'] as const
+
+/** Where the reviews of a recorded hash stand. */
+export const VERDICT_STANDING_STATES = ['ready', 'missing', 'blocked'] as const
+
+/** The key naming the design a review read (compared in lower case). */
+export const REVIEW_DESIGN_KEY = 'design'
+
+/** The key of a review's verdict (compared in lower case). */
+export const REVIEW_VERDICT_KEY = 'verdict'
+
+/** The verdict word that passes a design. */
+export const VERDICT_READY = 'READY'
+
+/** The verdict words that do not pass it. */
+export const VERDICT_NOT_READY = 'NOT READY'
+
+/** What may follow `READY` (after optional spaces) and keep it READY: notes, a stop, a dash. */
+export const VERDICT_READY_FOLLOWERS: readonly string[] = [
+	'(',
+	'.',
+	',',
+	';',
+	':',
+	'-',
+	'\u2013',
+	'\u2014',
+]
+
+/** The markdown emphasis characters stripped around a review's key and removed from its value. */
+export const REVIEW_EMPHASIS = /[*_`]/g
+
+/** The emphasis characters at the start of a key. */
+export const REVIEW_LEADING_EMPHASIS = /^[*_`]+/
+
+/** The emphasis characters at the end of a key. */
+export const REVIEW_TRAILING_EMPHASIS = /[*_`]+$/
+
+/** A fence opening line after its indentation: a run of 3+ backticks or 3+ tildes, then its info string. */
+export const REVIEW_FENCE_OPENING = /^(`{3,}|~{3,})(.*)$/
+
+/** A fence closing line after its indentation: a run of 3+ backticks or 3+ tildes, then only whitespace. */
+export const REVIEW_FENCE_CLOSING = /^(`{3,}|~{3,})\s*$/
+
+/** The most spaces a fence line may be indented by; more makes it no fence. */
+export const REVIEW_FENCE_MAX_INDENT = 3
+
+/** The markers stripped before a key, repeatedly until none leads: a blockquote, a heading, a list item. */
+export const REVIEW_LINE_MARKERS = {
+	quote: /^>\s*/,
+	heading: /^#{1,6}\s+/,
+	list: /^(?:[-*+]|\d+[.)])\s+/,
+} as const
+
+/** The hex run that starts a `Design:` value. */
+export const REVIEW_HEX_RUN = /^[0-9a-f]+/i
+
+/** The shortest and longest hash prefix a `Design:` line may name. */
+export const REVIEW_HASH_LENGTHS = { shortest: 12, longest: 64 } as const
+
+/** A character that ends a hex run without spoiling it is no letter and no digit. */
+export const REVIEW_HASH_SPOILER = /[\p{L}\p{N}]/u
+
+/** The verdict as written of a review whose `Verdict:` lines disagree. */
+export const VERDICT_DISAGREE = 'Verdict: lines that disagree'
+
+/** The verdict a review gets when a fence is left open at its end (a quoted NOT READY could hide in it). */
+export const VERDICT_UNCLOSED_FENCE = 'an unclosed code fence'
+
+/** How many characters of a verdict as written a line shows. */
+export const VERDICT_SHOWN_LENGTH = 60
+
+/** The extension of a review file a design's folder holds, and of its copy in the lot folder. */
+export const REVIEW_EXTENSION = '.md'
+
 /** Where a lot's design stands; `approved`, `waived` and `not-required` let the lot go on. */
 export const DESIGN_STATES = [
 	'approved',

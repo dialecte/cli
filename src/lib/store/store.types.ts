@@ -171,6 +171,7 @@ export type StoreFileNames = Readonly<
 		| 'forecast'
 		| 'design'
 		| 'designCopies'
+		| 'designReviews'
 		| 'baseDeclared'
 		| 'keep',
 		string

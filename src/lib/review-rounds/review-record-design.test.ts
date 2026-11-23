@@ -7,7 +7,12 @@ import { appendFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { APPROVER, WAIVER_REASON } from '../../../test/design-workspace.constants.ts'
-import { design, designLinesOf, designLot } from '../../../test/design-workspace.ts'
+import {
+	design,
+	designLinesOf,
+	designLot,
+	saveReadyVerdict,
+} from '../../../test/design-workspace.ts'
 import { reviewRowsOf, reviewTextOf } from '../../../test/review-record-workspace.ts'
 import { STORE_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
 import { STORE_FILES } from '../store/store.constants.ts'
@@ -23,6 +28,7 @@ describe('review.jsonl - the design row', { timeout: STORE_CASE_TIMEOUT }, () =>
 	it('a design recorded then approved -> one design row, approved by the approver, no file, hash or reason', () => {
 		const lot = designLot({ declared: true })
 		design({ lot, words: ['--from', lot.designFile] })
+		saveReadyVerdict({ designFile: lot.designFile })
 
 		expect(
 			design({ lot, words: ['--approve', '--by', APPROVER, '--reason', 'private reason'] })
