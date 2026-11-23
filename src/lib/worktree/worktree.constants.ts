@@ -271,15 +271,27 @@ export const POOL_LEFT_OVER_KEEP_REASONS = {
 	finished: 'its pool.json is written now: a pool entry',
 } as const
 
-/** Why `worktree prune` keeps a rehearsal clone, and its `--yes` lines for a clone decided again; `{...}` filled. */
+/** Why `worktree prune` keeps a rehearsal clone; `{...}` filled. */
 export const REHEARSAL_CLONE_TEXTS = {
 	noMarker: 'no rehearsal marker: not made by this cli, or still starting',
 	running: 'its rehearsal still runs: pid {pid}',
 	process: 'a process works in it: pid {pid}',
 	link: 'the link {link} points to it',
 	unreadable: 'it could not be read ({reason})',
-	keptAtMove: '✗ {clone} kept: {why}',
-	goneAtMove: '✗ {clone}: gone since the plan',
+} as const
+
+/**
+ * `worktree prune --yes`: the line of a planned removal the decision taken after the confirmation does not let go, one
+ * set for every kind; `{...}` filled.
+ */
+export const PRUNE_AT_MOVE_TEXTS = {
+	kept: '✗ {name} kept: {why}',
+	gone: '✗ {name}: gone since the plan',
+	notOffered: '✗ {name} kept: not offered now',
+	anotherWay: '✗ {name} kept: removed another way now: {command}',
+	worktreeStays: '✗ {name} kept: its worktree stays',
+	wouldUnregister: '✗ {name} kept: git worktree prune would now also unregister {worktrees}',
+	notDecided: '✗ {name}: not decided again: {reason}',
 } as const
 
 /** Why the processes are not known when the lister throws: every folder is then kept; `{reason}` filled. */

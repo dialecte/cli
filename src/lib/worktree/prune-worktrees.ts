@@ -24,7 +24,7 @@ import {
 import { removableIgnored } from '../cleanup/removable-ignored.ts'
 import { isLink, isPresent, realPathOf, realPathThroughAncestors } from '../file-system.ts'
 import { findBaseBranchRef } from '../gate/gate-base.ts'
-import { isAncestorCommit, readCommitOrNone, readGit } from '../git.ts'
+import { isAncestorCommit, readCommitOrNone, readGit, tryReadGit } from '../git.ts'
 import { handoverLockPath } from '../handover/handover-lock.ts'
 import {
 	HOOK_TEMPORARY_FOLDER_PREFIX,
@@ -67,6 +67,7 @@ import {
 	NODE_MODULES_PROBLEMS_SHOWN,
 	POOL_MISS_KEY_LENGTH,
 	GONE_WORKTREE_HELD,
+	PRUNE_AT_MOVE_TEXTS,
 	PRUNE_LINK_REASON,
 	PRUNE_RUN_PREFIX,
 	MINUTE_MS,
@@ -97,7 +98,10 @@ import type { LotItem, LotItems } from '../store/lot-items.types.ts'
 import type {
 	BackgroundSpawner,
 	FolderLink,
+	ItemAtMove,
+	ItemAtMoveInput,
 	ListedWorktree,
+	PlannedRemoval,
 	ProcessFolder,
 	PruneCloneReads,
 	PruneHandover,
@@ -128,6 +132,11 @@ export function planPrune(params: {
 	listProcesses?: () => ProcessFolder[] | string
 	/** Reads a pid's start time for a rehearsal clone's run; default `processStartTime`. */
 	readStartTime?: (pid: number) => string | undefined
+	/**
+	 * The plan taken again after `--yes`'s confirmation: each clone the first plan let go, with the folder of the lot
+	 * that owned it then (`PruneItem.owner`), whose keep is read again on that folder. Default: none (the first plan).
+	 */
+	ownersAtPlan?: ReadonlyMap<string, string>
 }): WorkspacePrunePlan {
 	const scratchRoots = [
 		...new Set([params.scratchRoot, params.formerScratchRoot ?? params.scratchRoot]),
@@ -179,6 +188,7 @@ export function planPrune(params: {
 			clone,
 			worktreesFolder,
 			reads: () => ({ processes: processesOnce(), links, ...ownersOnce() }),
+			ownerAtPlan: params.ownersAtPlan?.get(clone),
 			readStartTime: params.readStartTime,
 		}),
 	)
@@ -192,6 +202,7 @@ export function planPrune(params: {
 				skipRehearsals: true,
 				only: HOOK_TEMPORARY_FOLDER_PREFIX,
 				links,
+				processes: processesOnce,
 				now,
 			}),
 		)
@@ -205,6 +216,7 @@ export function planPrune(params: {
 					// a rehearsal folder in a rehearsal root is judged as a rehearsal, never twice
 					skipRehearsals: scratchRoots.includes(scratchFolderRoot),
 					links,
+					processes: processesOnce,
 					now,
 				})
 	const scratch = [...rehearsals, ...hookFolders, ...scratchFolders]
@@ -411,30 +423,172 @@ function whyParkInProgress(params: { folder: string; now: Date }): string | unde
 		.replace('{minutes}', String(POOL_STALE_PARK_MINUTES))
 }
 
+/** The command that unregisters every worktree of `repository` whose folder is gone, with its absolute `cd`. */
+function worktreePruneCommand(repository: string): string {
+	return `cd ${shellQuote(repository)} && git worktree prune`
+}
+
 /**
- * A pool left-over `prune --yes` removes, sent to the trash (a background removal) once its keep rules are read again
- * just before: still no `pool.json` (a park that finished is an entry now), still unwritten for
- * `POOL_STALE_PARK_MINUTES`, no process working in it (`listProcesses`, called at most once a run by the caller's
- * memo). The line to print.
+ * Whether a planned removal is still there: its folder (a link counts; an lstat that fails reads as gone), or its
+ * branch's `refs/heads/<branch>` in its repository (a read that fails counts as there).
  *
- * @intent never trash a park that finished or is writing since the plan
+ * @intent tell an item gone since the plan from one still there but no longer offered
  * @internal
  */
-export function trashPoolLeftOver(params: {
-	folder: string
-	worktreesFolder: string
-	now: Date
-	spawner: BackgroundSpawner
-	/** The processes and their working folders, or why they are not known. */
-	listProcesses: () => readonly ProcessFolder[] | string
-}): string {
-	const { folder } = params
-	const kept = existsSync(join(folder, POOL_FILE))
-		? POOL_LEFT_OVER_KEEP_REASONS.finished
-		: (whyParkInProgress({ folder, now: params.now }) ??
-			whyKeepByProcess({ worktree: folder, processes: params.listProcesses() }))
-	if (kept !== undefined) return `✗ ${folder} kept: ${kept}`
-	return trashPrunedFolder(params)
+export function isPlannedRemovalPresent(removal: PlannedRemoval): boolean {
+	const { item, repository } = removal
+	if (item.kind !== 'branch' || repository === undefined) return isPresent(item.name)
+	const ref = `refs/heads/${item.name}`
+	const listed = tryReadGit({
+		root: repository,
+		args: ['for-each-ref', '--format=%(refname)', ref],
+	})
+	return listed === undefined || listed.split('\n').includes(ref)
+}
+
+/**
+ * The planned removals of a `--yes` run decided again on the plan taken after the confirmation (`fresh`), in their
+ * order: the worktrees first, so a planned branch whose worktree stays is kept with it. `present` holds each removal's
+ * presence, read after the confirmation, in the same order.
+ *
+ * @intent move nothing on a decision older than the confirmation
+ * @internal
+ */
+export function decideRemovalsAtMove(params: {
+	removals: readonly PlannedRemoval[]
+	fresh: WorkspacePrunePlan
+	present: readonly boolean[]
+}): ItemAtMove[] {
+	const { removals, fresh } = params
+	const plannedGoneWorktrees = groupByRepository({
+		removals: removals.filter(
+			(removal) =>
+				removal.item.kind === 'worktree' &&
+				removal.repository !== undefined &&
+				removal.item.command === worktreePruneCommand(removal.repository),
+		),
+		valueOf: (removal) => removal.item.name,
+	})
+	const noneStayed: ReadonlyMap<string, ReadonlySet<string>> = new Map()
+	const worktreesAtMove = removals.map((removal, index) =>
+		removal.item.kind === 'worktree'
+			? itemAtMove({
+					removal,
+					fresh,
+					present: params.present[index],
+					stayedWorktreeBranches: noneStayed,
+					plannedGoneWorktrees,
+				})
+			: undefined,
+	)
+	// neither go nor gone: kept now, not offered now, removed another way, would also unregister
+	const stayedWorktreeBranches = groupByRepository({
+		removals: removals.filter((removal, index) => worktreesAtMove[index]?.outcome === 'kept'),
+		valueOf: (removal) => removal.item.branch,
+	})
+	return removals.map(
+		(removal, index) =>
+			worktreesAtMove[index] ??
+			itemAtMove({
+				removal,
+				fresh,
+				present: params.present[index],
+				stayedWorktreeBranches,
+				plannedGoneWorktrees,
+			}),
+	)
+}
+
+/** Removals grouped by their repository, each to the value `valueOf` reads (none read: left out). */
+function groupByRepository(params: {
+	removals: readonly PlannedRemoval[]
+	valueOf: (removal: PlannedRemoval) => string | undefined
+}): ReadonlyMap<string, ReadonlySet<string>> {
+	const grouped = new Map<string, Set<string>>()
+	for (const removal of params.removals) {
+		const value = params.valueOf(removal)
+		if (removal.repository === undefined || value === undefined) continue
+		grouped.set(removal.repository, new Set([...(grouped.get(removal.repository) ?? []), value]))
+	}
+	return grouped
+}
+
+// dialecte-allow duplicate-read: decides a prune plan's removal on a second plan; moveReclaimItem moves a reclaim item on its own reads
+/**
+ * A planned removal decided again after the confirmation, by the plan's own rules (`fresh`, the plan taken again):
+ * kept now (why, as the plan prints it); absent from the plan, gone (`present` false) or not offered now; offered by
+ * another command (removed another way now); a `git worktree prune` that would now unregister a worktree no plan
+ * confirmed; a branch whose planned worktree stays; else it goes with its command. An item only `fresh` offers is never
+ * asked here: no confirmation covers it.
+ *
+ * @intent move an item only when the plan taken after the confirmation removes it the same way
+ * @internal
+ */
+export function itemAtMove(params: ItemAtMoveInput): ItemAtMove {
+	const { removal } = params
+	const { item, repository } = removal
+	const { name } = item
+	const freshItem = freshItemsOf({ fresh: params.fresh, repository, kind: item.kind }).find(
+		(candidate) => candidate.name === name,
+	)
+	if (freshItem?.kept !== undefined)
+		return keptAtMove({ template: PRUNE_AT_MOVE_TEXTS.kept, values: { name, why: freshItem.kept } })
+	if (freshItem?.command === undefined)
+		return params.present
+			? keptAtMove({ template: PRUNE_AT_MOVE_TEXTS.notOffered, values: { name } })
+			: {
+					outcome: 'gone',
+					line: fillMessage({ template: PRUNE_AT_MOVE_TEXTS.gone, values: { name } }),
+				}
+	if (freshItem.command !== item.command)
+		return keptAtMove({
+			template: PRUNE_AT_MOVE_TEXTS.anotherWay,
+			values: { name, command: freshItem.command },
+		})
+	const plannedGone =
+		repository === undefined ? undefined : params.plannedGoneWorktrees.get(repository)
+	if (item.kind === 'worktree' && plannedGone?.has(name)) {
+		const alsoUnregistered = freshItemsOf({ fresh: params.fresh, repository, kind: 'worktree' })
+			.filter((candidate) => candidate.command === item.command && !plannedGone.has(candidate.name))
+			.map((candidate) => candidate.name)
+		if (alsoUnregistered.length > 0)
+			return keptAtMove({
+				template: PRUNE_AT_MOVE_TEXTS.wouldUnregister,
+				values: { name, worktrees: alsoUnregistered.join(', ') },
+			})
+	}
+	if (
+		item.kind === 'branch' &&
+		repository !== undefined &&
+		params.stayedWorktreeBranches.get(repository)?.has(name)
+	)
+		return keptAtMove({ template: PRUNE_AT_MOVE_TEXTS.worktreeStays, values: { name } })
+	return { outcome: 'go', command: freshItem.command }
+}
+
+// dialecte-allow duplicate-read: fills worktree prune's at-move text; keptAtMoveOf reads a lot prune record's keep
+/** A planned removal kept at the move: its line, `template` filled. */
+function keptAtMove(params: { template: string; values: Record<string, string> }): ItemAtMove {
+	return { outcome: 'kept', line: fillMessage(params) }
+}
+
+/**
+ * The fresh plan's items an item of `kind` is looked up among: a worktree's, branch's or hand-over folder's in its own
+ * repository (branch names repeat across repositories); a clone's or scratch folder's among the scratch items, a pool
+ * left-over's among the left-overs (absolute paths).
+ */
+function freshItemsOf(params: {
+	fresh: WorkspacePrunePlan
+	repository: string | undefined
+	kind: PruneItem['kind']
+}): PruneItem[] {
+	const { fresh, kind } = params
+	if (kind === 'pool left-over') return fresh.poolLeftOver
+	if (kind === 'rehearsal clone' || kind === 'scratch folder')
+		return fresh.scratch.filter((item) => item.kind === kind)
+	return (
+		fresh.repositories.find((plan) => plan.repository === params.repository)?.items ?? []
+	).filter((item) => item.kind === kind)
 }
 
 /**
@@ -583,13 +737,19 @@ function planRepository(params: {
 			items.push({
 				kind: 'worktree',
 				name,
+				...(worktree.branch !== undefined && { branch: worktree.branch }),
 				kept: worktree.branch ? `${worktree.branch}: ${keptFirst}` : keptFirst,
 			})
 			continue
 		}
 		if (isLink(name)) {
 			if (worktree.branch) keptBranches.add(worktree.branch)
-			items.push({ kind: 'worktree', name, kept: PRUNE_LINK_REASON })
+			items.push({
+				kind: 'worktree',
+				name,
+				...(worktree.branch !== undefined && { branch: worktree.branch }),
+				kept: PRUNE_LINK_REASON,
+			})
 			continue
 		}
 		if (!worktree.branch) {
@@ -610,26 +770,29 @@ function planRepository(params: {
 					ownedRuns,
 					processes: params.processes,
 				})
+		const { branch } = worktree
 		if (kept) {
-			keptBranches.add(worktree.branch)
-			items.push({ kind: 'worktree', name, kept: `${worktree.branch}: ${kept}` })
+			keptBranches.add(branch)
+			items.push({ kind: 'worktree', name, branch, kept: `${branch}: ${kept}` })
 		} else if (!existsSync(name) && linkedWorktrees.length > 0) {
-			keptBranches.add(worktree.branch)
+			keptBranches.add(branch)
 			items.push({
 				kind: 'worktree',
 				name,
+				branch,
 				kept: `${worktree.branch}: deleted from disk; pruning it would also unregister the worktree at the link ${linkedWorktrees.join(', ')}`,
 			})
 		} else
 			items.push({
 				kind: 'worktree',
 				name,
+				branch,
 				command: existsSync(name)
 					? `${cd} git worktree remove ${shellQuote(name)}`
-					: `${cd} git worktree prune`,
+					: worktreePruneCommand(repository),
 			})
 	}
-	items.splice(0, items.length, ...holdGonePrunes({ items, cd }))
+	items.splice(0, items.length, ...holdGonePrunes({ items, repository }))
 
 	for (const branch of readGit({
 		root: repository,
@@ -683,9 +846,13 @@ function planRepository(params: {
 		}
 		if (!isRemovableHandoverFolder(folder)) continue
 		const reachedBy = linkReaching({ folder, links: params.links })
+		// last: the processes are listed only for a folder every other rule lets go
+		const kept = reachedBy
+			? `the link ${reachedBy} points to it`
+			: whyKeepByProcess({ worktree: folder, processes: params.processes() })
 		items.push(
-			reachedBy
-				? { kind: 'hand-over', name: folder, kept: `the link ${reachedBy} points to it` }
+			kept !== undefined
+				? { kind: 'hand-over', name: folder, kept }
 				: {
 						kind: 'hand-over',
 						name: folder,
@@ -753,7 +920,6 @@ function isMainCheckout(folder: string): boolean {
 	)
 }
 
-// dialecte-allow duplicate-read: lists the clones planRehearsalClone then decides, read once for the plan and the owner reads
 /**
  * The rehearsal folders of the scratch roots (a clone of an earlier cli, or a folder holding this cli's clone), each
  * root in name order.
@@ -778,13 +944,15 @@ function planRehearsalClone(params: {
 	worktreesFolder: string
 	/** The processes, the links and the owner reads, read once for the plan when first asked. */
 	reads: () => PruneCloneReads
+	/** The plan taken again after the confirmation: the folder of the lot that owned the clone at the first plan. */
+	ownerAtPlan: string | undefined
 	readStartTime: ((pid: number) => string | undefined) | undefined
 }): PruneItem {
 	const { clone } = params
 	const decided = decideRehearsalClone({
 		clone,
 		reads: params.reads,
-		ownerAtPlan: undefined,
+		ownerAtPlan: params.ownerAtPlan,
 		readStartTime: params.readStartTime,
 	})
 	if ('kept' in decided) return { kind: 'rehearsal clone', name: clone, kept: decided.kept }
@@ -797,59 +965,6 @@ function planRehearsalClone(params: {
 			trash: scratchTrashOf({ root: dirname(clone), worktreesFolder: params.worktreesFolder }),
 		}),
 		...(decided.owner !== undefined && { owner: decided.owner }),
-	}
-}
-
-/**
- * A rehearsal clone `prune --yes` is about to move, decided again on `reads` (taken after the confirmation, once per
- * execution) right before its move: the planned owner's keep read again on its folder (gone since the plan keeps). The
- * `✗` line when it stays or is gone since the plan; undefined when it may go.
- *
- * @intent never move a clone on a decision older than the confirmation
- * @internal
- */
-export function decideCloneAgain(params: {
-	item: PruneItem
-	reads: () => PruneCloneReads
-	readStartTime?: (pid: number) => string | undefined
-}): string | undefined {
-	const clone = params.item.name
-	if (!isPresent(clone))
-		return fillMessage({ template: REHEARSAL_CLONE_TEXTS.goneAtMove, values: { clone } })
-	const decided = decideRehearsalClone({
-		clone,
-		reads: params.reads,
-		ownerAtPlan: params.item.owner,
-		readStartTime: params.readStartTime,
-	})
-	return 'kept' in decided
-		? fillMessage({
-				template: REHEARSAL_CLONE_TEXTS.keptAtMove,
-				values: { clone, why: decided.kept },
-			})
-		: undefined
-}
-
-/**
- * What `worktree prune` reads to decide its rehearsal clones, read now: the processes first, then the links around the
- * workspace and its scratch roots, then the owner reads.
- *
- * @intent read once what every clone decision of a prune execution needs
- * @internal
- */
-export function readPruneCloneReads(params: {
-	workspace: string
-	scratchRoots: readonly string[]
-	clones: readonly string[]
-	listProcesses: () => ProcessFolder[] | string
-}): PruneCloneReads {
-	const processes = readProcesses(params.listProcesses)
-	return {
-		processes,
-		links: linkRootsOf({ workspace: params.workspace, scratchRoots: params.scratchRoots }).flatMap(
-			(folder) => findLinks(folder),
-		),
-		...cloneOwnerReadsOf({ workspace: params.workspace, clones: params.clones, read: new Map() }),
 	}
 }
 
@@ -992,6 +1107,8 @@ function planScratchFolders(params: {
 	/** Only the folders named with this prefix; default every folder. */
 	only?: string
 	links: readonly FolderLink[]
+	/** The processes and their working folders, or why they are not known; listed when first asked. */
+	processes: () => readonly ProcessFolder[] | string
 	now: Date
 }): PruneItem[] {
 	const { root } = params
@@ -1005,7 +1122,12 @@ function planScratchFolders(params: {
 		.sort()
 		.map(function planScratchFolder(name): PruneItem {
 			const folder = join(root, name)
-			const kept = whyKeepScratchFolder({ folder, links: params.links, now: params.now })
+			const kept = whyKeepScratchFolder({
+				folder,
+				links: params.links,
+				processes: params.processes,
+				now: params.now,
+			})
 			return kept === undefined
 				? {
 						kind: 'scratch folder',
@@ -1016,10 +1138,14 @@ function planScratchFolders(params: {
 		})
 }
 
-/** Why a folder of the scratch root stays; undefined when it goes. */
+/**
+ * Why a folder of the scratch root stays; undefined when it goes. The processes are asked last: a process working in
+ * it, or the processes not known, keeps it.
+ */
 function whyKeepScratchFolder(params: {
 	folder: string
 	links: readonly FolderLink[]
+	processes: () => readonly ProcessFolder[] | string
 	now: Date
 }): string | undefined {
 	const { folder } = params
@@ -1032,7 +1158,8 @@ function whyKeepScratchFolder(params: {
 	if (!(age >= SCRATCH_PRUNE_AGE_MS))
 		return SCRATCH_KEEP_REASONS.young.replace('{age}', () => formatDuration(Math.max(age, 0)))
 	const reachedBy = linkReaching({ folder, links: params.links })
-	return reachedBy ? `the link ${reachedBy} points to it` : undefined
+	if (reachedBy) return `the link ${reachedBy} points to it`
+	return whyKeepByProcess({ worktree: folder, processes: params.processes() })
 }
 
 function isDirectory(path: string): boolean {
@@ -1091,8 +1218,8 @@ function whyKeepWorktree(params: {
  * The plan's items with no `git worktree prune` while a worktree whose folder is gone is kept: that one command
  * unregisters every such worktree, and would delete the kept one's HEAD reflog.
  */
-function holdGonePrunes(params: { items: readonly PruneItem[]; cd: string }): PruneItem[] {
-	const prune = `${params.cd} git worktree prune`
+function holdGonePrunes(params: { items: readonly PruneItem[]; repository: string }): PruneItem[] {
+	const prune = worktreePruneCommand(params.repository)
 	const goneKept = params.items.filter(
 		(item) => item.kind === 'worktree' && item.kept !== undefined && !existsSync(item.name),
 	)
@@ -1102,6 +1229,7 @@ function holdGonePrunes(params: { items: readonly PruneItem[]; cd: string }): Pr
 		return {
 			kind: 'worktree',
 			name: item.name,
+			...(item.branch !== undefined && { branch: item.branch }),
 			kept: fillMessage({
 				template: GONE_WORKTREE_HELD,
 				values: { worktrees: goneKept.map((kept) => kept.name).join(', ') },
@@ -1177,7 +1305,6 @@ function throwawayLotItemOf(params: {
 	)
 }
 
-// dialecte-allow duplicate-read: prune's policy over lotItemOf (a link alone only when held); lotItemsLeftOf checks files
 /** The lot item of a worktree or branch on every key; one found by the root link alone only when it is held. */
 function ownLotItemOf(params: {
 	items: LotItems

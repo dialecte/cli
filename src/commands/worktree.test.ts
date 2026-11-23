@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process'
 import {
+	chmodSync,
 	existsSync,
 	lstatSync,
 	mkdirSync,
@@ -28,6 +29,8 @@ import { runHandover } from './handover.ts'
 import { runWorktreeAdd, runWorktreePrune } from './worktree.ts'
 
 import { describe, expect, it } from 'vitest'
+
+import type { ProcessFolder } from '../lib/worktree/worktree.types.ts'
 
 /** A workspace holding `core` (husky hooks folder, node_modules with a link to a sibling) and `cli`. */
 function createWorkspace(): { workspace: string; core: string } {
@@ -943,3 +946,362 @@ describe('worktree prune', { timeout: WORKSPACE_CASE_TIMEOUT }, () => {
 		)
 	})
 })
+
+/** The pid of the process a case says works in a folder. */
+const AGENT_PID = 4242
+
+/** A marker's start two days before now: a scratch folder old enough to go. */
+function twoDaysAgo(): string {
+	return new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
+}
+
+/** The lots of the `pending` worktree committed: its hand-over folder `_commit-plan/pending-topic` is committed. */
+function commitPendingHandover(params: { workspace: string; pending: string }): string {
+	git({ root: params.pending, args: ['add', 'CHANGELOG.md'] })
+	git({ root: params.pending, args: ['commit', '-q', '-m', 'docs(changelog): pending'] })
+	return join(params.workspace, '_commit-plan', 'pending-topic')
+}
+
+/** A scratch folder `name` in `root` with its `scratch.json`, made by a process gone two days ago: its path. */
+function makeScratchFolder(params: { root: string; name: string }): string {
+	const folder = join(params.root, params.name)
+	mkdirSync(folder, { recursive: true })
+	writeFileSync(
+		join(folder, 'scratch.json'),
+		JSON.stringify({ pid: deadPid(), startedAt: twoDaysAgo(), command: 'dialecte gate --fast' }),
+	)
+	return folder
+}
+
+/** A `_pool-x-1/node_modules` with no pool.json in `worktreesFolder`, last written two hours ago: its path. */
+function makePoolLeftOver(worktreesFolder: string): string {
+	const folder = join(worktreesFolder, '_pool-x-1')
+	mkdirSync(join(folder, 'node_modules'), { recursive: true })
+	writeFileSync(join(folder, 'node_modules', 'file.txt'), 'half parked\n')
+	const written = new Date(Date.now() - 2 * 60 * 60 * 1000)
+	utimesSync(folder, written, written)
+	return folder
+}
+
+/** Whether `refs/heads/<branch>` is in `repository`. */
+function hasBranch(params: { repository: string; branch: string }): boolean {
+	return (
+		git({
+			root: params.repository,
+			args: ['for-each-ref', '--format=%(refname)', `refs/heads/${params.branch}`],
+		}).trim() !== ''
+	)
+}
+
+/** `worktree prune --yes` over `workspace`, `confirm` doing `atConfirm` before it says yes; a throw read as a line. */
+async function pruneAtConfirm(params: {
+	workspace: string
+	atConfirm: () => void
+	listProcesses: () => ProcessFolder[] | string
+	scratchRoot?: string
+	scratchFolderRoot?: string
+}): Promise<{ exitCode: number; lines: string[]; questions: string[] }> {
+	const questions: string[] = []
+	try {
+		const result = await runWorktreePrune({
+			argv: ['--root', params.workspace, '--yes'],
+			cwd: params.workspace,
+			scratchRoot: params.scratchRoot ?? temporaryFolder('dialecte-scratch-root-'),
+			scratchFolderRoot: params.scratchFolderRoot,
+			isTerminal: true,
+			confirm: async function confirmAfter(question) {
+				questions.push(question)
+				params.atConfirm()
+				return true
+			},
+			listProcesses: params.listProcesses,
+			readStartTime: () => undefined,
+			spawner: createRecordingSpawner().spawner,
+		})
+		return { exitCode: result.exitCode, lines: result.output.split('\n'), questions }
+	} catch (error) {
+		// a run must answer, never throw: what it threw read as a line no case expects
+		return { exitCode: -1, lines: [`thrown: ${(error as Error).message}`], questions }
+	}
+}
+
+/** The plan of `worktree prune` over `workspace` (no `--yes`), the processes as `listProcesses` says. */
+async function planLinesOf(params: {
+	workspace: string
+	listProcesses: () => ProcessFolder[] | string
+}): Promise<string[]> {
+	const result = await runWorktreePrune({
+		argv: ['--root', params.workspace],
+		cwd: params.workspace,
+		scratchRoot: temporaryFolder('dialecte-scratch-root-'),
+		isTerminal: false,
+		confirm: async () => false,
+		listProcesses: params.listProcesses,
+		readStartTime: () => undefined,
+	})
+	expect(result.exitCode).toBe(0)
+	return result.output.split('\n')
+}
+
+/** No process anywhere. */
+function noProcess(): ProcessFolder[] {
+	return []
+}
+
+/** A lister that cannot list the processes. */
+function throwingLister(): ProcessFolder[] {
+	throw new Error('lsof failed')
+}
+
+describe(
+	'worktree prune: hand-over folders and every kind decided again',
+	{
+		timeout: WORKSPACE_CASE_TIMEOUT,
+	},
+	() => {
+		it('a committed hand-over folder a process works in → kept at the plan, naming the pid, no move command', async () => {
+			const { workspace, worktrees } = createPruneWorkspace()
+			const handover = commitPendingHandover({ workspace, pending: worktrees.pending })
+
+			const lines = await planLinesOf({
+				workspace,
+				listProcesses: () => [{ pid: AGENT_PID, folder: realpathSync(handover) }],
+			})
+
+			expect({
+				kept: lines.includes(
+					`  keep    hand-over  ${handover}  (a process works in it: pid ${AGENT_PID})`,
+				),
+				moved: lines.some((line) => line.includes(`mv ${shellQuote(handover)}`)),
+			}).toEqual({ kept: true, moved: false })
+		})
+
+		it('a committed hand-over folder reached by a link, the processes not listable → kept with the link text, never the processes text', async () => {
+			// guard: the link rule is asked before the processes, so the reason stays the link's
+			const { workspace, worktrees } = createPruneWorkspace()
+			const handover = commitPendingHandover({ workspace, pending: worktrees.pending })
+			const link = join(workspace, 'to-the-plan')
+			symlinkSync(handover, link)
+
+			const lines = await planLinesOf({ workspace, listProcesses: throwingLister })
+
+			const handoverLines = lines.filter((line) => line.includes(`hand-over  ${handover}`))
+			expect(handoverLines).toEqual([
+				`  keep    hand-over  ${handover}  (the link ${link} points to it)`,
+			])
+		})
+
+		it('a committed hand-over folder planned to go, a process entering it at confirm → ✗ kept naming the pid, the folder left, exit 1', async () => {
+			const { workspace, worktrees } = createPruneWorkspace()
+			const handover = commitPendingHandover({ workspace, pending: worktrees.pending })
+			let processes: ProcessFolder[] = []
+
+			const result = await pruneAtConfirm({
+				workspace,
+				atConfirm: function processEnters() {
+					processes = [{ pid: AGENT_PID, folder: realpathSync(handover) }]
+				},
+				listProcesses: () => processes,
+			})
+
+			expect({
+				exitCode: result.exitCode,
+				line: result.lines.includes(`✗ ${handover} kept: a process works in it: pid ${AGENT_PID}`),
+				handover: existsSync(handover),
+			}).toEqual({ exitCode: 1, line: true, handover: true })
+		})
+
+		it('a committed hand-over folder planned to go, a link to it made at confirm → ✗ kept naming the link, the folder left, exit 1', async () => {
+			const { workspace, worktrees } = createPruneWorkspace()
+			const handover = commitPendingHandover({ workspace, pending: worktrees.pending })
+			const link = join(workspace, 'to-the-plan')
+
+			const result = await pruneAtConfirm({
+				workspace,
+				atConfirm: function linkMade() {
+					symlinkSync(handover, link)
+				},
+				listProcesses: noProcess,
+			})
+
+			expect({
+				exitCode: result.exitCode,
+				line: result.lines.includes(`✗ ${handover} kept: the link ${link} points to it`),
+				handover: existsSync(handover),
+			}).toEqual({ exitCode: 1, line: true, handover: true })
+		})
+
+		it('a merged branch with no worktree planned to go, a pending hand-over on it written at confirm → ✗ kept: a hand-over is pending on it, the branch left, exit 1', async () => {
+			const { workspace, core } = createPruneWorkspace()
+			const plan = join(workspace, '_commit-plan', 'late-topic')
+
+			const result = await pruneAtConfirm({
+				workspace,
+				atConfirm: function handoverWritten() {
+					mkdirSync(plan, { recursive: true })
+					writeFileSync(
+						join(plan, 'lots.json'),
+						JSON.stringify({
+							repository: core,
+							branch: 'old-merged',
+							head: git({ root: core, args: ['rev-parse', 'old-merged'] }).trim(),
+							lots: [{ paths: ['CHANGELOG.md'], message: 'docs(changelog): late' }],
+						}),
+					)
+					writeFileSync(join(plan, 'commit.sh'), '#!/bin/sh\n')
+					for (const name of ['files.txt', 'files.sha256', 'files.deleted', 'lots.sha256'])
+						writeFileSync(join(plan, name), name === 'files.txt' ? 'CHANGELOG.md\n' : '')
+				},
+				listProcesses: noProcess,
+			})
+
+			expect({
+				exitCode: result.exitCode,
+				line: result.lines.includes('✗ old-merged kept: a hand-over is pending on it'),
+				branch: hasBranch({ repository: core, branch: 'old-merged' }),
+			}).toEqual({ exitCode: 1, line: true, branch: true })
+		})
+
+		it('a branch merged into main only at confirm → never removed nor printed; the planned items moved as planned, exit 0; a plan afterwards offers it', async () => {
+			// guard: an item the fresh plan offers that the first did not is covered by no confirmation
+			const { workspace, core, worktrees } = createPruneWorkspace()
+			git({ root: core, args: ['checkout', '-q', '-b', 'feat/late'] })
+			commitIn({ root: core, file: 'src/late.ts', message: 'feat: late' })
+			git({ root: core, args: ['checkout', '-q', 'main'] })
+
+			const result = await pruneAtConfirm({
+				workspace,
+				atConfirm: function mergedNow() {
+					git({ root: core, args: ['merge', '-q', '--ff-only', 'feat/late'] })
+				},
+				listProcesses: noProcess,
+			})
+			const after = await planLinesOf({ workspace, listProcesses: noProcess })
+
+			expect({
+				exitCode: result.exitCode,
+				printed: result.lines.some((line) => line.includes('feat/late')),
+				late: hasBranch({ repository: core, branch: 'feat/late' }),
+				planned: [
+					existsSync(worktrees.merged),
+					hasBranch({ repository: core, branch: 'feat/merged' }),
+					hasBranch({ repository: core, branch: 'old-merged' }),
+				],
+				offeredAfter: after.includes(`cd '${core}' && git branch -d 'feat/late'`),
+			}).toEqual({
+				exitCode: 0,
+				printed: false,
+				late: true,
+				planned: [false, false, false],
+				offeredAfter: true,
+			})
+		})
+
+		it('_commit-plan unreadable at confirm → every planned removal ✗ not decided again, nothing moved, exit 1, no throw', async () => {
+			const { workspace, core, worktrees } = createPruneWorkspace()
+			const plans = join(workspace, '_commit-plan')
+
+			let result: Awaited<ReturnType<typeof pruneAtConfirm>>
+			try {
+				result = await pruneAtConfirm({
+					workspace,
+					atConfirm: function unreadable() {
+						chmodSync(plans, 0o000)
+					},
+					listProcesses: noProcess,
+				})
+			} finally {
+				chmodSync(plans, 0o755)
+			}
+
+			expect({
+				exitCode: result.exitCode,
+				lines: [worktrees.merged, 'feat/merged', 'old-merged'].map((name) =>
+					result.lines.some((line) => line.startsWith(`✗ ${name}: not decided again: `)),
+				),
+				moved: [
+					existsSync(worktrees.merged),
+					hasBranch({ repository: core, branch: 'feat/merged' }),
+					hasBranch({ repository: core, branch: 'old-merged' }),
+				],
+			}).toEqual({ exitCode: 1, lines: [true, true, true], moved: [true, true, true] })
+		})
+
+		it('the scratch root unreadable at confirm → every planned removal ✗ not decided again, nothing moved, exit 1, no throw', async () => {
+			const { workspace, core, worktrees } = createPruneWorkspace()
+			const scratchFolderRoot = join(workspace, '.worktrees', '_scratch')
+			mkdirSync(scratchFolderRoot, { recursive: true })
+
+			let result: Awaited<ReturnType<typeof pruneAtConfirm>>
+			try {
+				result = await pruneAtConfirm({
+					workspace,
+					scratchFolderRoot,
+					atConfirm: function unreadable() {
+						chmodSync(scratchFolderRoot, 0o000)
+					},
+					listProcesses: noProcess,
+				})
+			} finally {
+				chmodSync(scratchFolderRoot, 0o755)
+			}
+
+			expect({
+				exitCode: result.exitCode,
+				lines: [worktrees.merged, 'feat/merged', 'old-merged'].map((name) =>
+					result.lines.some((line) => line.startsWith(`✗ ${name}: not decided again: `)),
+				),
+				moved: [
+					existsSync(worktrees.merged),
+					hasBranch({ repository: core, branch: 'feat/merged' }),
+					hasBranch({ repository: core, branch: 'old-merged' }),
+				],
+			}).toEqual({ exitCode: 1, lines: [true, true, true], moved: [true, true, true] })
+		})
+
+		it('every kind planned to go, nothing changed at confirm → each moved as today, exit 0', async () => {
+			// guard: the re-plan agrees with the plan when nothing changed, so every item still moves
+			const { workspace, core, worktrees } = createPruneWorkspace()
+			const handover = commitPendingHandover({ workspace, pending: worktrees.pending })
+			const scratchRoot = temporaryFolder('dialecte-scratch-root-')
+			const clone = makeRehearsalClone({
+				scratchRoot,
+				name: 'dialecte-rehearse-dead',
+				pid: deadPid(),
+			})
+			const hookFolder = makeScratchFolder({ root: scratchRoot, name: 'dlt-hook-abc' })
+			const scratchFolderRoot = join(workspace, '.worktrees', '_scratch')
+			const scratchFolder = makeScratchFolder({
+				root: scratchFolderRoot,
+				name: 'dialecte-gate-scope-abc',
+			})
+			const leftOver = makePoolLeftOver(join(workspace, '.worktrees'))
+
+			const result = await pruneAtConfirm({
+				workspace,
+				scratchRoot,
+				scratchFolderRoot,
+				atConfirm: () => undefined,
+				listProcesses: noProcess,
+			})
+
+			expect({
+				exitCode: result.exitCode,
+				questions: result.questions,
+				crosses: result.lines.filter((line) => line.startsWith('✗')),
+				left: [worktrees.merged, handover, clone, hookFolder, scratchFolder, leftOver].filter(
+					(folder) => existsSync(folder),
+				),
+				branches: ['feat/merged', 'old-merged'].filter((branch) =>
+					hasBranch({ repository: core, branch }),
+				),
+			}).toEqual({
+				exitCode: 0,
+				questions: ['Remove these 8 item(s)? [y/N] '],
+				crosses: [],
+				left: [],
+				branches: [],
+			})
+		})
+	},
+)

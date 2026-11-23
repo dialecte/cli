@@ -14,9 +14,11 @@ import {
 	symlinkSync,
 	writeFileSync,
 } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
+import { writeStoreLot } from '../../test/brief-workspace.ts'
 import { deadPid } from '../../test/dead-pid.ts'
+import { headOf, storeOf } from '../../test/handover-store-scenario.ts'
 import {
 	damagedTextOf,
 	damageLot,
@@ -34,6 +36,7 @@ import {
 } from '../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { createRecordingSpawner } from '../../test/worktree-pool.ts'
+import { commonGitFolderOf } from '../lib/git.ts'
 import {
 	handoverStoreOf,
 	recordHandoverState,
@@ -41,6 +44,7 @@ import {
 } from '../lib/handover/handover-store.ts'
 import { REHEARSAL_RUN_UNKNOWN } from '../lib/handover/live-handover-run.constants.ts'
 import { shellQuote } from '../lib/shell-quote.ts'
+import { STORE_FOLDER } from '../lib/store/store.constants.ts'
 import { runWorktreeAdd, runWorktreePrune } from './worktree.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -580,6 +584,389 @@ describe(
 				cross: run.lines.includes(`✗ ${clone} kept: ${goneTextOf(lot.name)}`),
 				cloneLeft: existsSync(clone),
 			}).toEqual({ exitCode: 1, cross: true, cloneLeft: true })
+		})
+	},
+)
+
+/** A branch `branch` of `repository` with a commit of its own, merged into `main` by a fast-forward, no worktree on it. */
+function mergedBranchOf(params: { repository: string; branch: string }): void {
+	const { repository, branch } = params
+	git({ root: repository, args: ['checkout', '-q', '-b', branch] })
+	writeFiles({ root: repository, files: { [`src/${branch.replace('/', '-')}.ts`]: 'export {}\n' } })
+	git({ root: repository, args: ['add', '.'] })
+	git({ root: repository, args: ['commit', '-q', '-m', `feat: ${branch}`] })
+	git({ root: repository, args: ['checkout', '-q', 'main'] })
+	git({ root: repository, args: ['merge', '-q', '--ff-only', branch] })
+}
+
+/** A merged clean worktree of `repository` on `branch`, added after every earlier one landed: its path. */
+function addMergedWorktree(params: {
+	workspace: string
+	repository: string
+	branch: string
+}): string {
+	const added = runWorktreeAdd({
+		argv: [params.repository, params.branch, '--json'],
+		cwd: params.workspace,
+		now: new Date(),
+		colour: false,
+	})
+	expect(added.exitCode).toBe(0)
+	const { worktree } = JSON.parse(added.output) as { worktree: string }
+	const file = `src/${params.branch.replace('/', '-')}.ts`
+	writeFiles({ root: worktree, files: { [file]: 'export {}\n' } })
+	git({ root: worktree, args: ['add', file] })
+	git({ root: worktree, args: ['commit', '-q', '-m', `feat: ${params.branch}`] })
+	git({ root: params.repository, args: ['merge', '-q', '--ff-only', params.branch] })
+	return worktree
+}
+
+/** A store lot `name` of `repository`'s store, started (`working`) on `branch`: written as `lot start` writes it. */
+function startLotOn(params: { repository: string; name: string; branch: string }): void {
+	const { repository } = params
+	writeStoreLot({
+		workspace: {
+			workspace: dirname(repository),
+			repository,
+			briefFolder: repository,
+			briefPath: join(repository, 'brief.json'),
+			store: join(commonGitFolderOf(repository), STORE_FOLDER),
+			registry: storeOf(repository),
+			commit: headOf(repository),
+			storeList: join(dirname(repository), 'lot-stores'),
+		},
+		name: params.name,
+		scope: ['src/late.ts'],
+		branch: params.branch,
+		repository,
+	})
+}
+
+/** The store lot a case starts once confirmed: its full name. */
+const LATE_LOT = '0001-core-late'
+
+/** The store lot a case starts on the first repository's `feat/x` once confirmed: its full name. */
+const FIRST_LOT = '0001-core-x'
+
+/** Whether `refs/heads/<branch>` is in `repository`. */
+function hasBranch(params: { repository: string; branch: string }): boolean {
+	return (
+		git({
+			root: params.repository,
+			args: ['for-each-ref', '--format=%(refname)', `refs/heads/${params.branch}`],
+		}).trim() !== ''
+	)
+}
+
+/** Whether git still registers a worktree of `repository` on `branch`. */
+function isRegistered(params: { repository: string; branch: string }): boolean {
+	return git({ root: params.repository, args: ['worktree', 'list', '--porcelain'] })
+		.split('\n')
+		.includes(`branch refs/heads/${params.branch}`)
+}
+
+/** A lister that lists `pid` working in `folder` once `isConfirmed()` says the run was confirmed, nothing before. */
+function processOnceConfirmed(params: {
+	folder: string
+	isConfirmed: () => boolean
+}): () => ProcessFolder[] {
+	return function listedOnceConfirmed() {
+		return params.isConfirmed() ? [{ pid: AGENT_PID, folder: realpathSync(params.folder) }] : []
+	}
+}
+
+describe(
+	'worktree prune --yes: a worktree and its branch decided again at the move',
+	{ timeout: SCRATCH_WORKSPACE_TIMEOUT },
+	() => {
+		it('a clean merged worktree planned to go, a process entering it once confirmed → a cross line naming the pid, the worktree registered and on disk, exit 1', async () => {
+			const { workspace, core, worktree } = createMergedWorktree()
+			let confirmed = false
+
+			const run = await pruneYes({
+				workspace,
+				scratchRoot: temporaryFolder('dialecte-scratch-root-'),
+				atConfirm: function processEnters() {
+					confirmed = true
+				},
+				listProcesses: processOnceConfirmed({ folder: worktree, isConfirmed: () => confirmed }),
+			})
+
+			expect({
+				exitCode: run.exitCode,
+				cross: run.lines.includes(
+					`✗ ${worktree} kept: feat/agent: a process works in it: pid ${AGENT_PID}`,
+				),
+				registered: isRegistered({ repository: core, branch: 'feat/agent' }),
+				onDisk: existsSync(worktree),
+			}).toEqual({ exitCode: 1, cross: true, registered: true, onDisk: true })
+		})
+
+		it('a clean merged worktree and its merged branch planned to go, a process entering the worktree once confirmed → both cross lines, the branch not offered now (never gone), the branch left', async () => {
+			const { workspace, core, worktree } = createMergedWorktree()
+			const planned = await planLines({ workspace, processes: [] })
+			let confirmed = false
+
+			const run = await pruneYes({
+				workspace,
+				scratchRoot: temporaryFolder('dialecte-scratch-root-'),
+				atConfirm: function processEnters() {
+					confirmed = true
+				},
+				listProcesses: processOnceConfirmed({ folder: worktree, isConfirmed: () => confirmed }),
+			})
+
+			expect({
+				branchPlanned: planned.some((line) => line.includes(`git branch -d 'feat/agent'`)),
+				exitCode: run.exitCode,
+				worktreeCross: run.lines.includes(
+					`✗ ${worktree} kept: feat/agent: a process works in it: pid ${AGENT_PID}`,
+				),
+				branchCross: run.lines.includes('✗ feat/agent kept: not offered now'),
+				branchGone: run.lines.includes('✗ feat/agent: gone since the plan'),
+				branchLeft: hasBranch({ repository: core, branch: 'feat/agent' }),
+				registered: isRegistered({ repository: core, branch: 'feat/agent' }),
+			}).toEqual({
+				branchPlanned: true,
+				exitCode: 1,
+				worktreeCross: true,
+				branchCross: true,
+				branchGone: false,
+				branchLeft: true,
+				registered: true,
+			})
+		})
+
+		it('a clean merged worktree planned to go, a tracked file changed in it once confirmed → a cross line, uncommitted changes, exit 1', async () => {
+			const { workspace, core, worktree } = createMergedWorktree()
+
+			const run = await pruneYes({
+				workspace,
+				scratchRoot: temporaryFolder('dialecte-scratch-root-'),
+				atConfirm: function changeATrackedFile() {
+					writeFiles({ root: worktree, files: { 'src/index.ts': 'export const changed = 1\n' } })
+				},
+				listProcesses: noProcess,
+			})
+
+			expect({
+				exitCode: run.exitCode,
+				cross: run.lines.includes(`✗ ${worktree} kept: feat/agent: uncommitted changes`),
+				registered: isRegistered({ repository: core, branch: 'feat/agent' }),
+			}).toEqual({ exitCode: 1, cross: true, registered: true })
+		})
+
+		it('a clean merged worktree planned to go, an ignored .dialecte/notes.md written in it once confirmed → a cross line naming the note, the note left, exit 1', async () => {
+			const { workspace, core, worktree } = createMergedWorktree()
+			addLotView(worktree)
+
+			const run = await pruneYes({
+				workspace,
+				scratchRoot: temporaryFolder('dialecte-scratch-root-'),
+				atConfirm: function writeANote() {
+					writeFiles({ root: worktree, files: { '.dialecte/notes.md': 'mine\n' } })
+				},
+				listProcesses: noProcess,
+			})
+
+			expect({
+				exitCode: run.exitCode,
+				cross: run.lines.includes(
+					`✗ ${worktree} kept: feat/agent: ignored files git worktree remove would delete: .dialecte/notes.md`,
+				),
+				noteLeft: existsSync(join(worktree, '.dialecte', 'notes.md')),
+				registered: isRegistered({ repository: core, branch: 'feat/agent' }),
+			}).toEqual({ exitCode: 1, cross: true, noteLeft: true, registered: true })
+		})
+
+		it('a clean merged worktree and its merged branch planned to go, the worktree folder deleted once confirmed → removed another way now, its worktree stays, nothing run, exit 1', async () => {
+			const { workspace, core, worktree } = createMergedWorktree()
+
+			const run = await pruneYes({
+				workspace,
+				scratchRoot: temporaryFolder('dialecte-scratch-root-'),
+				atConfirm: function deleteTheFolder() {
+					rmSync(worktree, { recursive: true })
+				},
+				listProcesses: noProcess,
+			})
+
+			expect({
+				exitCode: run.exitCode,
+				worktreeCross: run.lines.includes(
+					`✗ ${worktree} kept: removed another way now: cd '${core}' && git worktree prune`,
+				),
+				branchCross: run.lines.includes('✗ feat/agent kept: its worktree stays'),
+				ran: run.lines.filter((line) => line.startsWith('✓')),
+				branchLeft: hasBranch({ repository: core, branch: 'feat/agent' }),
+				registered: isRegistered({ repository: core, branch: 'feat/agent' }),
+			}).toEqual({
+				exitCode: 1,
+				worktreeCross: true,
+				branchCross: true,
+				ran: [],
+				branchLeft: true,
+				registered: true,
+			})
+		})
+
+		it('two clean merged worktrees, the first’s folder gone before the plan, the other’s deleted once confirmed → the other removed another way now, the first’s prune would now also unregister the other, nothing run, both registered, exit 1', async () => {
+			const { workspace, core, worktree: first } = createMergedWorktree()
+			const other = addMergedWorktree({ workspace, repository: core, branch: 'feat/other' })
+			rmSync(first, { recursive: true })
+			const planned = await planLines({ workspace, processes: [] })
+
+			const run = await pruneYes({
+				workspace,
+				scratchRoot: temporaryFolder('dialecte-scratch-root-'),
+				atConfirm: function deleteTheOther() {
+					rmSync(other, { recursive: true })
+				},
+				listProcesses: noProcess,
+			})
+
+			expect({
+				firstPlanned:
+					planned.includes(`  remove  worktree  ${first}`) &&
+					planned.includes(`cd '${core}' && git worktree prune`),
+				otherPlanned: planned.some((line) =>
+					line.includes(`cd '${core}' && git worktree remove '${other}'`),
+				),
+				exitCode: run.exitCode,
+				otherCross: run.lines.includes(
+					`✗ ${other} kept: removed another way now: cd '${core}' && git worktree prune`,
+				),
+				firstCross: run.lines.includes(
+					`✗ ${first} kept: git worktree prune would now also unregister ${other}`,
+				),
+				otherBranchCross: run.lines.includes('✗ feat/other kept: its worktree stays'),
+				firstBranchCross: run.lines.includes('✗ feat/agent kept: its worktree stays'),
+				firstBranchLeft: hasBranch({ repository: core, branch: 'feat/agent' }),
+				ran: run.lines.filter((line) => line.startsWith('✓')),
+				firstRegistered: isRegistered({ repository: core, branch: 'feat/agent' }),
+				otherRegistered: isRegistered({ repository: core, branch: 'feat/other' }),
+			}).toEqual({
+				firstPlanned: true,
+				otherPlanned: true,
+				exitCode: 1,
+				otherCross: true,
+				firstCross: true,
+				otherBranchCross: true,
+				firstBranchCross: true,
+				firstBranchLeft: true,
+				ran: [],
+				firstRegistered: true,
+				otherRegistered: true,
+			})
+		})
+
+		it('--json, a gone worktree whose prune is held by a gone detached worktree kept → the held item carries its branch', async () => {
+			const { workspace, core, worktree } = createMergedWorktree()
+			const detached = addMergedWorktree({ workspace, repository: core, branch: 'feat/detached' })
+			git({ root: detached, args: ['checkout', '-q', '--detach'] })
+			rmSync(detached, { recursive: true })
+			rmSync(worktree, { recursive: true })
+
+			const result = await runWorktreePrune({
+				argv: ['--root', workspace, '--json'],
+				cwd: workspace,
+				scratchRoot: temporaryFolder('dialecte-scratch-root-'),
+				isTerminal: false,
+				confirm: async () => false,
+				listProcesses: noProcess,
+			})
+			const plan = JSON.parse(result.output) as {
+				repositories: { items: { kind: string; name: string; branch?: string; kept?: string }[] }[]
+			}
+			const held = plan.repositories
+				.flatMap((repository) => repository.items)
+				.find((item) => item.kind === 'worktree' && item.name === worktree)
+
+			expect(held).toEqual({
+				kind: 'worktree',
+				name: worktree,
+				branch: 'feat/agent',
+				kept: expect.stringContaining(detached),
+			})
+		})
+
+		it('a clean merged worktree and its merged branch planned to go, the worktree removed and unregistered by hand once confirmed → gone since the plan, its branch deleted', async () => {
+			// a worktree gone since the plan does not hold its branch (the worktree-stays rule reads "not gone"); red on main by its gone line only
+			const { workspace, core, worktree } = createMergedWorktree()
+
+			const run = await pruneYes({
+				workspace,
+				scratchRoot: temporaryFolder('dialecte-scratch-root-'),
+				atConfirm: function removeByHand() {
+					git({ root: core, args: ['worktree', 'remove', worktree] })
+				},
+				listProcesses: noProcess,
+			})
+
+			expect({
+				exitCode: run.exitCode,
+				gone: run.lines.includes(`✗ ${worktree}: gone since the plan`),
+				branchDeleted: run.lines.includes(`✓ cd '${core}' && git branch -d 'feat/agent'`),
+				branchLeft: hasBranch({ repository: core, branch: 'feat/agent' }),
+			}).toEqual({ exitCode: 1, gone: true, branchDeleted: true, branchLeft: false })
+		})
+	},
+)
+
+describe(
+	'worktree prune --yes: a branch a store lot starts on once confirmed',
+	{ timeout: STORE_CASE_TIMEOUT },
+	() => {
+		it('a merged branch with no worktree planned to go, a store lot started on it once confirmed → a cross line naming the lot working, the branch left, exit 1', async () => {
+			const workspace = temporaryFolder('dialecte-prune-process-')
+			const core = initializeRepository({ root: join(workspace, 'core') })
+			mergedBranchOf({ repository: core, branch: 'feat/late' })
+
+			const run = await pruneYes({
+				workspace,
+				scratchRoot: temporaryFolder('dialecte-scratch-root-'),
+				atConfirm: function startALot() {
+					startLotOn({ repository: core, name: LATE_LOT, branch: 'feat/late' })
+				},
+				listProcesses: noProcess,
+			})
+
+			expect({
+				exitCode: run.exitCode,
+				cross: run.lines.includes(`✗ feat/late kept: lot ${LATE_LOT} working`),
+				branchLeft: hasBranch({ repository: core, branch: 'feat/late' }),
+			}).toEqual({ exitCode: 1, cross: true, branchLeft: true })
+		})
+
+		it('two repositories each with a merged feat/x planned to go, a store lot started on the first’s once confirmed → the first’s kept, the second’s deleted, exit 1', async () => {
+			const workspace = temporaryFolder('dialecte-prune-process-')
+			const core = initializeRepository({ root: join(workspace, 'core') })
+			const plc = initializeRepository({ root: join(workspace, 'plc') })
+			mergedBranchOf({ repository: core, branch: 'feat/x' })
+			mergedBranchOf({ repository: plc, branch: 'feat/x' })
+
+			const run = await pruneYes({
+				workspace,
+				scratchRoot: temporaryFolder('dialecte-scratch-root-'),
+				atConfirm: function startALotInTheFirst() {
+					startLotOn({ repository: core, name: FIRST_LOT, branch: 'feat/x' })
+				},
+				listProcesses: noProcess,
+			})
+
+			expect({
+				exitCode: run.exitCode,
+				firstCross: run.lines.includes(`✗ feat/x kept: lot ${FIRST_LOT} working`),
+				secondDeleted: run.lines.includes(`✓ cd '${plc}' && git branch -d 'feat/x'`),
+				firstLeft: hasBranch({ repository: core, branch: 'feat/x' }),
+				secondLeft: hasBranch({ repository: plc, branch: 'feat/x' }),
+			}).toEqual({
+				exitCode: 1,
+				firstCross: true,
+				secondDeleted: true,
+				firstLeft: true,
+				secondLeft: false,
+			})
 		})
 	},
 )

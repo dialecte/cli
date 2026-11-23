@@ -219,4 +219,54 @@ describe('worktree prune: the pool and the trash', { timeout: POOL_COMMAND_CASE_
 				removals: [],
 			})
 		})
+
+	it('a _pool-x-1 with no pool.json, last written two hours ago, planned to go, the process lister throwing once confirmed, prune --yes → kept as the processes not known, the run answers, exit 1', async () => {
+		const { workspace, worktreesFolder, folder } = createLeftOver(120)
+		const { spawner, calls } = createRecordingSpawner()
+		let confirmed = false
+
+		let outcome: { exitCode: number; output: string } | { thrown: string }
+		try {
+			outcome = await runWorktreePrune({
+				argv: ['--root', workspace, '--yes'],
+				cwd: workspace,
+				scratchRoot: temporaryFolder('dialecte-scratch-root-'),
+				isTerminal: true,
+				confirm: async function listerBreaksOnceConfirmed() {
+					confirmed = true
+					return true
+				},
+				listProcesses: function crashingOnceConfirmed(): ProcessFolder[] {
+					if (confirmed) throw new Error('lsof crashed')
+					return []
+				},
+				spawner,
+			})
+		} catch (error) {
+			outcome = { thrown: (error as Error).message }
+		}
+
+		expect({
+			thrown: 'thrown' in outcome ? outcome.thrown : undefined,
+			exitCode: 'thrown' in outcome ? undefined : outcome.exitCode,
+			cross:
+				'thrown' in outcome
+					? false
+					: outcome.output
+							.split('\n')
+							.includes(
+								`✗ ${folder} kept: the processes are not known (lsof crashed): nothing is moved`,
+							),
+			inPlace: existsSync(join(folder, 'node_modules/file.txt')),
+			inTrash: trashedLeftOvers(worktreesFolder),
+			removals: calls,
+		}).toEqual({
+			thrown: undefined,
+			exitCode: 1,
+			cross: true,
+			inPlace: true,
+			inTrash: [],
+			removals: [],
+		})
+	})
 })

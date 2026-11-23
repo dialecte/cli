@@ -47,17 +47,31 @@ worktree - A worktree ready to work in; prune what a merge left
           (its rehearsal still runs: pid <pid>), its marker cannot tell (no rehearsal marker, or
           why), the processes are not known, a process works in it (a process works in it: pid
           <pid>), or a link reaches it; a pid running with another start time is dead; a lot folder
-          gone or moved aside releases its clones; --json prints the plan, a clone let go naming
-          owner (the folder of the lot that owned it at the plan, whose keep --yes reads again);
-          --yes decides each clone again right before its move, on the processes, links and lots
-          read after the confirmation: ✗ <clone> kept: <why>, or ✗ <clone>: gone since the plan,
-          nothing moved, exit 1; --yes runs them after a confirmation on a terminal; committed
-          hand-over folders and finished rehearsal clones go to the trash like the other items (the
-          workspace's .worktrees/_trash for a clone in its own .worktrees/_scratch, else the scratch
-          root's dialecte-trash): the plan shows the move (mkdir -p <trash> && mv <folder>
-          <trash>/), --yes makes it; a move that cannot be made is a ✗ line, nothing deleted; the
-          pool (.worktrees/_pool-<repository>-<n>) and the trash (.worktrees/_trash/) are counted,
-          never touched
+          gone or moved aside releases its clones; a committed hand-over folder, a scratch folder or
+          a rehearsal hook folder a process works in is kept (a process works in it: pid <pid>; for
+          a scratch or hook folder, processes not known: kept with why), the processes asked last;
+          --json prints the plan, a worktree on a branch naming branch (kept or not), a clone let go
+          naming owner (the folder of the lot that owned it at the plan, whose keep --yes reads
+          again); --yes runs them after a confirmation on a terminal, and decides every item again
+          first - worktree, branch, hand-over folder, rehearsal clone, scratch and hook folder, pool
+          left-over - by the same rules, on a plan taken again right after the confirmation
+          (processes, links, lots, hand-overs and markers read then, once, before the first move: a
+          change between two moves of one run is not seen, and pool left-overs and clones, read
+          right before their own move until now, are read earlier): an item goes only when that plan
+          removes it with the same command, else, nothing moved, ✗ <name> kept: <why>, ✗ <name>:
+          gone since the plan (its folder or refs/heads/<branch> missing), ✗ <name> kept: not
+          offered now, ✗ <name> kept: removed another way now: <command>, ✗ <branch> kept: its
+          worktree stays (its worktree did not go), ✗ <worktree> kept: git worktree prune would now
+          also unregister <worktrees>, or ✗ <name>: not decided again: <reason> (the hand-overs or
+          the plan could not be read again); an item only that plan offers is never removed nor
+          printed; committed hand-over folders, finished rehearsal clones, scratch folders and pool
+          left-overs (.worktrees/_pool-<repository>-<n> with no pool.json: a park that never
+          finished, unwritten for a while, no process in it) go to the trash like the other items
+          (the workspace's .worktrees/_trash for a clone or a folder in its own .worktrees/_scratch,
+          else the scratch root's dialecte-trash): the plan shows the move (mkdir -p <trash> && mv
+          <folder> <trash>/), --yes makes it; a move that cannot be made is a ✗ line, nothing
+          deleted; the pool entries (with their pool.json) and the trash (.worktrees/_trash/) are
+          counted, never touched
   prune --reclaim - every worktree idle for --older-than days (default 2: no write to its index,
     HEAD or reflog since), not the main checkout, not locked, held by no lot (an open, failed,
     damaged or kept on purpose lot naming it, or the lot its root .dialecte/lot link names, a lot
@@ -73,6 +87,9 @@ worktree - A worktree ready to work in; prune what a merge left
 exit codes:
   0  add: the worktree exists, whatever the links and the lockfile say
   1  add: a new branch without --from, and the base branch refused (a dialecte.baseBranch set to a branch that exists nowhere, local or on origin, or no base branch found); no worktree made
+  0  prune: a plan, --json, a --reclaim run, every item moved, nothing to remove, or the confirmation declined
+  1  prune --yes: an item not moved (kept, gone since the plan, not decided again, or its command or move failed)
+  2  prune: --yes without a terminal, --dry-run or --older-than without --reclaim, or an --older-than that is not a positive whole number
 e.g. dialecte worktree add cli feat/my-change
 ```
 
@@ -162,11 +179,18 @@ Flags: `--from`, `--json`, `--root`, `--yes`, `--reclaim`, `--dry-run`, `--older
   folders of the cli's scratch root (`DIALECTE_SCRATCH`, else the workspace's `.worktrees/_scratch`, else
   `dialecte-scratch` in the system's temporary folder), each judged by its `scratch.json`: one whose process is gone
   and that was made over a day ago goes to the workspace's trash (`.worktrees/_trash`; a root elsewhere, its own
-  `dialecte-trash`), one whose process runs, a younger one or one without `scratch.json` is kept with why; a rehearsal
+  `dialecte-trash`), one whose process runs, a younger one, one without `scratch.json`, one a link reaches or one a
+  process works in (asked last; the processes not known keep it too) is kept with why; a rehearsal
   hook's temporary folder (`dlt-hook-<random>`) left in the short root is judged the same way - with the
   command that removes each (its absolute `cd` first).
   `--yes` runs them after a confirmation on a terminal; without a terminal it refuses, so hand the
-  commands (or the `--yes` command) to a person. Kept, each with why: first, a store lot's items, never removed
+  commands (or the `--yes` command) to a person. Right after the confirmation, before the first move, `--yes` takes
+  the plan again (the hand-overs found again, the processes, links, lots and markers read again, once) and moves an
+  item of any kind only when that plan removes it with the same command; any other item prints its `✗` line (kept
+  now with why, gone since the plan, not offered now, removed another way now, its worktree stays, a
+  `git worktree prune` that would now also unregister another worktree, or not decided again when the plan cannot be
+  taken again), nothing moved, exit 1. A change made between two moves of the same run is not seen, and an item
+  only the second plan offers is never removed. Kept, each with why: first, a store lot's items, never removed
   here and no landing read: a worktree a lot of the repository's store names (by real path) while the lot is not
   `committed` nor `canceled` (`<branch>: lot <full name> <state>`), and a committed or canceled lot's worktree, its
   review throwaways (`<lot worktree>-round-<n>`, `-verify`, or on `<lot branch>-round-<n>`) and its branch, listed as
@@ -196,7 +220,9 @@ Flags: `--from`, `--json`, `--root`, `--yes`, `--reclaim`, `--dry-run`, `--older
   `a link: prune never removes a link nor what it points to` (a dangling link included). A worktree,
   hand-over folder or rehearsal clone that a link reaches (links looked for one level under the
   workspace, its `.worktrees/`, its `_commit-plan/` and the scratch folder) is kept with
-  `the link <link> points to it`. `git worktree prune` unregisters every worktree whose folder holds no
+  `the link <link> points to it`. A committed hand-over folder a process works in is kept
+  (`a process works in it: pid <pid>`, the processes not known kept with why), asked after the link rules.
+  `git worktree prune` unregisters every worktree whose folder holds no
   checkout, a link's too: while a registered worktree of the repository is a link, a worktree deleted
   from disk is kept, naming that link, and no `git worktree prune` is offered. The sibling links
   `worktree add` makes (`.worktrees/core -> ../core`) are in no item. It reads each worktree with
