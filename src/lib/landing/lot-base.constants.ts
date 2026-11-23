@@ -14,8 +14,23 @@ export const LOT_BASE_REFUSALS = {
 	noParentRef: 'the stack parent {branch} has no branch here nor on origin',
 	joinConflict:
 		"the lines the lot holds ({a}, {b}) do not merge clean ({paths}): its own change cannot be told apart from {base}'s; rebase it onto {base} once its parent landed, or merge {base} into its parent first",
+	joinConflictUnproven:
+		"the lines the lot holds ({a}, {b}) do not merge clean ({paths}), and its parent {branch} may have landed though git alone cannot prove it: record the parent's landing (lot close on the parent's lot), then read it again; or rebase it onto {base} once its parent landed, or merge {base} into its parent first",
 	joinFailed: 'the lines the lot holds ({a}, {b}) could not be joined: {reason}',
+	independentFailed: 'the lines the lot holds ({lines}) could not be compared: {reason}',
+	mergeBaseFailed: "the lot's head {head} could not be compared with {ref}: {reason}",
 } as const
+
+/** Why a git read of the lot's base gave nothing to go on, when it exited 0 with no output. */
+export const LOT_BASE_GIT_REASONS = {
+	independentEmpty: 'git named none of them',
+	mergeTreeEmpty: 'git merge-tree printed no tree',
+	commitTreeEmpty: 'git commit-tree printed no commit',
+	treeReadEmpty: 'git rev-parse printed no tree',
+} as const
+
+/** How the lines named in a comparison refusal are listed. */
+export const LINE_LABEL_SEPARATOR = ', '
 
 /** The message of the commit that joins the lines a lot holds (no ref names it). */
 export const LOT_BASE_JOIN_MESSAGE = 'dialecte lot base: join of the lines the lot holds'

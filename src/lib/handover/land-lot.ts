@@ -141,10 +141,10 @@ export function landLot(params: {
 				counted({ count: progress.files, noun: 'file' }),
 			),
 		)
-	// rendered on the rebased head, before the push: a text that no longer renders pushes nothing
+	// rendered on the rebased head against origin's base (a lot base sees the base's line too); unrendered pushes nothing
 	const text = renderedText({
 		...params,
-		baseRef,
+		baseRef: `${ORIGIN_BRANCH_REF_PREFIX}${base}`,
 		kept: known.changeRequest?.body,
 	})
 	if ('refusal' in text)
@@ -853,7 +853,7 @@ function openLot(params: {
  */
 function renderedText(params: {
 	worktree: string
-	/** The ref the lot's changes are read against: origin's base, or the stack parent's tip while it is open. */
+	/** The ref the lot's changes are read against: origin's base (the lot base reads its parent's line itself). */
 	baseRef: string
 	lotFolder: string
 	kept: string | undefined
