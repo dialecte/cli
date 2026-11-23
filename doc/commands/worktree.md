@@ -76,19 +76,22 @@ worktree - A worktree ready to work in; prune what a merge left
     HEAD or reflog since), not the main checkout, not locked, held by no lot (an open, failed,
     damaged or kept on purpose lot naming it, or the lot its root .dialecte/lot link names, a lot
     whose identity does not read included; a lot's review throwaways are reclaimed like any idle
-    worktree), named by no open hand-over, worked in by no process, reached by no link: its
-    node_modules parked in the pool when its lock key is the main checkout's and it installs that
-    lock, else sent to .worktrees/_trash/, its code never touched, a -round-<n> review throwaway's
-    too; a node_modules that is a link is never moved; every rule checked again just before each
-    move; one line per worktree, the total (worktrees, files, size) last; --dry-run moves nothing;
-    --dry-run or --older-than without --reclaim, or an --older-than that is no positive whole
-    number, exit 2
+    worktree), named by no open hand-over, worked in by no process (a process list that cannot be
+    read, the lister failing or throwing, keeps the worktree: the processes are not known), reached
+    by no link: its node_modules parked in the pool when its lock key is the main checkout's and it
+    installs that lock, else sent to .worktrees/_trash/, its code never touched, a -round-<n> review
+    throwaway's too; a node_modules that is a link is never moved; every rule checked again just
+    before each move; one line per worktree, the total (worktrees, files, size) last; --dry-run
+    moves nothing; exit 1 when a worktree is kept because the processes are not known, at the plan
+    (--dry-run too) or before its move; --dry-run or --older-than without --reclaim, or an
+    --older-than that is no positive whole number, exit 2
 
 exit codes:
   0  add: the worktree exists, whatever the links and the lockfile say
   1  add: a new branch without --from, and the base branch refused (a dialecte.baseBranch set to a branch that exists nowhere, local or on origin, or no base branch found); no worktree made
-  0  prune: a plan, --json, a --reclaim run, every item moved, nothing to remove, or the confirmation declined
+  0  prune: a plan, --json, a --reclaim run or --dry-run with no worktree kept because the processes are not known, every item moved, nothing to remove, or the confirmation declined
   1  prune --yes: an item not moved (kept, gone since the plan, not decided again, or its command or move failed)
+  1  prune --reclaim: a worktree kept because the processes are not known (the lister failed or threw), at the plan (--dry-run too) or before its move; nothing of it moved
   2  prune: --yes without a terminal, --dry-run or --older-than without --reclaim, or an --older-than that is not a positive whole number
 e.g. dialecte worktree add cli feat/my-change
 ```
@@ -242,4 +245,5 @@ Flags: `--from`, `--json`, `--root`, `--yes`, `--reclaim`, `--dry-run`, `--older
   `-round-<n>` review throwaway is reclaimed the same way: its code, a reviewer's uncommitted edit included, stays. Every rule is read again just
   before each move; a worktree gone, locked or active since the plan keeps its line and moves nothing. One line
   per worktree (`park`, `trash`, `keep` with why); `--dry-run` prints them with a total (worktrees, files, size)
-  and moves nothing. No `--yes`: `--dry-run` is the preview.
+  and moves nothing. No `--yes`: `--dry-run` is the preview. A worktree kept because the processes are not known
+  exits 1, `--dry-run` too.

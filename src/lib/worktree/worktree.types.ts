@@ -161,8 +161,8 @@ export type PrunePlanParams = {
 	now?: Date
 	/**
 	 * Lists the processes and their working folders, for every keep rule that reads them (the tests stand in for it).
-	 * `worktree prune` reads it through `readProcesses`: a lister that throws reads as the processes not known.
-	 * `--reclaim` calls it as it is: a lister that throws ends the run. Default: the system's.
+	 * Every caller (`worktree prune` and `--reclaim`, at the plan and at the move) reads it through `readProcesses`: a
+	 * lister that throws reads as the processes not known, and what that rule decides is kept. Default: the system's.
 	 */
 	listProcesses?: () => ProcessFolder[] | string
 	/** Reads a pid's start time for a rehearsal clone's run (the tests stand in for it); default `processStartTime`. */
@@ -433,7 +433,12 @@ export type ReclaimItem = {
 	files: number
 	/** Their size in bytes; 0 when kept. */
 	bytes: number
+	/** Kept (`keep`) because the processes are not known: the run exits 1. */
+	processesNotKnown?: true
 }
+
+/** Why a reclaim keeps a worktree, and whether it is because the processes are not known. */
+export type ReclaimKeep = { reason: string; processesNotKnown?: true }
 
 /** `worktree prune --reclaim` for a workspace: every worktree of every repository, with what happens to it. */
 export type ReclaimPlan = {
@@ -442,8 +447,16 @@ export type ReclaimPlan = {
 	items: ReclaimItem[]
 }
 
-/** What a reclaim did with one worktree of its plan: its line, and whether something moved. */
-export type ReclaimOutcome = { worktree: string; line: string; moved: boolean }
+/**
+ * What a reclaim did with one worktree of its plan: its line, whether something moved, and whether it was kept because
+ * the processes are not known (at the plan or before its move: the run exits 1).
+ */
+export type ReclaimOutcome = {
+	worktree: string
+	line: string
+	moved: boolean
+	processesNotKnown?: true
+}
 
 /**
  * What a reclaim reads once for a repository to decide each of its worktrees: files and one `git worktree list`, never

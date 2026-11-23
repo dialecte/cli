@@ -333,7 +333,8 @@ function runWorktreeReclaim(
 	})
 	if (hasFlag(argv, 'dry-run'))
 		return resultOf({
-			exitCode: 0,
+			// a worktree kept because the processes are not known: the plan could not decide it
+			exitCode: plan.items.some((item) => item.processesNotKnown) ? 1 : 0,
 			lines: [
 				...plan.items.map((item) => reclaimItemLine({ item, workspace })),
 				reclaimTotalLine(plan.items),
@@ -351,7 +352,8 @@ function runWorktreeReclaim(
 		outcomes.filter((outcome) => outcome.moved).map((outcome) => outcome.worktree),
 	)
 	return resultOf({
-		exitCode: 0,
+		// a worktree kept because the processes are not known, at the plan or before its move
+		exitCode: outcomes.some((outcome) => outcome.processesNotKnown) ? 1 : 0,
 		lines: [
 			...outcomes.map((outcome) => outcome.line),
 			reclaimTotalLine(plan.items.filter((item) => moved.has(item.worktree))),
