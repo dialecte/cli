@@ -402,7 +402,10 @@ function approveLine(params: {
 	const reasons =
 		'refusal' in checks
 			? [checks.refusal]
-			: approvalRefusals({ ...params, checks, queue: queueReadOf({ ...params, route }) })
+			: [
+					...approvalRefusals({ ...params, checks, queue: queueReadOf({ ...params, route }) }),
+					...('refusal' in route ? [route.refusal] : []),
+				]
 	return reasons.length === 0
 		? fillMessage({ template: LOT_REVIEW_LINES.approveReady, values: { lot: params.place.lot } })
 		: fillMessage({

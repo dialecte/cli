@@ -180,17 +180,17 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
             change request, read by the parent's branch, is queued (auto-merge on or in the host's
             queue), refused otherwise before anything is recorded: approve the parent first, or land
             it again once the parent merged); the only verb that queues, lot land never does; a
-            queue the host refuses after that up-front check keeps the approval (exit 1) and the
-            same approval run again answers already approved, writing nothing, and queues; --by
-            orchestrator (in any casing and spacing) approves the cli's own lots only (the package
-            named @dialecte/cli), every other package waits for a person (exit 2); a forbidden word
-            in --by or --reason, or a --by holding what a public record never holds, refused (exit
-            2) before the host is asked; a lot without a landing names lot land <id>; the queued
-            line names the queue the host answers for the change request's base (queued (<the host's
-            word for its queue>)), nothing when the read is refused or the lot is stacked; a lot
-            queued alone whose host offers neither auto-merge nor a queue is refused before anything
-            is recorded or sent, naming what to turn on (the queue kind read once, before the
-            approval; a refused read refuses nothing)
+            queue the host refuses after the up-front queue-kind check keeps the approval (exit 1)
+            and the same approval run again answers already approved, writing nothing, and queues;
+            --by orchestrator (in any casing and spacing) approves the cli's own lots only (the
+            package named @dialecte/cli), every other package waits for a person (exit 2); a
+            forbidden word in --by or --reason, or a --by holding what a public record never holds,
+            refused (exit 2) before the host is asked; a lot without a landing names lot land <id>;
+            the queued line names the queue the host answers for the change request's base (queued
+            (<the host's word for its queue>)), nothing when the read is refused or the lot is
+            stacked; a lot queued alone whose host offers neither auto-merge nor a queue is refused
+            before anything is recorded or sent, naming what to turn on (the queue kind read once,
+            before the approval; a refused read refuses nothing)
   design - a lot's design (design before code): --from <file> records it by the sha256 of its bytes,
            appending { schema, at, kind: recorded, file, hash, from } to the lot folder's
            design.jsonl and keeping its copy as design/<hash>.md (the copy rules once the source is

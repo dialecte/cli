@@ -410,8 +410,8 @@ function recordAndQueue(params: {
 	host: HostAdapter
 	place: LotPlace
 	changeRequest: ChangeRequest
-	/** The route `stackRouteOf` answered: single or stacked here (a refusal was refused before). */
-	route: StackRoute
+	/** The route `stackRouteOf` answered: single or stacked (a refusal is refused before). */
+	route: Exclude<StackRoute, { refusal: string }>
 	/** The queue the host offers, read once (`queueReadOf`); undefined for a stacked lot. */
 	queue: QueueSupport | HostRefusal | undefined
 	approval: ApprovalLine

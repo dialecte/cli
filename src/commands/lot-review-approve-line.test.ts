@@ -1,4 +1,7 @@
 /** `dialecte lot review`: the approve line gives the same answer `lot approve` would. */
+import { writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 import { recordingHost } from '../../test/land-lot.ts'
 import { LOT_NAME } from '../../test/lot-describe.constants.ts'
 import { REVIEW_CHANGE_REQUEST_NUMBER } from '../../test/lot-review.constants.ts'
@@ -27,6 +30,27 @@ describe(
 
 			expect(result.output.split('\n')).toContain(
 				`approve: would refuse: change request #${REVIEW_CHANGE_REQUEST_NUMBER} is closed`,
+			)
+		})
+
+		it('green checks, a torn stack record → approve would refuse naming its damage, as lot approve does', () => {
+			const lot = landedLot()
+			writeFileSync(join(lot.lotFolder, 'stack.json'), '{"schema":1,"parent":')
+			const { host } = recordingHost({
+				existing: lot.changeRequest,
+				checks: { head: lot.head, state: 'green', failing: [], pending: [] },
+			})
+
+			const result = runLotReview({
+				cwd: lot.workspace.repository,
+				argv: [LOT_NAME, '--no-open'],
+				host,
+			})
+
+			expect(result.output.split('\n')).toContainEqual(
+				expect.stringMatching(
+					new RegExp(`^approve: would refuse: .*${LOT_NAME} is damaged: its stack\\.json`),
+				),
 			)
 		})
 

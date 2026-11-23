@@ -1,5 +1,6 @@
 /**
- * How `lot approve` queues a lot (R1-16): its change request alone, or a native stack up to it. A lot started on another
+ * How `lot approve` queues a lot (R1-16): its change request alone, or a native stack up to it. `stackRouteOf` decides
+ * the route offline from the stack record; `stackQueueOf` then asks the host only about a stacked lot's parent. A lot started on another
  * (its stack.json) whose change request still merges into the parent's branch queues as a stack only on a host with
  * stacks and only once the parent's change request is queued, so nothing a person has not approved joins the queue; a
  * parent merged, not queued, or a host without stacks is refused. A change request retargeted to the base queues alone.
@@ -15,7 +16,6 @@ import { readStack } from '../store/stack.ts'
 import { STACK_QUEUE_LINES } from './stack-queue.constants.ts'
 
 import type { HostAdapter, ChangeRequest } from '../host/host.types.ts'
-import type { LotIdentity } from '../store/store.types.ts'
 import type { StackRoute } from './stack-queue.types.ts'
 
 /**
@@ -65,7 +65,7 @@ export function stackQueueOf(params: {
 	lot: string
 	worktree: string
 	host: HostAdapter
-	stacked: { parent: string; identity: LotIdentity }
+	stacked: Omit<Extract<StackRoute, { route: 'stacked' }>, 'route'>
 }): { refusal: string } | undefined {
 	const { lot, host } = params
 	const { parent, identity } = params.stacked
