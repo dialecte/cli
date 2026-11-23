@@ -51,9 +51,8 @@ import type {
 	HostRefusal,
 	ChangeRequest,
 	ChangeRequestChecks,
-	QueueSupport,
 } from '../lib/host/host.types.ts'
-import type { ApprovalLine } from './lot-approve.types.ts'
+import type { ApprovalLine, QueueRead } from './lot-approve.types.ts'
 import type { LotPlace } from './lot-describe.types.ts'
 
 export function runLotApprove(params: {
@@ -140,7 +139,7 @@ export function approvalRefusals(params: {
 	checks: ChangeRequestChecks
 	landed: string
 	/** The queue the host offers the change request (`readQueueKind`); undefined when not read (a stacked lot). */
-	queue: QueueSupport | HostRefusal | undefined
+	queue: QueueRead
 }): string[] {
 	const { place, changeRequest } = params
 	return [
@@ -185,7 +184,7 @@ export function queueReadOf(params: {
 	place: LotPlace
 	changeRequest: ChangeRequest
 	route: StackRoute
-}): QueueSupport | HostRefusal | undefined {
+}): QueueRead {
 	if (!('route' in params.route) || params.route.route !== 'single') return undefined
 	return params.host.readQueueKind({
 		root: params.place.worktree,
@@ -194,10 +193,7 @@ export function queueReadOf(params: {
 }
 
 /** Why the change request cannot be queued: the host offers no queue for it; none for a refused or unread kind. */
-function queueReasons(params: {
-	place: LotPlace
-	queue: QueueSupport | HostRefusal | undefined
-}): string[] {
+function queueReasons(params: { place: LotPlace; queue: QueueRead }): string[] {
 	const { queue } = params
 	if (queue === undefined || 'refusal' in queue || queue.kind !== 'none') return []
 	return [
@@ -413,7 +409,7 @@ function recordAndQueue(params: {
 	/** The route `stackRouteOf` answered: single or stacked (a refusal is refused before). */
 	route: Exclude<StackRoute, { refusal: string }>
 	/** The queue the host offers, read once (`queueReadOf`); undefined for a stacked lot. */
-	queue: QueueSupport | HostRefusal | undefined
+	queue: QueueRead
 	approval: ApprovalLine
 }): CommandResult {
 	const { host, place, changeRequest, approval, route } = params
@@ -482,12 +478,12 @@ function queuedLineOf(params: {
 }
 
 /**
- * The queue the queued line names, from the one read (`queueReadOf`): ` (<noun>)`; nothing when the host offers none,
- * the read was refused, or the kind was not read (a stacked lot), so no noun is guessed.
+ * The queue the queued line names, from the one read (`queueReadOf`): ` (<noun>)`; nothing when the read was refused or
+ * the kind was not read (a stacked lot), so no noun is guessed. A host offering none was refused before.
  */
-function viaOf(params: { queue: QueueSupport | HostRefusal | undefined }): string {
+function viaOf(params: { queue: QueueRead }): string {
 	const { queue } = params
-	if (queue === undefined || 'refusal' in queue || queue.kind === 'none') return ''
+	if (queue === undefined || 'refusal' in queue) return ''
 	return fillMessage({ template: QUEUE_VIA, values: { noun: queue.noun } })
 }
 

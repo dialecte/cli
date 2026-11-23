@@ -150,12 +150,15 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
            branch, its change request (landing.json's) with the head it is at, the head the lot
            landed and the worktree's HEAD, its checks, the brief's goal and steps (title, spec,
            behaviours), tests.json's tdd counts and gate run, decisions.md, every finding of the
-           ledger with its text and state, the standard line, and what lot approve would refuse, a
-           host offering no queue for a lot queued alone included (the queue kind read once), or the
-           approve command when it would approve; then opens the change request's changed files in
-           the browser (--no-open names the page only; an opener that fails is named, never an
-           exit); a lot without a landing prints its private half and names lot land <id>, the host
-           never asked
+           ledger with its text and state, the standard line, and the approve line: the refusals lot
+           approve checks from what the review reads (the lot's state, the change request open at
+           the head the lot landed, the worktree's head, the checks, open findings, the design, a
+           host offering no queue for a lot queued alone (the queue kind read once), a stack record
+           that does not route), or the approve command when none applies; a stacked lot's parent
+           and whether the text renders are checked by lot approve only; then opens the change
+           request's changed files in the browser (--no-open names the page only; an opener that
+           fails is named, never an exit); a lot without a landing prints its private half and names
+           lot land <id>, the host never asked
   review --comments - the change request's line comments come back as findings of round <n> in the
     lot's findings ledger: a thread's first comment only (replies discuss it), each once
     (pulled-comments.jsonl records the comment and its finding; a second pull answers already), its
