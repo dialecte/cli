@@ -918,3 +918,268 @@ export const NODE_MODULES_FOLDER = 'node_modules'
 
 /** The folders a walk of a tree outside git leaves out: installed packages, a repository's own folder, built output. */
 export const TREE_SKIPPED_FOLDERS: readonly string[] = [NODE_MODULES_FOLDER, '.git', 'dist']
+
+/** The probe of a package's vitest projects, next to the cli's entry (built) or next to this file (sources). */
+export const PROBE_FILE_NAMES = ['tdd-vitest-projects.js', 'tdd-vitest-projects.ts'] as const
+
+/** A changed test file mocking a module that a project sharing modules between files runs: refused. */
+export const MODULE_MOCK_REFUSAL =
+	'mocks a module ({call}, line {line}) in the {project} project, which shares modules between files: CI loads the module before the mock - test it without a module mock, or move the file to a project that isolates files'
+
+/** The receipt reason of a case or file refused for a module mock in a project sharing modules between files. */
+export const MODULE_MOCK_REASON = 'module mock'
+
+/** The environment every vitest run of tdd adds (and the probe of its projects): CI's, without colours. */
+export const VITEST_RUN_ENVIRONMENT: Readonly<Record<string, string>> = {
+	CI: 'true',
+	FORCE_COLOR: '0',
+	NO_COLOR: '1',
+}
+
+/** The environment variable naming the probe's input file (`VitestProbeInput`). */
+export const PROBE_INPUT_VARIABLE = 'DIALECTE_TDD_PROBE_INPUT'
+
+/** Where the vitest package of an installation sits, relative to the folder holding its `node_modules`. */
+export const VITEST_PACKAGE_PATH = ['node_modules', 'vitest'] as const
+
+/** The operators that end a shell command, longest first: a command reads up to the next one. */
+export const SHELL_COMMAND_OPERATORS = ['&&', '||', '\n', ';', '|', '&'] as const
+
+/**
+ * Shell builtins and plain tools a CI command may run (`tee` copies output): none runs vitest (`cd` is read on its
+ * own: only `cd .` stays here).
+ */
+export const SHELL_BUILTINS: readonly string[] = [
+	'tee',
+	'echo',
+	'printf',
+	'export',
+	'set',
+	'unset',
+	'true',
+	'false',
+	'exit',
+	':',
+	'test',
+	'[',
+]
+
+/** npm commands of a workflow step that install the package: they run no vitest of the package. */
+export const NPM_INSTALL_COMMANDS: readonly string[] = ['ci', 'install', 'i']
+
+/** npm options that point a command at another package's scripts. */
+export const NPM_OTHER_PACKAGE_FLAGS: readonly string[] = ['-w', '--workspace', '--prefix']
+
+/** The npm subcommands that run the script they name: `run <name>`, `run-script <name>`. */
+export const NPM_RUN_SUBCOMMANDS: readonly string[] = ['run', 'run-script']
+
+/** The npm subcommands that run the `test` script. */
+export const NPM_TEST_SUBCOMMANDS: readonly string[] = ['test', 't']
+
+/** The script `npm test` runs. */
+export const NPM_TEST_SCRIPT = 'test'
+
+/** The words that start the package's vitest in a CI command. */
+export const VITEST_EXECUTABLES: readonly string[] = [
+	'vitest',
+	'node_modules/.bin/vitest',
+	'./node_modules/.bin/vitest',
+]
+
+/** vitest subcommands that run no test: a `--project` of theirs selects nothing CI runs. */
+export const VITEST_NON_RUN_SUBCOMMANDS: readonly string[] = ['list', 'bench', 'init']
+
+/** vitest subcommands that run tests: the words after them are the run's. */
+export const VITEST_RUN_SUBCOMMANDS: readonly string[] = ['run', 'watch', 'dev', 'related']
+
+/** vitest options that point a run at another config than the package's own (the one probed). */
+export const VITEST_OTHER_CONFIG_FLAGS: readonly string[] = [
+	'--config',
+	'-c',
+	'--root',
+	'-r',
+	'--dir',
+]
+
+/** The option of a vitest run naming a project. */
+export const VITEST_PROJECT_FLAG = '--project'
+
+/** Why the reader of CI's vitest projects answers every project. */
+export const CI_PROJECTS_REASONS = {
+	noWorkflow: 'no {path}',
+	yaml: '{path} does not parse as YAML: {message}',
+	notAWorkflow: '{path} holds no jobs',
+	uses: '{path} uses {uses}, which is not read',
+	workingDirectory: '{path} runs in working-directory {directory}, which is not read',
+	noVitestRun: '{path} runs no vitest project',
+	expansion: '{command} names its project through {word}, which is not read',
+	fileFilter: '{command} filters its files ({word}), which is not read',
+	sharing: '{command} sets how its files share modules ({flag}), which is not read',
+	otherPackage: '{command} runs another package ({flag})',
+	otherConfig: '{command} runs another config than the package one ({flag})',
+	noProject: '{command} names no project',
+	unreadScript: '{script} ({command}) is not read',
+	unreadStep: '{path} runs {command}, which is not read',
+	noScript: '{command} runs no script of the package',
+	otherManager: '{command}: {manager} runs are not read',
+} as const
+
+/** The source of CI's projects read through npm scripts (the workflow alone: its path). */
+export const CI_PROJECTS_SOURCE_WITH_SCRIPTS = '{path} through its npm scripts {scripts}'
+
+/** The lines a tdd command prints before its run: which projects it runs its vitest files in. */
+export const VITEST_SELECTION_NOTES = {
+	projects: 'vitest projects: {names} (as {source} runs them)',
+	all: 'vitest projects: all ({reason})',
+	outside: "not in CI's projects: {file}",
+} as const
+
+/** A CI project name the package's config does not resolve: the run fails, naming it. */
+export const UNDECLARED_CI_PROJECT =
+	'tdd: CI runs vitest --project {name} ({source}), which this config does not declare'
+
+/** A head CI project name the base copy's config lacks: the base run fails, naming it. */
+export const BASE_LACKS_CI_PROJECT =
+	'the base config declares no vitest project {name} (CI runs it at the head; base {base})'
+
+/** No package vitest binary: its projects cannot be probed, every project runs. */
+export const NO_VITEST_TO_PROBE =
+	'no node_modules/.bin/vitest beside a vitest package: its projects are not read'
+
+/** vitest's utility binding, global or imported from `vitest`: `vi.mock(...)` mocks a module. */
+export const VITEST_VI_BINDING = 'vi'
+
+/** A leading `NAME=value` of a shell command: an assignment, read past. */
+export const SHELL_ASSIGNMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=/
+
+/** The vitest pools that run each file in its own VM context: a file never sees another file's modules. */
+export const VITEST_VM_POOLS: readonly string[] = ['vmForks', 'vmThreads']
+
+/** The command that changes the shell's folder, and the folders that keep it in the package. */
+export const SHELL_CD_COMMAND = 'cd'
+export const SAME_FOLDERS: readonly string[] = ['.', './']
+
+/** A `uses:` or path naming a file of the repository itself. */
+export const LOCAL_PATH_PREFIX = './'
+
+/** `node -e '...'` / `--eval` / `-p`: inline code, no test run. */
+export const NODE_COMMAND = 'node'
+export const NODE_EVAL_FLAGS: readonly string[] = ['-e', '--eval', '-p']
+
+/** Package managers whose runs the reader does not follow. */
+export const OTHER_PACKAGE_MANAGERS: readonly string[] = ['pnpm', 'yarn']
+
+/** npm, npx and their words the reader follows. */
+export const NPM_COMMAND = 'npm'
+export const NPX_COMMAND = 'npx'
+export const NPM_EXEC_SUBCOMMAND = 'exec'
+export const ARGUMENTS_SEPARATOR = '--'
+
+/** `npx playwright install`: installs browsers, runs no test. */
+export const PLAYWRIGHT_INSTALL: readonly string[] = ['playwright', 'install']
+
+/** vitest options taking their value as the next word: that word is no file filter. */
+export const VITEST_VALUE_FLAGS: readonly string[] = [
+	'--project',
+	'-t',
+	'--testNamePattern',
+	'--shard',
+	'--reporter',
+	'--outputFile',
+	'--retry',
+	'--pool',
+	'--environment',
+	'--maxWorkers',
+	'--minWorkers',
+	'--bail',
+	'--testTimeout',
+	'--hookTimeout',
+	'--mode',
+	'--exclude',
+	'--browser',
+	'--browser.name',
+	'--sequence.seed',
+	'--coverage.reporter',
+]
+
+/** The character that opens a shell expansion (`$VAR`, `${{ ... }}`, `$(...)`): its value is not read. */
+export const SHELL_EXPANSION_MARK = '$'
+
+/** The characters a backslash escapes inside double quotes (POSIX). */
+export const DOUBLE_QUOTE_ESCAPES = '\\"$`\n'
+
+/** The vitest `vi` methods that mock a module. */
+export const MODULE_MOCK_METHODS: readonly string[] = ['mock', 'doMock']
+
+/** How long the probe of a package's vitest projects may take: past it, stopped, the run fails naming it. */
+export const PROBE_TIMEOUT_MS = 60_000
+
+/** The npx fallback: the projects are not read, so a file's module mock is not checked. */
+export const MODULE_MOCK_UNCHECKED =
+	'module mock refusal skipped: no node_modules/.bin/vitest to read the projects from'
+
+/** A shell redirection word (`>`, `>>`, `<`, `2>`, `&>`, `2>&1`): its operator, then a target attached or next. */
+export const SHELL_REDIRECTION_PATTERN = /^(?:\d*|&)(?:>>?|<)(?:&\d+|&-)?/
+
+/** A redirection that duplicates a stream (`2>&1`): no target word follows it. */
+export const SHELL_DUPLICATION_PATTERN = /&(?:\d+|-)$/
+
+/** The progress step of a probe of the vitest projects run outside a test run's step. */
+export const VITEST_PROJECTS_STEP = 'vitest projects'
+
+/** A probe that answered no projects: its failure named as the probe's, never the test run's. */
+export const PROBE_FAILURE = 'tdd: the probe of the vitest projects of {root}: {failure}'
+
+/** Step actions that set the job up and run no test: any other `uses:` may run vitest. Matched by name, any ref. */
+export const STEP_SETUP_ACTIONS: readonly string[] = [
+	'actions/checkout',
+	'actions/setup-node',
+	'actions/setup-python',
+	'actions/cache',
+	'actions/upload-artifact',
+	'actions/download-artifact',
+]
+
+/** The separator of an action's name and its ref (`actions/checkout@v6`). */
+export const ACTION_REF_SEPARATOR = '@'
+
+/** vitest options that change how a run's files share modules: the probed isolation no longer holds. */
+export const VITEST_SHARING_FLAGS: readonly string[] = [
+	'--no-isolate',
+	'--isolate=false',
+	'--browser.isolate=false',
+	'--no-browser.isolate',
+]
+
+/** vitest's pool option: any pool chosen on the command line overrides the config's. */
+export const VITEST_POOL_FLAG = '--pool'
+
+/** vitest's own export of `vi` under its other name (`import { vitest } from 'vitest'`). */
+export const VITEST_VITEST_BINDING = 'vitest'
+
+/** The global object: `globalThis.vi` is vitest's global `vi`. */
+export const GLOBAL_THIS = 'globalThis'
+
+/** The probe wrote no report: the failure it is named with. */
+export const PROBE_NO_REPORT = 'it wrote no report'
+
+/** vitest could not resolve the projects of the package. */
+export const PROBE_UNRESOLVED = 'tdd: vitest could not resolve the projects of {root}: {reason}'
+
+/** The vitest of the package lacks an API the probe calls: its version and the API named. */
+export const PROBE_MISSING_API =
+	'vitest {version} has no {api}: the probe of the vitest projects expects vitest 4 ({api})'
+
+/** The vitest APIs the probe calls, named in its refusal when the package's vitest lacks one. */
+export const VITEST_PROBE_APIS = {
+	nodeEntry: 'vitest/node export',
+	createVitest: 'createVitest',
+	projects: 'Vitest.projects',
+	matchesTestGlob: 'TestProject.matchesTestGlob',
+} as const
+
+/** The export of the vitest package the probe imports. */
+export const VITEST_NODE_EXPORT = './node'
+
+/** A vitest package whose manifest names no version. */
+export const VITEST_VERSION_UNKNOWN = '(version unknown)'

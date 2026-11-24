@@ -11,8 +11,5 @@ export const LOT_CLOSE_FEATURE_TEXTS = {
 	linksUnknown: 'the links that may reach a clone could not be read: {reason}',
 } as const
 
-/** The states a lot of the feature must be in for its close: every other one refuses it. */
-export const CLOSABLE_STATES: readonly string[] = ['committed', 'canceled']
-
 /** The flag that makes `lot close` a feature's close. */
 export const FEATURE_FLAG = '--feature'

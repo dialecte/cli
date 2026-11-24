@@ -101,7 +101,12 @@ export type ForecastRun = {
 	lines: ForecastLine[]
 	verdict: ForecastVerdict
 	durationMs: number
+	/** The other open lots that merged on the host but were never closed: not compared, they hold nothing. */
+	settled: readonly ForecastSettled[]
 }
+
+/** An other lot a run left out: pushed and read merged offline, never closed; its base and the tip that landed. */
+export type ForecastSettled = { name: string; base: string; tip: string }
 
 /** An open lot of the store as the forecast reads it: its identity, or why it is damaged. */
 export type OpenLot = { name: string; identity: LotIdentity } | { name: string; damage: string }

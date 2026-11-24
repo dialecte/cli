@@ -27,14 +27,9 @@ import { readIdentity } from '../store/identity.ts'
 import { lotItemOf, readLotItems } from '../store/lot-items.ts'
 import { keptByDecision } from '../store/lot-keep.ts'
 import { readCheckedLotState, registryOfLotFolder } from '../store/lot-records.ts'
-import { lotState } from '../store/lot-state.ts'
+import { isClosedState, lotState } from '../store/lot-state.ts'
 import { readStack } from '../store/stack.ts'
-import {
-	DAMAGED_STATE,
-	LOT_KEEP_REASON,
-	LOTS_KEEPING_NOTHING,
-	STORE_FILES,
-} from '../store/store.constants.ts'
+import { DAMAGED_STATE, LOT_KEEP_REASON, STORE_FILES } from '../store/store.constants.ts'
 import { WORKTREES_FOLDER } from '../workspace.constants.ts'
 import { listWorktrees } from '../worktree/add-worktree.ts'
 import { linkReaching } from '../worktree/folder-links.ts'
@@ -276,10 +271,7 @@ export function holdersOf(params: {
 function lotHoldersOf(
 	lots: readonly LotRecord[],
 ): Pick<BranchHolders, 'openLots' | 'stackParents' | 'damagedStacks'> {
-	const open = lots.filter(
-		(lot) =>
-			lot.state === DAMAGED_STATE || !LOTS_KEEPING_NOTHING.some((closed) => closed === lot.state),
-	)
+	const open = lots.filter((lot) => lot.state === DAMAGED_STATE || !isClosedState(lot.state))
 	const openLots = new Map(
 		open.flatMap((lot) =>
 			lot.branch === undefined
@@ -559,7 +551,7 @@ function lostByBranch(params: {
 	const branches = [
 		...new Set(
 			params.lots
-				.filter((lot) => lot.state === 'committed' || lot.state === 'canceled')
+				.filter((lot) => isClosedState(lot.state))
 				.flatMap((lot) => (params.candidates.get(lot.lotFolder) ?? []).map((one) => one.branch)),
 		),
 	]
@@ -600,7 +592,7 @@ function lotFactsOf(params: {
 	const identityWorktree = lot.identity?.worktree
 	const worktreeGone =
 		worktree === undefined && typeof identityWorktree === 'string' && !existsSync(identityWorktree)
-	const terminal = lot.state === 'committed' || lot.state === 'canceled'
+	const terminal = isClosedState(lot.state)
 	const throwaways =
 		lot.identity === undefined || lot.simulated
 			? []

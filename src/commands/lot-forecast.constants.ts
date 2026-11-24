@@ -16,6 +16,8 @@ export const LOT_FORECAST_TEXTS = {
 	more: '{count} more',
 	unknown: 'unknown: {reason}',
 	verdict: 'forecast: {verdict}',
+	settled:
+		'! {lot}: merged on {base} at {tip}, not settled yet: it holds nothing (lot close {lot} settles it)',
 } as const
 
 /** Between two parts of a line and two paths. */

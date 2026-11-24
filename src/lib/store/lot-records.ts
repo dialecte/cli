@@ -21,7 +21,7 @@ import { readAnswerFiles } from './answer-files.ts'
 import { normaliseScopeEntry, overlaps } from './brief-scope.ts'
 import { readIdentity } from './identity.ts'
 import { readKeepDecision } from './keep-decisions.ts'
-import { isCanceledByMarkerOnly, lotState } from './lot-state.ts'
+import { isCanceledByMarkerOnly, isClosedState, lotState } from './lot-state.ts'
 import {
 	answerDamageOf,
 	entryDamageOf,
@@ -176,7 +176,7 @@ function pauseThisThread(milliseconds: number): void {
 export function isOpenRealLot(input: LotStateInput): boolean {
 	if (input.identity.simulated) return false
 	const { state } = lotState(input)
-	if (state === 'committed' || state === 'canceled') return false
+	if (isClosedState(state)) return false
 	return !(state === 'failed' && input.transitions.at(-1)?.cause.kind === 'overlap')
 }
 

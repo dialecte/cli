@@ -2,9 +2,19 @@
  * The one pure function every state of a lot comes from (33S section 4): the records on disk in, the state out,
  * first match wins. No file read, no clock, no process.
  */
-import { QUESTIONS_CLOSED_STATES } from './store.constants.ts'
+import { CLOSED_STATES, TERMINAL_STATES } from './store.constants.ts'
 
 import type { LotStateInput, LotStateName, LotStateReport, QuestionRecord } from './store.types.ts'
+
+/** Whether a lot in `state` is closed: it keeps nothing and holds no scope (`CLOSED_STATES`). Pure. */
+export function isClosedState(state: string): boolean {
+	return CLOSED_STATES.some((closed) => closed === state)
+}
+
+/** Whether a lot in `state` takes no more work: no question, answer, scope or risk change (`TERMINAL_STATES`). Pure. */
+export function isTerminalState(state: string): boolean {
+	return TERMINAL_STATES.some((terminal) => terminal === state)
+}
 
 /** The state of a lot, derived from its records (33S section 4, first match wins). Pure. */
 export function lotState(input: LotStateInput): LotStateReport {
@@ -15,7 +25,7 @@ export function lotState(input: LotStateInput): LotStateReport {
 		state,
 		since: sinceOf({ input, fromEntry }),
 		limit: last?.cause.kind === 'limit',
-		openQuestions: QUESTIONS_CLOSED_STATES.includes(state) ? [] : asked,
+		openQuestions: isTerminalState(state) ? [] : asked,
 	}
 }
 

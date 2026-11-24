@@ -532,7 +532,13 @@ export type CatchUpRole = 'sibling' | 'owner' | 'sole-owner'
  * names the worktree: the line that says why that lot reads committed.
  */
 export type CloseOutcome = { handover: string; landed?: string } & (
-	| { closed: true; already?: true; dropped?: string }
+	| {
+			closed: true
+			already?: true
+			dropped?: string
+			/** For `already`: the other id of the same lot (its entry, or the lot an entry names), when it differs. */
+			also?: string
+	  }
 	| { kept: string }
 )
 

@@ -12,10 +12,12 @@ import { closeHandovers } from '../lib/handover/close-handovers.ts'
 import { closeTargetsOf, settleCloseTargets } from '../lib/handover/close-targets.ts'
 import {
 	LOT_CLOSE_ALREADY_CLOSED,
+	LOT_CLOSE_ALSO,
 	LOT_CLOSE_LANDED_INDENT,
 } from '../lib/handover/handover.constants.ts'
 import { machineScratchRoots } from '../lib/handover/rehearse-handover.ts'
 import { createHost } from '../lib/host/select-host.ts'
+import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { jsonOf } from '../lib/print/print.ts'
 import { WORKTREES_FOLDER } from '../lib/workspace.constants.ts'
 import { listWorktrees } from '../lib/worktree/add-worktree.ts'
@@ -126,6 +128,16 @@ export function runLotClose(params: {
 function closeLineOf(params: { result: CloseResult }): string {
 	const { outcome, moved, nodeModules } = params.result
 	if (!('closed' in outcome)) return `kept    ${outcome.handover}  (${outcome.kept})`
-	if (outcome.already) return LOT_CLOSE_ALREADY_CLOSED.replace('{handover}', outcome.handover)
+	if (outcome.already)
+		return fillMessage({
+			template: LOT_CLOSE_ALREADY_CLOSED,
+			values: {
+				handover: outcome.handover,
+				also:
+					outcome.also === undefined
+						? ''
+						: fillMessage({ template: LOT_CLOSE_ALSO, values: { also: outcome.also } }),
+			},
+		})
 	return `closed  ${outcome.handover}: ${moved.join(', ')}${nodeModules ? `; node_modules ${nodeModules}` : ''}`
 }

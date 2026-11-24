@@ -12,6 +12,7 @@ import { forecastLot } from '../lib/coordination/forecast.ts'
 import { lotGitDeclaredHighOf } from '../lib/design/base-declared.ts'
 import { designStatusLine } from '../lib/design/design-line.ts'
 import { lotDesignStandingOf } from '../lib/design/design-standing.ts'
+import { SHORT_SHA_LENGTH } from '../lib/gate-records/gate-records.constants.ts'
 import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { JSON_FLAG } from '../lib/parse-invocation.constants.ts'
 import { jsonOf, textOf } from '../lib/print/print.ts'
@@ -132,6 +133,16 @@ export function forecastTextLines(params: { lot: string; run: ForecastRun }): st
 			values: { lot, run: run.run, seconds: (run.durationMs / 1000).toFixed(1) },
 		}),
 		...run.lines.map(lineTextOf),
+		...run.settled.map(function settledLineOf(settled) {
+			return fillMessage({
+				template: LOT_FORECAST_TEXTS.settled,
+				values: {
+					lot: settled.name,
+					base: settled.base,
+					tip: settled.tip.slice(0, SHORT_SHA_LENGTH),
+				},
+			})
+		}),
 		fillMessage({ template: LOT_FORECAST_TEXTS.verdict, values: { verdict: run.verdict } }),
 	]
 }

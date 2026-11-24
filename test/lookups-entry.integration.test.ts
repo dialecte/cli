@@ -128,7 +128,7 @@ describe('@dialecte/cli/lookups', () => {
 		expect(bin).not.toMatch(/\bimport\(\s*["']@dialecte\/core/u)
 	})
 
-	it('builds the bin, the library entry and the tdd reporter the bin hands to vitest', () => {
+	it('builds the bin, the library entry, the tdd reporter the bin hands to vitest and its projects probe', () => {
 		expect(readdirSync(join(BUILT, 'dist')).sort()).toEqual([
 			'cli.js',
 			'corpus',
@@ -139,6 +139,7 @@ describe('@dialecte/cli/lookups', () => {
 			'schemas',
 			'tdd-node-reporter.js',
 			'tdd-reporter.js',
+			'tdd-vitest-projects.js',
 		])
 	})
 

@@ -10,6 +10,7 @@
  * `testpaths` and `norecursedirs`; pytest's defaults stand for the ones the file does not declare.
  */
 import { readToml } from './read-toml.ts'
+import { shellWords } from './shell-words.ts'
 import {
 	ALWAYS_PYTEST_CONFIG_FILES,
 	DEFAULT_NORECURSEDIRS,
@@ -99,45 +100,7 @@ function tableSettings(params: {
 /** A setting's words: a string split as a shell line, a list as it is; undefined when not declared. */
 function wordsOf(setting: PytestSetting | undefined): string[] | undefined {
 	if (setting === undefined) return undefined
-	return typeof setting === 'string' ? splitShellWords(setting) : [...setting]
-}
-
-/** The words of a line as POSIX `shlex.split` makes them: quotes group, a backslash escapes, no comment. */
-function splitShellWords(line: string): string[] {
-	const words: string[] = []
-	let word = ''
-	let inWord = false
-	for (let index = 0; index < line.length; index++) {
-		const character = line[index] as string
-		if (/\s/.test(character)) {
-			if (inWord) words.push(word)
-			word = ''
-			inWord = false
-		} else if (character === "'") {
-			inWord = true
-			const close = line.indexOf("'", index + 1)
-			const stop = close < 0 ? line.length : close
-			word += line.slice(index + 1, stop)
-			index = stop
-		} else if (character === '"') {
-			inWord = true
-			for (index++; index < line.length && line[index] !== '"'; index++) {
-				const next = line[index + 1]
-				if (line[index] === '\\' && next !== undefined && '\\"$`\n'.includes(next)) {
-					word += next
-					index++
-				} else word += line[index]
-			}
-		} else if (character === '\\') {
-			inWord = true
-			if (index + 1 < line.length) word += line[++index]
-		} else {
-			word += character
-			inWord = true
-		}
-	}
-	if (inWord) words.push(word)
-	return words
+	return typeof setting === 'string' ? shellWords(setting) : [...setting]
 }
 
 /** The sections of an ini text as pytest's ini reader makes them (inline comments kept in values). */

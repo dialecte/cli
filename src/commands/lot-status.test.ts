@@ -3,6 +3,13 @@ import { realpathSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createBriefWorkspace, writeStoreLot } from '../../test/brief-workspace.ts'
+import {
+	cancelLot,
+	landingLotOf,
+	removeLotWorktree,
+	writeLandedFact,
+} from '../../test/landing-lot.ts'
+import { landingHostOf } from '../../test/landing-repository.ts'
 import { manualLineOf, withJson, withLines } from '../../test/lot-start-workspace.ts'
 import { EARLIER_TIME, LATER_TIME, RECORD_TIME } from '../../test/store-records.constants.ts'
 import {
@@ -331,4 +338,40 @@ describe('lot status, the text form', { timeout: STORE_CASE_TIMEOUT }, () => {
 					expect.stringMatching(new RegExp(`^(?!next:).*${text.alsoHolds}`)),
 				)
 		})
+})
+
+describe('lot status, the worktree check of a closed lot', { timeout: STORE_CASE_TIMEOUT }, () => {
+	it('a committed lot whose worktree is removed -> no checks line, --json checks.worktree removed', () => {
+		const lot = landingLotOf()
+		writeLandedFact({ lot, tip: lot.tip })
+		removeLotWorktree(lot)
+		const host = landingHostOf({}).host
+
+		const text = runLot({ cwd: lot.workspace.repository, argv: ['status', lot.name], host })
+		const json = runLot({
+			cwd: lot.workspace.repository,
+			argv: ['status', lot.name, '--json'],
+			host,
+		})
+
+		expect({
+			checksLine: text.output.split('\n').some((line) => line.startsWith('checks:')),
+			worktree: (JSON.parse(json.output) as { checks: { worktree: string } }).checks.worktree,
+		}).toEqual({ checksLine: false, worktree: 'removed' })
+	})
+
+	it('a canceled lot whose worktree is still on disk -> --json checks.worktree present', () => {
+		const lot = landingLotOf()
+		cancelLot(lot)
+
+		const json = runLot({
+			cwd: lot.workspace.repository,
+			argv: ['status', lot.name, '--json'],
+			host: landingHostOf({}).host,
+		})
+
+		expect((JSON.parse(json.output) as { checks: { worktree: string } }).checks.worktree).toBe(
+			'present',
+		)
+	})
 })

@@ -3,13 +3,14 @@ import {
 	importedNames,
 	isInsideAssertion,
 	listTestCalls,
+	moduleMockCalls,
 	moduleSpecifiers,
 	testCallTextAt,
 } from './test-source.ts'
 
 import { describe, expect, it } from 'vitest'
 
-import type { SourceLocation } from './tdd.types.ts'
+import type { ModuleMockCall, SourceLocation } from './tdd.types.ts'
 
 describe('findOnlyMarkers', () => {
 	const CASES: Record<string, { text: string; lines: number[] }> = {
@@ -289,4 +290,61 @@ describe('testCallTextAt where node locates a modified call', () => {
 			testCallTextAt({ text, file: 'a.test.ts', location: locationOf({ text, marker: 'skip' }) }),
 		).toBeUndefined()
 	})
+})
+
+describe('moduleMockCalls', () => {
+	const CASES: Record<string, { text: string; calls: ModuleMockCall[] }> = {
+		"vi.mock('./x') on the vi imported from vitest → its line": {
+			text: "import { vi } from 'vitest'\nvi.mock('./x')\n",
+			calls: [{ method: 'mock', line: 2 }],
+		},
+		"vi.mock(import('./x')) → its line, whatever the argument": {
+			text: "import { vi } from 'vitest'\n\nvi.mock(import('./x'), () => ({ x: 1 }))\n",
+			calls: [{ method: 'mock', line: 3 }],
+		},
+		"vi.doMock('x') inside a test → its line": {
+			text: "import { it, vi } from 'vitest'\nit('a', () => {\n\tvi.doMock('x')\n})\n",
+			calls: [{ method: 'doMock', line: 3 }],
+		},
+		"import { vi as v } then v.mock('x') → its line": {
+			text: "import { vi as v } from 'vitest'\nv.mock('x')\n",
+			calls: [{ method: 'mock', line: 2 }],
+		},
+		"import * as vitest from 'vitest' then vitest.vi.mock('x') → its line": {
+			text: "import * as vitest from 'vitest'\nvitest.vi.mock('x')\n",
+			calls: [{ method: 'mock', line: 2 }],
+		},
+		"import { vitest } from 'vitest' then vitest.mock('x') → its line": {
+			text: "import { vitest } from 'vitest'\nvitest.mock('x')\n",
+			calls: [{ method: 'mock', line: 2 }],
+		},
+		"globalThis.vi.mock('x') → its line": {
+			text: "\nglobalThis.vi.mock('x')\n",
+			calls: [{ method: 'mock', line: 2 }],
+		},
+		"the global vi (no import) vi.mock('x') → its line": {
+			text: "vi.mock('x')\n",
+			calls: [{ method: 'mock', line: 1 }],
+		},
+		"fixture.mock('x') → none (another receiver)": {
+			text: "import { vi } from 'vitest'\nconst fixture = { mock: (name: string) => name }\nfixture.mock('x')\n",
+			calls: [],
+		},
+		"vi.spyOn(a, 'b'), vi.fn(), vi.stubGlobal, vi.hoisted(...) → none": {
+			text: [
+				"import { vi } from 'vitest'",
+				'const a = { b: () => 1 }',
+				"vi.spyOn(a, 'b')",
+				'const f = vi.fn()',
+				"vi.stubGlobal('x', 1)",
+				'const hoisted = vi.hoisted(() => ({ f }))',
+				'',
+			].join('\n'),
+			calls: [],
+		},
+	}
+	for (const [name, testCase] of Object.entries(CASES))
+		it(name, () => {
+			expect(moduleMockCalls({ text: testCase.text, file: 'a.test.ts' })).toEqual(testCase.calls)
+		})
 })

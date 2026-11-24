@@ -26,6 +26,7 @@ import { isFolder } from '../lib/file-system.ts'
 import { createHost } from '../lib/host/select-host.ts'
 import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { statusLandingOf } from '../lib/landing/lot-landing.ts'
+import { withSettledLines } from '../lib/landing/met-lots.ts'
 import { MUTATION_MODES } from '../lib/mutation/mutation.constants.ts'
 import { packageRootOf } from '../lib/package-root.ts'
 import { printCommandResult } from '../lib/print/command-output.ts'
@@ -139,21 +140,28 @@ export async function runLotCommand(params: RunLotCommandParams): Promise<Comman
 	if ('exit' in prepared) return prepared.exit
 	const riskClass = askedClassOf(prepared.prepared)
 	if (riskClass === undefined) return finishStart({ prepared: prepared.prepared })
+	// the lots the scope met that merged on the host may be settled already: named on every exit
+	const { settle } = prepared.prepared
+	function settled(result: CommandResult): CommandResult {
+		return withSettledLines({ result, settle, json: false })
+	}
 	let asked: BriefEffort | undefined
 	try {
 		asked = await askEffort({ riskClass, ask: params.ask })
 	} catch {
-		// the input closed before an answer (D22): nothing written
-		return lotRefusalExit({ lines: [START_NO_ANSWER], json: false })
+		// the input closed before an answer (D22): nothing more written
+		return settled(lotRefusalExit({ lines: [START_NO_ANSWER], json: false }))
 	}
 	if (asked === undefined)
-		return lotUsageExit({
-			reason: fillMessage({
-				template: START_USAGE_REASONS.asked,
-				values: { efforts: BRIEF_EFFORTS.join(', '), attempts: String(START_EFFORT_ATTEMPTS) },
+		return settled(
+			lotUsageExit({
+				reason: fillMessage({
+					template: START_USAGE_REASONS.asked,
+					values: { efforts: BRIEF_EFFORTS.join(', '), attempts: String(START_EFFORT_ATTEMPTS) },
+				}),
+				json: false,
 			}),
-			json: false,
-		})
+		)
 	return finishStart({ prepared: prepared.prepared, asked })
 }
 
@@ -219,7 +227,13 @@ export function runLot(params: {
 			sharedTemporaryRoots: params.sharedTemporaryRoots,
 		})
 	if (verb === 'brief') return runLotBrief({ cwd: params.cwd, argv: words, now: params.now })
-	if (verb === 'start') return startLot({ cwd: params.cwd, argv: words, now: params.now })
+	if (verb === 'start')
+		return startLot({
+			cwd: params.cwd,
+			argv: words,
+			now: params.now,
+			...(params.host !== undefined && { seams: { host: params.host } }),
+		})
 	if (verb === 'status')
 		return lotStatus({
 			cwd: params.cwd,
@@ -247,7 +261,13 @@ export function runLot(params: {
 		return { ...result, output: textOf([resolved.note, ...linesOf(result.output)]) }
 	}
 	if (verb === 'risk') return runRiskVerb({ cwd: params.cwd, words, now: params.now })
-	if (verb === 'scope') return runLotScope({ cwd: params.cwd, argv: words, now: params.now })
+	if (verb === 'scope')
+		return runLotScope({
+			cwd: params.cwd,
+			argv: words,
+			now: params.now,
+			...(params.host !== undefined && { seams: { host: params.host } }),
+		})
 	if (verb === 'keep' || verb === 'unkeep')
 		return runLotKeepDecision({ cwd: params.cwd, argv: [verb, ...words], now: params.now })
 	const reviewRound = runReviewRoundVerb({ cwd: params.cwd, verb, words, now: params.now })

@@ -5,9 +5,8 @@
 import { listLotChangePaths } from '../git.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { workTreeTopOf } from '../review-rounds/worktree-state.ts'
-import { lotState } from '../store/lot-state.ts'
+import { isTerminalState, lotState } from '../store/lot-state.ts'
 import { heldPathsOf, scopeGuardOf } from '../store/scope-guard.ts'
-import { QUESTIONS_CLOSED_STATES } from '../store/store.constants.ts'
 import { packagePathsOf } from '../worktree/lot-files.ts'
 import { HOOK_SCOPE_TEXTS, SCOPE_STEP } from './hook-scope.constants.ts'
 import { hasHead, isMergeInProgress } from './hook-tdd.ts'
@@ -40,7 +39,7 @@ export function runHookScopeStep(params: {
 		if (checked.input.identity.simulated)
 			return resultOf({ status: 'skipped', reason: HOOK_SCOPE_TEXTS.simulated })
 		const { state } = lotState(checked.input)
-		if (QUESTIONS_CLOSED_STATES.includes(state))
+		if (isTerminalState(state))
 			return resultOf({
 				status: 'skipped',
 				reason: fillMessage({ template: HOOK_SCOPE_TEXTS.terminal, values: { state } }),

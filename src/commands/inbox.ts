@@ -20,6 +20,7 @@ import { isProcessAlive } from '../lib/process-alive.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
 import { answerNextOf } from '../lib/store/lot-next.ts'
 import { readCheckedLotState } from '../lib/store/lot-records.ts'
+import { isClosedState } from '../lib/store/lot-state.ts'
 import { NEXT_COMMANDS } from '../lib/store/store.constants.ts'
 import {
 	INBOX_COMMAND,
@@ -200,7 +201,7 @@ function lotListingOf(params: {
 }): LotListing {
 	const { input, status, reading } = params
 	const { state } = status
-	if (state === 'committed' || state === 'canceled') return { items: [], working: 0, simulated: 0 }
+	if (isClosedState(state)) return { items: [], working: 0, simulated: 0 }
 	if (status.simulated) {
 		const items = reading.withSimulated ? itemsOf({ input, status }) : []
 		return { items, working: 0, simulated: 1 }

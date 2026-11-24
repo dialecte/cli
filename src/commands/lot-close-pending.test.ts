@@ -80,6 +80,17 @@ describe(
 			}).toEqual({ outcomes: [true], entry: 'committed', worktreeLeft: false })
 		})
 
+		it('a closed lot closed again by its id -> the line names the id given, then its entry', () => {
+			const lot = landingLotOf()
+			const entry = mergedWithPendingEntry(lot)
+			close({ lot, names: [lot.name] })
+			const args = closeArgumentsOf({ lot, names: [lot.name], host: landingHostOf({}).host })
+
+			const again = runLotClose({ ...args, argv: [lot.name] })
+
+			expect(again.output.split('\n')[0]).toBe(`${lot.name} already closed (${entry})`)
+		})
+
 		it('a lot closed by its id with a committed hand-over of its worktree outside the store → that hand-over closed with it: a later close of it answers already closed', () => {
 			const lot = landingLotOf()
 			writeLandedFact({ lot, tip: lot.tip })

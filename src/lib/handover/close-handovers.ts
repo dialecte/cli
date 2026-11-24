@@ -201,8 +201,17 @@ export function closeHandovers(params: {
 		const result = results.get(key)
 		const handover = target.entry?.name ?? target.argument
 		if ('kept' in decision) return { outcome: { handover, kept: decision.kept }, moved: [] }
+		// an earlier close: the id given is named, then the other id of the same lot
 		if ('alreadyClosed' in decision)
-			return { outcome: { handover, closed: true, already: true }, moved: [] }
+			return {
+				outcome: {
+					handover: target.argument,
+					closed: true,
+					already: true,
+					...alsoOf({ target }),
+				},
+				moved: [],
+			}
 		if (keep && keep.argument !== target)
 			return {
 				outcome: {
@@ -746,4 +755,20 @@ function readLotOwners(main: string): Map<string, string> {
 				: []
 		}),
 	)
+}
+
+/**
+ * The other id of a target closed already, when it differs from the one given: a lot's registry entry name (else its
+ * lot name, for an index given), or the lot an entry names (its lot folder; an entry's own folder may be a hand-over folder, never named).
+ */
+function alsoOf(params: { target: CloseTarget }): { also?: string } {
+	const { target } = params
+	if (target.kind === 'unknown') return {}
+	const other =
+		target.kind === 'lot'
+			? (target.entry?.name ?? target.lot)
+			: target.lotFolder === undefined
+				? undefined
+				: basename(target.lotFolder)
+	return other === undefined || other === target.argument ? {} : { also: other }
 }

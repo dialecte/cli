@@ -172,7 +172,10 @@ export const ALREADY_COMMITTED_DETAIL =
 	'every lot is committed already: the hand-over is already committed, the guards after head are not run'
 
 /** `lot close` of a hand-over its registry entry records closed by an earlier close: nothing moved, exit 0. */
-export const LOT_CLOSE_ALREADY_CLOSED = '{handover} already closed'
+export const LOT_CLOSE_ALREADY_CLOSED = '{handover} already closed{also}'
+
+/** The other id of a lot closed already, after the one given: ` (<other>)`. */
+export const LOT_CLOSE_ALSO = ' ({also})'
 
 /** What a landed lot's line of `lot close` starts with: it sits under the outcome's line. */
 export const LOT_CLOSE_LANDED_INDENT = '        '

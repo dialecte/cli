@@ -22,12 +22,11 @@ import {
 	readCheckedLotState,
 	registryOfLotFolder,
 } from '../store/lot-records.ts'
-import { lotState } from '../store/lot-state.ts'
+import { isClosedState, lotState } from '../store/lot-state.ts'
 import { readStationNext } from '../store/station-records.ts'
 import { listLotFolderNames } from '../store/store-folder.ts'
 import {
 	DAMAGED_STATE,
-	LOTS_KEEPING_NOTHING,
 	NEXT_COMMANDS,
 	PACKED_REFS_FILE,
 	STORE_FILES,
@@ -381,7 +380,7 @@ function nextOf(params: {
 	worktree: string | null
 }): string | null {
 	const { input, keep, state, worktree } = params
-	if (!LOTS_KEEPING_NOTHING.includes(state))
+	if (!isClosedState(state))
 		return nextCommandsOf({
 			input,
 			report: lotState(input),

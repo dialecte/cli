@@ -43,6 +43,7 @@ import { SKIPPED_RECEIPTS_LABEL, UNTITLED_CALL_GONE } from './tdd.constants.ts'
 import { listTestDependencies } from './test-dependencies.ts'
 import { listTestCalls } from './test-source.ts'
 import { readVitestConfigs } from './vitest-configs.ts'
+import { createVitestSelectionReader } from './vitest-selection.ts'
 import { judgeZeroCaseFiles } from './zero-case-verdict.ts'
 
 import type { PackageJson } from '../package-json.types.ts'
@@ -91,11 +92,19 @@ export async function readTddState(params: {
 			findings: findDeletedCases({ root, base, presence, ledger, changed, gone }),
 			unlisted: [],
 		}
+	// the projects CI runs the files in: read once, on first use, every run of the state (the base collect too)
+	const vitestSelection = createVitestSelectionReader({
+		root,
+		packageJson: params.packageJson,
+		files: [...listed, ...changed],
+		baseFiles: listDeletedTestFiles({ root, base, presence }),
+	})
 	const modules = await runTestCases({
 		root,
 		files: listed.map((file) => file.file),
 		filter: 'collect',
 		baseTexts: pythonBaseTextsOf(listed),
+		vitestSelection,
 	})
 	if ('failure' in modules) return modules
 	// what the collect saw, for the listing of each file's dependencies below (a pytest file's come from its run)
@@ -135,6 +144,7 @@ export async function readTddState(params: {
 		packageJson: params.packageJson,
 		files: changed,
 		cases: cases.filter((testCase) => !isDuplicateMember({ testCase, duplicates })),
+		vitestSelection,
 	})
 	const movedCases = movedCaseLabels(moves)
 	const findings = findDeletedCases({ root, base, presence, ledger, changed, gone, moves })

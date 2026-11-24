@@ -37,10 +37,11 @@ import {
 	MISSING_INPUT_KINDS,
 	RED_KINDS,
 } from './tdd.constants.ts'
+import { baseLacksProjects } from './vitest-selection.ts'
 
 import type { PackageJson } from '../package-json.types.ts'
 import type { BaseOverlay, BaseRedVerdict } from './base-red.types.ts'
-import type { RunCase, RunnerObserver } from './tdd.types.ts'
+import type { RunCase, RunnerObserver, VitestSelectionReader } from './tdd.types.ts'
 import type { TestCodePresence } from './test-code-presence.types.ts'
 
 /** Which files of the change go over the base's tree: every test-code file, as it is now or gone. */
@@ -67,6 +68,8 @@ export async function runCaseOnBase(params: {
 	testCase: RunCase
 	/** Told of the runner's start and end (a progress step). Default: nobody. */
 	observer?: RunnerObserver
+	/** The head's selection of vitest projects: the base run selects the same ones. Default: every project. */
+	vitestSelection?: VitestSelectionReader
 }): Promise<BaseRedVerdict> {
 	const verdicts = await runCasesOnBase({ ...params, testCases: [params.testCase] })
 	return (
@@ -87,6 +90,8 @@ export async function runCasesOnBase(params: {
 	testCases: readonly RunCase[]
 	/** Told of the runner's start and end (a progress step). Default: nobody. */
 	observer?: RunnerObserver
+	/** The head's selection of vitest projects: the base run selects the same ones. Default: every project. */
+	vitestSelection?: VitestSelectionReader
 }): Promise<Map<string, BaseRedVerdict>> {
 	const { root, base, packageJson, testCases } = params
 	const verdicts = new Map<string, BaseRedVerdict>()
@@ -120,13 +125,22 @@ export async function runCasesOnBase(params: {
 				deleted: listDeletedSince(params),
 			}),
 		})
+		// the base runs the head's CI projects: a name its config lacks fails the run, naming it
 		const files = [...new Set(testCases.map((testCase) => testCase.file))]
+		const lacking = await baseLacksProjects({
+			reader: params.vitestSelection,
+			folder,
+			base,
+			files,
+		})
+		if (lacking) return refuseAll(lacking.failure)
 		const modules = await runTestCases({
 			root: folder,
 			files,
 			filter: { names: [...new Set(testCases.map((testCase) => testCase.name))] },
 			interpreterRoot: root,
 			...(params.observer && { observer: params.observer }),
+			...(params.vitestSelection && { vitestSelection: params.vitestSelection }),
 		})
 		if ('failure' in modules) return refuseAll(modules.failure)
 		const run = readRunCases({

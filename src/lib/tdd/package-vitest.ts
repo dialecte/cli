@@ -5,6 +5,7 @@ import {
 	REPOSITORY_MARKER,
 	VITEST_BIN_PATH,
 	VITEST_COMMAND,
+	VITEST_PACKAGE_PATH,
 	VITEST_RUN_ARGUMENT,
 } from './tdd.constants.ts'
 
@@ -20,6 +21,18 @@ export function resolvePackageVitest(params: { root: string }): PackageVitest {
 	if (binary) return { command: binary, arguments: [VITEST_RUN_ARGUMENT] }
 	const [command, ...commandArguments] = VITEST_COMMAND
 	return { command, arguments: commandArguments }
+}
+
+/**
+ * The folder of the `vitest` package of the installation whose `node_modules/.bin/vitest` a run uses: the
+ * `node_modules/vitest` beside it; undefined with no binary found (the npx fallback) or no package beside it.
+ */
+export function packageVitestFolder(params: { root: string }): string | undefined {
+	const binary = findBinary(params)
+	if (!binary) return undefined
+	// <folder>/node_modules/.bin/vitest -> <folder>/node_modules/vitest
+	const folder = join(dirname(dirname(dirname(binary))), ...VITEST_PACKAGE_PATH)
+	return existsSync(folder) ? folder : undefined
 }
 
 function findBinary(params: { root: string }): string | undefined {

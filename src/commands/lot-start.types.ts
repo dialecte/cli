@@ -1,4 +1,6 @@
 import type { CommandResult } from '../lib/command-result.types.ts'
+import type { HostAdapter } from '../lib/host/host.types.ts'
+import type { MetLotsSettled } from '../lib/landing/met-lots.types.ts'
 import type { RiskDerivation } from '../lib/risk/risk.types.ts'
 import type { BriefEffort, CheckedBrief } from '../lib/store/brief.types.ts'
 import type { KeepLine } from '../lib/store/keep-decisions.types.ts'
@@ -42,6 +44,8 @@ export type StartSeams = {
 	 * `canceled` is `abandoned.json` (33S section 4, the residual seam of row 2).
 	 */
 	pause?: SynchronousPause
+	/** Where a met lot's landing is asked when git cannot tell; the repository's host, made only then, when left out. */
+	host?: HostAdapter
 }
 
 /**
@@ -81,6 +85,8 @@ export type PreparedStart = {
 	stack: StartStack | undefined
 	/** The first `keep` line of a start with `--keep` or a brief `keep` (KEEP 3.4); none without. */
 	keep: KeepLine | undefined
+	/** What the settle of the lots the scope met found (FIX-start-settles-landed); none when none was met. */
+	settle: MetLotsSettled | undefined
 }
 
 /** The parent of a stacked start (`--on`): its lot name. Where the lot forks is read from git when it lands. */

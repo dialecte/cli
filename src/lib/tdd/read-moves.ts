@@ -21,6 +21,7 @@ import {
 } from './tdd.constants.ts'
 import { testCodeTokens } from './test-code-tokens.ts'
 import { indexTestCalls, listSurroundings, testCallAt } from './test-source.ts'
+import { baseLacksProjects } from './vitest-selection.ts'
 
 import type { PackageJson } from '../package-json.types.ts'
 import type {
@@ -31,6 +32,7 @@ import type {
 	RunCase,
 	TddMoves,
 	TestCallIndex,
+	VitestSelectionReader,
 } from './tdd.types.ts'
 import type { TestCodePresence } from './test-code-presence.types.ts'
 
@@ -46,6 +48,8 @@ export function readMoves(params: {
 	packageJson: PackageJson
 	files: readonly ChangedTestFile[]
 	cases: readonly RunCase[]
+	/** The command's selection of vitest projects: the base collect selects the same ones. Default: every project. */
+	vitestSelection?: VitestSelectionReader
 }): Promise<TddMoves> {
 	return readScriptMoves({
 		...params,
@@ -62,6 +66,7 @@ async function readScriptMoves(params: {
 	packageJson: PackageJson
 	files: readonly ChangedTestFile[]
 	cases: readonly RunCase[]
+	vitestSelection?: VitestSelectionReader
 }): Promise<TddMoves> {
 	const { root, base } = params
 	const deleted = listDeletedTestFiles(params)
@@ -105,7 +110,13 @@ async function readScriptMoves(params: {
 	]
 	const none = { groups: [], ambiguous: [] }
 	if (!owing || sources.length === 0) return { exact, byName: none }
-	const collected = await collectAtBase({ root, base, packageJson: params.packageJson, sources })
+	const collected = await collectAtBase({
+		root,
+		base,
+		packageJson: params.packageJson,
+		sources,
+		vitestSelection: params.vitestSelection,
+	})
 	if ('failure' in collected.result)
 		return {
 			exact,
@@ -206,6 +217,7 @@ async function collectAtBase(params: {
 	base: string
 	packageJson: PackageJson
 	sources: readonly DeletedTestFile[]
+	vitestSelection: VitestSelectionReader | undefined
 }): Promise<{ result: NamedRegistration[] | { failure: string }; baseCollect: BaseCollect }> {
 	const started = Date.now()
 	const folder = makeScratchFolder({ purpose: BASE_COLLECT_FOLDER_PREFIX, cwd: params.root })
@@ -215,11 +227,20 @@ async function collectAtBase(params: {
 	try {
 		const copied = await copyBaseTree({ root: params.root, base: params.base, folder })
 		if (copied) return { result: { failure: copied }, baseCollect: baseCollect() }
+		// the base collects in the head's CI projects: a name its config lacks fails the collect, naming it
+		const lacking = await baseLacksProjects({
+			reader: params.vitestSelection,
+			folder,
+			base: params.base,
+			files: params.sources.map((source) => source.baseFile ?? source.file),
+		})
+		if (lacking) return { result: lacking, baseCollect: baseCollect() }
 		const modules = await runTestCases({
 			root: folder,
 			files: params.sources.map((source) => source.baseFile ?? source.file),
 			filter: 'collect',
 			timeoutMs: BASE_COLLECT_TIMEOUT_MS,
+			...(params.vitestSelection && { vitestSelection: params.vitestSelection }),
 		})
 		if ('failure' in modules) return { result: modules, baseCollect: baseCollect() }
 		const files = params.sources.map((source) => ({
