@@ -200,7 +200,11 @@ describe('inbox with a damaged lot', { timeout: STORE_CASE_TIMEOUT }, () => {
 		writeRecordFile({ folder: join(start.store, 'scratch'), name: 'notes.txt', text: 'x' })
 		writeRecordFile({ folder: join(start.store, '0042'), name: 'notes.txt', text: 'x' })
 
-		expect(inboxIn({ cwd: start.repository })).toEqual({ exitCode: 1, output: NO_ONE_WAITS })
+		expect(inboxIn({ cwd: start.repository })).toEqual({
+			answer: true,
+			exitCode: 1,
+			output: NO_ONE_WAITS,
+		})
 	})
 })
 

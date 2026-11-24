@@ -292,6 +292,7 @@ describe('every reader of the effort - a damaged level', { timeout: STORE_CASE_T
 			ends: DAMAGED_END,
 			settles: ({ name }) => ({
 				answered: {
+					answer: true,
 					exitCode: 6,
 					output: `${name} damaged: ${DAMAGE_REASON}\nnext: dialecte lot stop ${name} --reason <text>`,
 				},
@@ -305,6 +306,7 @@ describe('every reader of the effort - a damaged level', { timeout: STORE_CASE_T
 			ends: DAMAGED_END,
 			settles: ({ name }) => ({
 				answered: {
+					answer: true,
 					exitCode: 6,
 					output: JSON.stringify(
 						{
