@@ -264,6 +264,7 @@ describe('inbox: a damaged lot among ten (case 42)', { timeout: STORE_CASE_TIMEO
 		writeRecordFile({ folder: workspace.store, name: 'notes.txt', text: 'not a lot' })
 
 		expect(inboxIn({ cwd: workspace.repository })).toEqual({
+			answer: true,
 			exitCode: 1,
 			output: 'working 1 · simulated 0 (listed with --simulated)',
 		})

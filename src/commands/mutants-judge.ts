@@ -2,8 +2,9 @@
 import { judgePackets, packetLines } from '../lib/mutation/judge-packet.ts'
 import { JUDGE_OPTIONS, LEADING_DOT_SLASH } from '../lib/mutation/mutation-agent.constants.ts'
 import { packageNameOf } from '../lib/mutation/run-store.ts'
+import { asksJson } from '../lib/parse-invocation.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
-import { answered, asksJson, optionWordsOf, usageResult } from './mutants-output.ts'
+import { answered, optionWordsOf, usageResult } from './mutants-output.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { OwnerCheck } from '../lib/mutation/mutation.types.ts'

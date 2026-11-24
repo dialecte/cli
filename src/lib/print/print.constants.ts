@@ -24,3 +24,9 @@ export const CARRIAGE_RETURN = '\r'
 
 /** The descriptor of each stream, for a synchronous write (`printOut` with `synchronous`). */
 export const STREAM_DESCRIPTORS = { stdout: 1, stderr: 2 } as const
+
+/** How long a synchronous write waits before it writes again into a full non-blocking pipe (EAGAIN), in milliseconds. */
+export const FULL_PIPE_PAUSE_MS = 5
+
+/** The cell `Atomics.wait` sleeps on while a full pipe drains: nothing ever wakes it, so the wait runs its full pause. */
+export const PAUSE_CELL = new Int32Array(new SharedArrayBuffer(4))

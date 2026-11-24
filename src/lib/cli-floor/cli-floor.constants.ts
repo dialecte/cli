@@ -1,12 +1,12 @@
-/** The cli floor of `dialecte lot`: the words of its refusal and of its hints; `{name}` a value filled in. */
+/** The cli floor of `dialecte lot`, `tdd` and `handover`: the words of its refusal and of its hints; `{command}` the command, `{name}` a value filled in. */
 
 /** The refusal of a running cli older than the floor. */
 export const FLOOR_REFUSAL_LINE =
-	'lot: this cli is {package} {running}, started as {started}, older than {floor} that {root} asks for ({source}); nothing done'
+	'{command}: this cli is {package} {running}, started as {started}, older than {floor} that {root} asks for ({source}); nothing done'
 
 /** The refusal of a running cli whose version could not be read, with a floor to meet. */
 export const UNREADABLE_VERSION_LINE =
-	'lot: this cli’s version could not be read ({version}), started as {started}, and {root} asks for {package} {floor} or newer ({source}); nothing done'
+	'{command}: this cli’s version could not be read ({version}), started as {started}, and {root} asks for {package} {floor} or newer ({source}); nothing done'
 
 /** How the running cli is named: the path it was started by, and its real path when that differs. */
 export const STARTED_AS_LINKED = '{invoked} ({real})'
@@ -25,11 +25,14 @@ export const FLOOR_SOURCE_TEXTS = {
 export const AT_BRANCH_SUFFIX = ' at {branch}'
 
 /** The hint of a floor read in the cli repository itself: its own sources. */
-export const OWN_CLI_HINT = 'run the repository’s own cli: node {root}/src/cli.ts lot …'
+export const OWN_CLI_HINT = 'run the repository’s own cli: node {root}/src/cli.ts {command} …'
 
-/** The hint of a package's floor: the cli it installs. */
+/** The hint of a package's floor in a worktree: install there, or run the main checkout's own cli. */
 export const PACKAGE_CLI_HINT =
-	'run the repository’s own cli: npx --no-install dialecte lot … in {root}'
+	'fix: run npm install in {root}, or run the repository’s own cli from its main checkout: cd {main} && npx --no-install dialecte {command} …'
+
+/** The hint of a package's floor in its main checkout, or outside git: install there. */
+export const PACKAGE_INSTALL_HINT = 'fix: run npm install in {root}'
 
 /** The hint of a running cli installed in the package itself, older than its pin. */
 export const STALE_INSTALL_HINT =

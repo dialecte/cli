@@ -9,7 +9,12 @@ import { JSON_FLAG } from '../lib/parse-invocation.constants.ts'
 import { jsonOf, textOf } from '../lib/print/print.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
 import { exitCodeOfState } from '../lib/store/exit-code-of-state.ts'
-import { lotDamagedExit, lotRefusalExit, lotUsageExit } from '../lib/store/lot-exits.ts'
+import {
+	answeredState,
+	lotDamagedExit,
+	lotRefusalExit,
+	lotUsageExit,
+} from '../lib/store/lot-exits.ts'
 import { readCheckedLotState, registryOfLotFolder } from '../lib/store/lot-records.ts'
 import { lotState } from '../lib/store/lot-state.ts'
 import { noLotRefusal, requiredLotOf } from '../lib/store/resolve-lot.ts'
@@ -67,15 +72,21 @@ export function lotResult(params: LotResultParams): CommandResult {
 	// the text forms print their lines through the boundary; JSON takes the values as stored
 	if (state === 'ready' || state === 'committed') {
 		const ready = readyResultOf({ input, report, probe: params.probe, cliPath: params.cliPath })
-		return { exitCode, output: json ? jsonOf(ready, 2) : textOf(readyLines(ready)) }
+		return answeredState({ exitCode, output: json ? jsonOf(ready, 2) : textOf(readyLines(ready)) })
 	}
 	const { name } = input.identity
 	if (state === 'failed' || state === 'canceled') {
 		const ended = endedResultOf({ input, report })
-		return { exitCode, output: json ? jsonOf(ended, 2) : textOf([endedLine({ name, ended })]) }
+		return answeredState({
+			exitCode,
+			output: json ? jsonOf(ended, 2) : textOf([endedLine({ name, ended })]),
+		})
 	}
 	const busy: BusyResultJson = { state, questions: report.openQuestions }
-	return { exitCode, output: json ? jsonOf(busy, 2) : textOf(busyLines({ name, busy })) }
+	return answeredState({
+		exitCode,
+		output: json ? jsonOf(busy, 2) : textOf(busyLines({ name, busy })),
+	})
 }
 
 /** The result of a `ready` or `committed` lot: its hand-over (none for a simulated lot), worktree, branch, answers. */

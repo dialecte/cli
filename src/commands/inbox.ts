@@ -14,7 +14,8 @@ import { readHealthRepository } from '../lib/health/read-health-context.ts'
 import { readMachineScratch } from '../lib/health/read-scratch.ts'
 import { walkStores } from '../lib/health/walk-stores.ts'
 import { JSON_FLAG } from '../lib/parse-invocation.constants.ts'
-import { jsonOf, linesOf, printOut, textOf } from '../lib/print/print.ts'
+import { printCommandResult } from '../lib/print/command-output.ts'
+import { jsonOf, linesOf, textOf } from '../lib/print/print.ts'
 import { isProcessAlive } from '../lib/process-alive.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
 import { answerNextOf } from '../lib/store/lot-next.ts'
@@ -36,7 +37,6 @@ import {
 	INBOX_WHAT,
 } from './inbox.constants.ts'
 import { lotStatusOfInput } from './lot-status.ts'
-import { printsOnStandardError } from './lot-streams.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { StoreEntry } from '../lib/handover/handover.types.ts'
@@ -58,14 +58,7 @@ import type {
 import type { LotStatusJson } from './lot-status.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
-	const result = runInbox({ cwd: process.cwd(), argv })
-	printOut({
-		stream: printsOnStandardError({ verb: INBOX_COMMAND, exitCode: result.exitCode })
-			? 'stderr'
-			: 'stdout',
-		text: result.output,
-	})
-	if (result.exitCode !== 0) process.exit(result.exitCode)
+	await printCommandResult({ result: runInbox({ cwd: process.cwd(), argv }) })
 }
 
 /**
@@ -117,8 +110,11 @@ export function runInbox(params: InboxParams): CommandResult {
 		listing.damaged.length > 0 ||
 		health.some((finding) => finding.severity === 'red')
 	const exitCode = waits ? 0 : 1
-	if (json) return { exitCode, output: jsonOf(inboxJsonOf({ items, listing, health }), 2) }
-	return { exitCode, output: textOf(inboxLines({ items, listing, health })) }
+	// nothing waiting (exit 1) is an answer (D2)
+	const answer = exitCode === 1 ? ({ answer: true } as const) : {}
+	if (json)
+		return { exitCode, output: jsonOf(inboxJsonOf({ items, listing, health }), 2), ...answer }
+	return { exitCode, output: textOf(inboxLines({ items, listing, health })), ...answer }
 }
 
 function sumOf(counts: readonly number[]): number {

@@ -53,7 +53,6 @@ import { relinkEscapingLinks } from '../worktree/copy-node-modules.ts'
 import { parkNodeModules, readPackageLockText } from '../worktree/node-modules-pool.ts'
 import { spawnDetached, trashFolder } from '../worktree/trash.ts'
 import { cloneLotTree, copyRepositoryFiles, removeEmptiedFolders } from './clone-lot-tree.ts'
-import { resolveHandoverGateScope } from './handover-gate-scope.ts'
 import {
 	HOOK_TEMPORARY_FOLDER_PREFIX,
 	POSIX_REHEARSAL_SCRATCH_ROOT,
@@ -87,6 +86,7 @@ import type { CheckKey } from '../gate-records/gate-records.types.ts'
 import type { Clock } from '../progress/clock.types.ts'
 import type { StepProgress } from '../progress/step-progress.types.ts'
 import type { BackgroundSpawner } from '../worktree/worktree.types.ts'
+import type { HandoverGateScope } from './handover-gate-scope.types.ts'
 import type {
 	HandoverFolder,
 	HandoverProbe,
@@ -126,14 +126,10 @@ export async function rehearseHandover(params: {
 	spawner?: BackgroundSpawner
 	/** Re-points the clone's `node_modules` links at the end of a rehearsal (the tests stand in for it, to make it throw). */
 	relink?: (params: { from: string; to: string; real: boolean }) => void
+	/** The package's gate as the run read it once, before its header: an invalid config is refused there. */
+	gateScope: HandoverGateScope
 }): Promise<number> {
-	const { handover, write } = params
-	// read once, before the plan, the clone and its contrib run: an invalid gate config stops here
-	const gateScope = resolveHandoverGateScope({ handover })
-	if ('refusal' in gateScope) {
-		write(textOf([gateScope.refusal]))
-		return 2
-	}
+	const { handover, gateScope } = params
 	// the step's events and its whole-run marker: a rehearsal answered whole from records is a run too
 	const recorder = startStep({
 		cwd: params.stepPlace?.worktree ?? realPathOf(handover.lotsFile.repository),
@@ -152,7 +148,7 @@ export async function rehearseHandover(params: {
 /** The rehearsal once its gate scope reads: the plan, then the run with no clone or in one; its end recorded. */
 async function rehearseRecorded(
 	params: Parameters<typeof rehearseHandover>[0] & {
-		gateScope: Exclude<ReturnType<typeof resolveHandoverGateScope>, { refusal: string }>
+		gateScope: HandoverGateScope
 		recorder: StepHandle
 	},
 ): Promise<number> {

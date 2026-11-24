@@ -67,7 +67,16 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
     when the working tree's floor refuses, the base branch's tip is read and the cli is refused only
     below both (a release or pin-bump lot stays landable by the main checkout's cli); the highest
     floor across the repositories decides; equal or newer runs; a version the cli cannot read for
-    itself is refused whenever a floor exists
+    itself is refused whenever a floor exists; the refusal names the fix: npm install in the
+    package's folder and, from a linked worktree, the main checkout's own cli (cd <main> && npx
+    --no-install dialecte <command> …), the same package path kept below the main checkout's top;
+    tdd and handover are guarded by the same floor
+  streams - every result prints through one writer, standard output for exit 0 and for an answer (a
+            lot's state, wait's and result's exits, a forecast's verdict), standard error for every
+            other exit (a refusal, a failure such as a forecast record that could not be written),
+            so redirecting standard output never hides a refusal; it is written whole after what the
+            process already queued on both streams, the exit code set first; a reader that closes
+            the pipe stops the writing without a crash line, the exit kept
   start - checks the brief (every refusal at once, exit 2), claims the next index, publishes the lot
           folder in <git common folder>/dialecte-lots/, makes the numbered worktree at the base
           commit with its .dialecte/lot link; --dry-run checks (the store list included), names the
@@ -817,6 +826,17 @@ Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`
   refused start (exit 2) or a failed one (exit 1, the lot `failed`) is an error on standard error, naming the lot
   and its next command. The answer line of a caller's question carries no `--by` (it defaults to `caller`); a person's names
   `--by <who>`.
+- One writer prints every result of `lot`, `inbox`, `tdd` and `handover`. A result goes to standard output when it
+  exits 0 or is an answer: a lot's state from `status`, `wait` or `result` (including a damaged lot, exit 6), a
+  forecast's verdict, or `inbox` with nothing waiting. Every other exit goes to standard error, so redirecting
+  standard output never hides a refusal. A `lot forecast` whose record could not be written is a failure on standard
+  error, never confused with the conflict verdict that shares its exit 1. The writer sets the exit code first,
+  flushes what the process has already queued, and then writes the result whole. A reader that closes the pipe
+  (`| head`) stops the writing without a crash line, and the exit code is kept. Read the exit code: a pipe such as
+  `| tail` reports the last command's exit, not the verb's.
+- The cli floor guards `lot`, `tdd` and `handover`. Its refusal names the fix: `npm install` in the package's
+  folder, or, from a linked worktree, the repository's own cli from its main checkout
+  (`cd <main> && npx --no-install dialecte <command> …`).
 - `dialecte lot wait <id> [--timeout <seconds>] [--json]` returns the status as soon as the lot needs someone:
   exit 0 `ready` or `committed`, 1 `failed` or `canceled`, 3 `input-required` (at once, every time, costing
   nothing), 4 when the last transition is a limit (run again), 5 when `--timeout` is reached while the lot still

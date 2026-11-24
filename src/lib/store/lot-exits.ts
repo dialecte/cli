@@ -17,6 +17,7 @@ import {
 } from './store.constants.ts'
 
 import type { CommandResult } from '../command-result.types.ts'
+import type { PrintedText } from '../print/print.types.ts'
 import type { DamagedLotJson } from './store.types.ts'
 
 /**
@@ -62,14 +63,14 @@ export function lotDamagedExit(params: {
 		limit: false,
 		timedOut: false,
 	})
-	if (params.json) return { exitCode, output: jsonOf(damaged, 2) }
-	return {
+	if (params.json) return answeredState({ exitCode, output: jsonOf(damaged, 2) })
+	return answeredState({
 		exitCode,
 		output: textOf([
 			DAMAGED_TEXTS.state.replace('{name}', damaged.lot).replace('{reason}', damaged.reason),
 			DAMAGED_TEXTS.next.replace('{command}', damaged.next),
 		]),
-	}
+	})
 }
 
 /** What a reader answers of a damaged lot: its folder's name, the state, the reason and the stop to run. */
@@ -81,6 +82,16 @@ function damagedLotJsonOf(params: { lotFolder: string; damage: string }): Damage
 		reason: params.damage,
 		next: NEXT_COMMANDS.stop.replace('{name}', lot),
 	}
+}
+
+/**
+ * A lot's state as an answer: its exit, whatever it is, prints on standard output (FIX-loud-refusals D2).
+ *
+ * @intent tell the one writer that a state exit is an answer, not a refusal
+ * @internal
+ */
+export function answeredState(params: { exitCode: number; output: PrintedText }): CommandResult {
+	return { exitCode: params.exitCode, output: params.output, answer: true }
 }
 
 /** The lines printed, or `{ error, next: null }` with them trimmed and joined by `; `, under `exitCode`. */

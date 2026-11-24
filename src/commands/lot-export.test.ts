@@ -60,7 +60,6 @@ import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { exportLot, exportTemporaryOf } from '../lib/store/export-lot.ts'
 import { STORE_FILES } from '../lib/store/store.constants.ts'
 import { lotExport } from './lot-export.ts'
-import { printsOnStandardError } from './lot-streams.ts'
 import { runLot } from './lot.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -689,12 +688,6 @@ describe(
 	'lot export: where it prints and what it reserves',
 	{ timeout: STORE_CASE_TIMEOUT },
 	() => {
-		it('exits 1 and 2 of export go to standard error, exit 0 to standard output (HOST_VERB_ERROR_EXITS export; a guard: any unlisted verb prints its errors there)', () => {
-			expect(
-				[0, 1, 2].map((exitCode) => printsOnStandardError({ verb: 'export', exitCode })),
-			).toEqual([false, true, true])
-		})
-
 		it('case 30: the store reserves cards.log and registry.json (no store or hand-over file takes them)', () => {
 			expect(Object.values(STORE_FILES)).toEqual(
 				expect.arrayContaining([COPIED_LOG_NAME, COPIED_REGISTRY_NAME]),

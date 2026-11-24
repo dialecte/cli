@@ -197,6 +197,8 @@ export async function runHandoverIn(params: { lot: HandoverLot; argv: string[] }
 		scratchRoot: temporaryFolder('dialecte-scratch-root-'),
 		spawner: createRecordingSpawner().spawner,
 		cwd: params.lot.bystander.worktree,
+	}).then(function exitOf(result) {
+		return result.exitCode
 	})
 }
 

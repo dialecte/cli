@@ -216,7 +216,7 @@ async function runFolder(params: {
 }): Promise<{ exitCode: number; lines: string[]; text: string }> {
 	const lines: string[] = []
 	removeHookLogs({ lines })
-	const exitCode = await runHandoverRun({
+	const result = await runHandoverRun({
 		probe: noRepositoryCli,
 		argv: [params.out, ...(params.argv ?? [])],
 		write: (line) => lines.push(line),
@@ -225,6 +225,9 @@ async function runFolder(params: {
 		scratchRoot: temporaryFolder('dialecte-scratch-root-'),
 		spawner: createRecordingSpawner().spawner,
 	})
+	const exitCode = result.exitCode
+	// the refusals and a stopped run's verdict come back as the result (FIX-loud-refusals D3)
+	if (result.output !== '') lines.push(...result.output.split('\n'))
 	return { exitCode, lines, text: lines.join('\n') }
 }
 

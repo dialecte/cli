@@ -214,6 +214,7 @@ describe('inbox: what is listed and in what order', { timeout: STORE_CASE_TIMEOU
 		const { scl } = createInboxWorkspaces()
 
 		expect(inboxIn({ cwd: scl.repository, words: ['--repository', 'nowhere'] })).toEqual({
+			answer: true,
 			exitCode: 1,
 			output: countLineOf({ working: 0, simulated: 0 }),
 		})
@@ -228,6 +229,7 @@ describe('inbox: what is listed and in what order', { timeout: STORE_CASE_TIMEOU
 			const { scl } = createInboxWorkspaces()
 
 			expect(inboxIn({ cwd: scl.repository, words: ['--repository', name(scl)] })).toEqual({
+				answer: true,
 				exitCode: 1,
 				output: countLineOf({ working: 0, simulated: 0 }),
 			})
@@ -290,6 +292,7 @@ describe('inbox: what is listed and in what order', { timeout: STORE_CASE_TIMEOU
 		writeStoreListFile({ stores: [] })
 
 		expect(inboxIn({ cwd: temporaryFolder('dialecte-inbox-cwd-') })).toEqual({
+			answer: true,
 			exitCode: 1,
 			output: countLineOf({ working: 0, simulated: 0 }),
 		})
@@ -446,6 +449,7 @@ describe('inbox: the exit code', { timeout: STORE_CASE_TIMEOUT }, () => {
 		writeInboxLot({ workspace, name: SCL_LOTS.working, kind: 'working' })
 
 		expect(inboxIn({ cwd: workspace.repository })).toEqual({
+			answer: true,
 			exitCode: 1,
 			output: countLineOf({ working: 1, simulated: 0 }),
 		})
@@ -462,7 +466,10 @@ describe('inbox: the exit code', { timeout: STORE_CASE_TIMEOUT }, () => {
 		expect([
 			inboxIn({ cwd: workspace.repository }),
 			inboxIn({ cwd: workspace.repository, words: ['--simulated'] }).exitCode,
-		]).toEqual([{ exitCode: 1, output: countLineOf({ working: 0, simulated: 1 }) }, 0])
+		]).toEqual([
+			{ answer: true, exitCode: 1, output: countLineOf({ working: 0, simulated: 1 }) },
+			0,
+		])
 	})
 
 	for (const [title, words] of [

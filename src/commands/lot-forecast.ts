@@ -92,11 +92,13 @@ export function lotForecast(params: {
 	const exitCode = FORECAST_EXIT_CODES[run.verdict]
 	if (json) {
 		const printed: LotForecastJson = { lot, verdict: run.verdict, lines: run.lines }
-		return { exitCode, output: jsonOf(printed, 2) }
+		return { exitCode, output: jsonOf(printed, 2), answer: true }
 	}
+	// a reached verdict is an answer, whatever its exit (D2); a refusal or a failed record above is not
 	return {
 		exitCode,
 		output: textOf(textLinesOf({ lot, run, lotFolder: lotFolder.folder, eventNote })),
+		answer: true,
 	}
 }
 

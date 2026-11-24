@@ -19,7 +19,12 @@ import { formatDuration } from '../lib/progress/format-duration.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
 import { exitCodeOfState } from '../lib/store/exit-code-of-state.ts'
 import { readIdentity } from '../lib/store/identity.ts'
-import { lotDamagedExit, lotRefusalExit, lotUsageExit } from '../lib/store/lot-exits.ts'
+import {
+	answeredState,
+	lotDamagedExit,
+	lotRefusalExit,
+	lotUsageExit,
+} from '../lib/store/lot-exits.ts'
 import { readCheckedLotState, registryOfLotFolder } from '../lib/store/lot-records.ts'
 import { isCanceledByMarkerOnly, lotState } from '../lib/store/lot-state.ts'
 import { noLotRefusal, requiredLotOf } from '../lib/store/resolve-lot.ts'
@@ -304,10 +309,10 @@ function statusResult(params: {
 		lotFolder: params.lotFolder,
 		entries,
 	})
-	return {
+	return answeredState({
 		exitCode,
 		output: params.json ? jsonOf(status, 2) : textOf(lotStatusLines(status)),
-	}
+	})
 }
 
 /** A real sleep of `milliseconds`. */

@@ -9,7 +9,8 @@ import {
 } from '../lib/mutation/mutation-agent.constants.ts'
 import { MUTATION_RECORDS_PATH } from '../lib/mutation/mutation.constants.ts'
 import { recordKeys } from '../lib/mutation/records-write.ts'
-import { answered, asksJson, optionWordsOf, refused, usageResult } from './mutants-output.ts'
+import { asksJson } from '../lib/parse-invocation.ts'
+import { answered, optionWordsOf, refused, usageResult } from './mutants-output.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { RecordArguments, RecordedItem } from '../lib/mutation/mutation-agent.types.ts'

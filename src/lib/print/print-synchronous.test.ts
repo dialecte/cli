@@ -33,4 +33,38 @@ describe('printOut synchronous', () => {
 			'héllo wörld 日本語 😀 fin de la ligne très longue ñ 😀 日本\n',
 		)
 	})
+
+	it('a full pipe (EAGAIN on the second write) -> retried, every byte written once and in order', () => {
+		let calls = 0
+		vi.mocked(fs.writeSync).mockImplementation(function fullOnce(
+			_descriptor: number,
+			data: string | Uint8Array,
+		): number {
+			calls += 1
+			if (calls === 2) throw Object.assign(new Error('EAGAIN'), { code: 'EAGAIN' })
+			return shortWrite(_descriptor, data)
+		} as typeof fs.writeSync)
+
+		expect(function write() {
+			printOut({ stream: 'stdout', text: MULTI_BYTE_TEXT as PrintedText, synchronous: true })
+		}).not.toThrow()
+		expect(Buffer.concat(writtenChunks).toString('utf8')).toBe(`${MULTI_BYTE_TEXT}\n`)
+	})
+
+	it('a reader gone (EPIPE) -> writing stops, nothing thrown', () => {
+		let calls = 0
+		vi.mocked(fs.writeSync).mockImplementation(function goneAfterOne(
+			_descriptor: number,
+			data: string | Uint8Array,
+		): number {
+			calls += 1
+			if (calls > 1) throw Object.assign(new Error('EPIPE'), { code: 'EPIPE' })
+			return shortWrite(_descriptor, data)
+		} as typeof fs.writeSync)
+
+		expect(function write() {
+			printOut({ stream: 'stdout', text: MULTI_BYTE_TEXT as PrintedText, synchronous: true })
+		}).not.toThrow()
+		expect(calls).toBe(2)
+	})
 })

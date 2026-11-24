@@ -166,6 +166,8 @@ function runLive(params: {
 		scratchRoot: temporaryFolder('dialecte-scratch-root-'),
 		live,
 		spawner: createRecordingSpawner().spawner,
+	}).then(function exitOf(result) {
+		return result.exitCode
 	})
 }
 

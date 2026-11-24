@@ -33,10 +33,11 @@
  * The agent never commits; the run never pushes.
  */
 import { existsSync, realpathSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 
 import { DEFAULT_CARD_COLUMNS } from '../lib/card/card.constants.ts'
 import { renderSectionCard, resolveCardColumns } from '../lib/card/render-section-card.ts'
+import { floorRefusalResultOf } from '../lib/cli-floor/cli-floor.ts'
 import { unknownOptionRefusal } from '../lib/command-map/verb-options.ts'
 import { resultOf } from '../lib/command-result.ts'
 import { getArg, hasFlag, positionalArguments } from '../lib/config.ts'
@@ -81,6 +82,7 @@ import {
 	HANDOVER_INTERLEAVING_REFUSALS,
 	HANDOVER_REHASH_ABANDONED_REFUSAL,
 	HANDOVER_RUN_TEXTS,
+	HANDOVER_UNREADABLE_STATE,
 	HANDOVER_SHOW_TEXTS,
 	HANDOVER_STORE_REFUSALS,
 	HANDOVER_USAGE,
@@ -114,11 +116,13 @@ import { findTargetRef } from '../lib/handover/target-moved.ts'
 import { writeHandover } from '../lib/handover/write-handover.ts'
 import { hostNounsOf } from '../lib/host/select-host.ts'
 import { startLongRun } from '../lib/keep-awake/long-run.ts'
+import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { flowRefusalOf } from '../lib/landing/flow.ts'
 import { HANDOVER_LEGEND } from '../lib/legend/legend.constants.ts'
 import { renderLegend } from '../lib/legend/render-legend.ts'
 import { readPackageJson } from '../lib/package-json.ts'
-import { jsonOf, joinedOf, printOut, textOf } from '../lib/print/print.ts'
+import { printCommandResult } from '../lib/print/command-output.ts'
+import { jsonOf, joinedOf, textOf } from '../lib/print/print.ts'
 import { formatDuration } from '../lib/progress/format-duration.ts'
 import { openProcessLiveOutput } from '../lib/progress/process-live-output.ts'
 import { createStepProgress } from '../lib/progress/step-progress.ts'
@@ -169,12 +173,23 @@ export async function run(argv: string[]): Promise<void> {
 		hidden: HANDOVER_HIDDEN_OPTIONS,
 	})
 	if (refused) {
-		printOut({ stream: 'stderr', text: refused.output })
-		process.exit(refused.exitCode)
+		await printCommandResult({ result: refused })
+		return
+	}
+	// a cli older than the repositories the words reach ask for runs no verb, before any live output opens
+	const floorRefusal = floorRefusalResultOf({
+		cwd: process.cwd(),
+		argv,
+		command: 'handover',
+		invokedPath: process.argv[1],
+	})
+	if (floorRefusal !== undefined) {
+		await printCommandResult({ result: floorRefusal })
+		return
 	}
 	if (argv[0] === 'run') {
 		const live = openProcessLiveOutput()
-		const exitCode = await runHandoverRun({
+		const result = await runHandoverRun({
 			argv: argv.slice(1),
 			write: live.writeLine,
 			live,
@@ -184,12 +199,10 @@ export async function run(argv: string[]): Promise<void> {
 			probe: probeRepositoryCli,
 			scratchRoot: machineScratchRoots().scratchRoot,
 		})
-		if (exitCode !== 0) process.exit(exitCode)
+		await printCommandResult({ result })
 		return
 	}
-	const result = runHandoverVerb({ argv, colour, columns })
-	printOut({ stream: result.exitCode === 0 ? 'stdout' : 'stderr', text: result.output })
-	if (result.exitCode !== 0) process.exit(result.exitCode)
+	await printCommandResult({ result: runHandoverVerb({ argv, colour, columns }) })
 }
 
 /** The verbs that answer at once (every one but `run`), dispatched on the first word. */
@@ -467,43 +480,32 @@ export async function runHandoverRun(params: {
 	holdAwake?: AwakeHolder
 	/** The clock pair the run measures a sleep with. Default: the process's. */
 	runClocks?: RunClocks
-}): Promise<number> {
+}): Promise<CommandResult> {
 	const { argv, write } = params
 	const live = params.live ?? { tty: false, writeLine: write, rewriteLines: () => undefined }
 	const progress = createStepProgress({ live, clock: params.clock })
 	const cliPath = params.cliPath ?? realpathSync(process.argv[1])
 	if (hasFlag(argv, 'probe')) {
 		write('handover run')
-		return 0
+		return resultOf({ exitCode: 0, lines: [] })
 	}
 	// `--not-a-lot --by --reason` misused: refused before anything is read or written (D17)
 	const notALot = readNotALotOptions(argv)
-	if ('usage' in notALot) {
-		write(textOf([notALot.usage]))
-		return 2
-	}
+	if ('usage' in notALot) return resultOf({ exitCode: 2, lines: [notALot.usage] })
 	const [argument] = positionalArguments({ argv, valueOptions: NOT_A_LOT_VALUE_OPTIONS })
 	const cwd = params.cwd ?? process.cwd()
 	const store = storeOfFolder(cwd)
 	const folder = argument
 		? resolveHandoverArgument({ argument, store, cwd })
-		: pickHandoverToRun({ cwd, store, write, probe: params.probe })
-	if (typeof folder === 'number') return folder
+		: pickHandoverToRun({ cwd, store, probe: params.probe })
+	if (typeof folder !== 'string') return folder
 	const canceled = canceledLotRunRefusal({ folder })
-	if (canceled) {
-		write(textOf([canceled]))
-		return 2
-	}
+	if (canceled) return resultOf({ exitCode: 2, lines: [canceled] })
 	const gone = argument && goneEntryRefusal({ verb: 'run', argument, store })
-	if (gone) {
-		write(textOf([gone]))
-		return 2
-	}
+	if (gone) return resultOf({ exitCode: 2, lines: [gone] })
 	const handover = readHandoverFolder(folder)
-	if (typeof handover === 'string') {
-		write(textOf([`handover run: ${handover}`]))
-		return 2
-	}
+	if (typeof handover === 'string')
+		return resultOf({ exitCode: 2, lines: [`handover run: ${handover}`] })
 	// a CI-first repository lands its lots through their change requests: no hand-over runs, rehearsed or for real
 	const runRefusal = flowRefusalOf({
 		root: handover.lotsFile.repository,
@@ -511,10 +513,7 @@ export async function runHandoverRun(params: {
 		verb: 'run',
 		nouns: hostNounsOf({ root: handover.lotsFile.repository }),
 	})
-	if (runRefusal !== undefined) {
-		write(textOf([runRefusal]))
-		return 2
-	}
+	if (runRefusal !== undefined) return resultOf({ exitCode: 2, lines: [runRefusal] })
 	// a long run: the machine stays awake while it lasts, and its folder's record says when it slept all the same
 	const sleptSinceStart = startLongRun({
 		holdAwake: params.holdAwake,
@@ -524,21 +523,17 @@ export async function runHandoverRun(params: {
 	const wordRefusal =
 		notALot.goAhead &&
 		notALotWordRefusal({ root: handover.lotsFile.repository, goAhead: notALot.goAhead })
-	if (wordRefusal) {
-		write(textOf([wordRefusal]))
-		return 2
-	}
-	if (readAbandonedMarker(handover.folder)) {
-		write(
-			textOf([
-				HANDOVER_RUN_TEXTS.abandoned
-					.replace('{folder}', handover.folder)
-					.replace('{marker}', abandonedMarkerPath(handover.folder)),
-			]),
-		)
-		return 2
-	}
-	write(textOf([`handover run ${handover.folder}`]))
+	if (wordRefusal) return resultOf({ exitCode: 2, lines: [wordRefusal] })
+	if (readAbandonedMarker(handover.folder))
+		return resultOf({
+			exitCode: 2,
+			lines: [
+				fillMessage({
+					template: HANDOVER_RUN_TEXTS.abandoned,
+					values: { folder: handover.folder, marker: abandonedMarkerPath(handover.folder) },
+				}),
+			],
+		})
 	const runFolder = handover.folder
 	let recorded = false
 	/** Writes the folder's run record once: before a real run's card, else when the run returns. */
@@ -585,15 +580,19 @@ async function runHandoverOf(params: {
 	recordRun: () => void
 	/** `--not-a-lot --by <who> --reason <text>`: the person's go-ahead for a hand-over that is no store lot. */
 	notALot?: NotALotGoAhead
-}): Promise<number> {
+}): Promise<CommandResult> {
 	const { argv, write, handover, progress, live, cliPath } = params
 	// the step's lot is the hand-over folder's (none outside every store); its worktree the commit root
 	const lotFolder = lotFolderOf({ folder: handover.folder })
 	const commitRoot = realPathOf(handover.lotsFile.repository)
 	const stepPlace =
 		lotFolder === undefined ? null : { lot: lotFolder, worktree: commitRoot, throwaway: false }
-	if (hasFlag(argv, 'rehearse'))
-		return rehearseHandover({
+	// read once, before the header, the marker and the step, rehearsed or real: an invalid gate config writes nothing
+	const gateScope = resolveHandoverGateScope({ handover })
+	if ('refusal' in gateScope) return resultOf({ exitCode: 2, lines: [gateScope.refusal] })
+	if (hasFlag(argv, 'rehearse')) {
+		write(textOf([`handover run ${handover.folder}`]))
+		const rehearsalExit = await rehearseHandover({
 			stepPlace,
 			handover,
 			write,
@@ -610,28 +609,28 @@ async function runHandoverOf(params: {
 			full: hasFlag(argv, 'full'),
 			spawner: params.spawner,
 			relink: params.relink,
+			gateScope,
 		})
-	params.afterCheck?.()
-	// read before the marker and the step, as the rehearsal does: an invalid gate config writes nothing
-	const gateScope = resolveHandoverGateScope({ handover })
-	if ('refusal' in gateScope) {
-		write(textOf([gateScope.refusal]))
-		return 2
+		return runVerdictOf({ exitCode: rehearsalExit, handover, rehearsal: true })
 	}
+	params.afterCheck?.()
 	// a real run marks its folder: a gate does not run under a hand-over committing now
 	const releaseRunMarker = writeRunMarker({ folder: handover.folder, now: new Date() })
 	// an abandon that checked before this marker existed: its marker wins, nothing is committed
 	if (readAbandonedMarker(handover.folder)) {
 		releaseRunMarker()
-		write(
-			textOf([
-				HANDOVER_INTERLEAVING_REFUSALS.run
-					.replace('{folder}', handover.folder)
-					.replace('{marker}', abandonedMarkerPath(handover.folder)),
-			]),
-		)
-		return 2
+		return resultOf({
+			exitCode: 2,
+			lines: [
+				fillMessage({
+					template: HANDOVER_INTERLEAVING_REFUSALS.run,
+					values: { folder: handover.folder, marker: abandonedMarkerPath(handover.folder) },
+				}),
+			],
+		})
 	}
+	// the header once every check passed: a refusal leaves standard output empty
+	write(textOf([`handover run ${handover.folder}`]))
 	const recorder = startStep({
 		cwd: commitRoot,
 		step: 'handover-run',
@@ -656,12 +655,40 @@ async function runHandoverOf(params: {
 			beforeCard: params.recordRun,
 			notALot: params.notALot,
 		})
-		return stepExit
 	} finally {
 		releaseRunMarker()
 		// after the hook record the run left (D12)
 		recorder.end({ exit: stepExit, stateHash: null })
 	}
+	return runVerdictOf({ exitCode: stepExit, handover, rehearsal: false })
+}
+
+/**
+ * The result of a run that ran: nothing on 0; else one verdict line built from the hand-over as it reads now
+ * (FIX-loud-refusals D3), never claiming more than its folder says; a rehearsal commits nothing.
+ */
+function runVerdictOf(params: {
+	exitCode: number
+	handover: HandoverFolder
+	rehearsal: boolean
+}): CommandResult {
+	const { exitCode, handover } = params
+	if (exitCode === 0) return resultOf({ exitCode, lines: [] })
+	const name = basename(handover.folder)
+	const code = String(exitCode)
+	if (params.rehearsal)
+		return resultOf({
+			exitCode,
+			lines: [
+				fillMessage({ template: HANDOVER_RUN_TEXTS.rehearsalFailed, values: { name, code } }),
+			],
+		})
+	const now = readHandoverFolder(handover.folder)
+	const state = typeof now === 'string' ? HANDOVER_UNREADABLE_STATE : handoverState(now)
+	return resultOf({
+		exitCode,
+		lines: [fillMessage({ template: HANDOVER_RUN_TEXTS.stopped, values: { name, code, state } })],
+	})
 }
 
 /**
@@ -845,31 +872,21 @@ function registeredStateOf(entry: StoreEntry): RegisteredState {
 function pickHandoverToRun(params: {
 	cwd: string
 	store: string | undefined
-	write: WriteLine
 	probe: HandoverProbe
-}): string | number {
-	const { cwd, store, write } = params
-	if (!store) {
-		write(textOf([storeRefusal({ verb: 'run', cwd })]))
-		return 2
-	}
+}): string | CommandResult {
+	const { cwd, store } = params
+	if (!store) return resultOf({ exitCode: 2, lines: [storeRefusal({ verb: 'run', cwd })] })
 	const candidates = readStoreEntries(store).flatMap(function runnable(entry) {
 		const handover = readHandoverFolder(entry.folder)
 		if (typeof handover === 'string') return []
 		return RUNNABLE_STATES.includes(handoverState(handover)) ? [{ entry, handover }] : []
 	})
 	if (candidates.length === 1) return candidates[0].handover.folder
-	if (candidates.length === 0) {
-		write(textOf([HANDOVER_RUN_TEXTS.nothingToRun.replace('{store}', store)]))
-		return 1
-	}
-	write(
-		textOf([
-			HANDOVER_RUN_TEXTS.several
-				.replace('{count}', String(candidates.length))
-				.replace('{store}', store),
-		]),
-	)
+	if (candidates.length === 0)
+		return resultOf({
+			exitCode: 1,
+			lines: [fillMessage({ template: HANDOVER_RUN_TEXTS.nothingToRun, values: { store } })],
+		})
 	const rows = renderColumns(
 		candidates.map(({ entry, handover }) => [
 			entry.name,
@@ -878,8 +895,16 @@ function pickHandoverToRun(params: {
 			recomputeHandoverCard({ handover, probe: params.probe }).verdict,
 		]),
 	)
-	for (const row of rows) write(textOf([row]))
-	return 2
+	return resultOf({
+		exitCode: 2,
+		lines: [
+			fillMessage({
+				template: HANDOVER_RUN_TEXTS.several,
+				values: { count: String(candidates.length), store },
+			}),
+			...rows,
+		],
+	})
 }
 
 /** The refusal of a store verb run outside every repository. */

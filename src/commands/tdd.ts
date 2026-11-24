@@ -33,6 +33,7 @@ import { posix, relative, sep } from 'node:path'
 
 import { DEFAULT_CARD_COLUMNS } from '../lib/card/card.constants.ts'
 import { resolveCardColumns } from '../lib/card/render-section-card.ts'
+import { floorRefusalResultOf } from '../lib/cli-floor/cli-floor.ts'
 import { resultOf } from '../lib/command-result.ts'
 import { getArg, hasFlag, positionalArguments } from '../lib/config.ts'
 import { designGateOf, ownLotFolderOf } from '../lib/design/design-gate.ts'
@@ -43,7 +44,8 @@ import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { TDD_LEGEND_TERMS } from '../lib/legend/legend.constants.ts'
 import { renderLegend } from '../lib/legend/render-legend.ts'
 import { readPackageJson } from '../lib/package-json.ts'
-import { joinedOf, jsonOf, printOut, textOf } from '../lib/print/print.ts'
+import { printCommandResult } from '../lib/print/command-output.ts'
+import { joinedOf, jsonOf, textOf } from '../lib/print/print.ts'
 import { relayedTextOf } from '../lib/print/relayed.ts'
 import { formatDuration } from '../lib/progress/format-duration.ts'
 import { openProcessLiveOutput } from '../lib/progress/process-live-output.ts'
@@ -202,6 +204,17 @@ import type {
 import type { TestCodePresence } from '../lib/tdd/test-code-presence.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
+	// a cli older than the package asks for runs no subcommand, before any live output opens
+	const floorRefusal = floorRefusalResultOf({
+		cwd: process.cwd(),
+		argv,
+		command: 'tdd',
+		invokedPath: process.argv[1],
+	})
+	if (floorRefusal !== undefined) {
+		await printCommandResult({ result: floorRefusal })
+		return
+	}
 	const result = await runTdd({
 		cwd: process.cwd(),
 		argv,
@@ -213,8 +226,7 @@ export async function run(argv: string[]): Promise<void> {
 		}),
 		...(!hasFlag(argv, 'json') && { live: openProcessLiveOutput() }),
 	})
-	printOut({ stream: result.exitCode === 0 ? 'stdout' : 'stderr', text: result.output })
-	if (result.exitCode !== 0) process.exit(result.exitCode)
+	await printCommandResult({ result })
 }
 
 export async function runTdd(params: {

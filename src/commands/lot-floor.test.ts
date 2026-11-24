@@ -89,6 +89,21 @@ describe('lot: the cli floor', () => {
 		}).toEqual({ exitCode: 2, stdout: '', missing: [], files: filesBefore, state: stateBefore })
 	})
 
+	it('1b. lot accept under a pin above, standard output read apart (the incident) → stdout empty, the refusal on stderr, exit 2, nothing written', () => {
+		isolateState()
+		const root = createPackageRepository({ manifest: manifestPinning({ spec: PIN_ABOVE }) })
+		const filesBefore = Object.keys(snapshotOf(root))
+
+		const run = runLotCli({ cwd: root, args: ['accept', 'a.test.ts::a case', 'a reason'] })
+
+		expect({
+			exitCode: run.status,
+			stdout: run.stdout,
+			refused: run.stderr.includes(REFUSAL_WORD),
+			files: Object.keys(snapshotOf(root)),
+		}).toEqual({ exitCode: 2, stdout: '', refused: true, files: filesBefore })
+	})
+
 	it('2. the same with --json → { error, next: null } on standard error, standard output empty', () => {
 		isolateState()
 		const root = createPackageRepository({ manifest: manifestPinning({ spec: PIN_ABOVE }) })

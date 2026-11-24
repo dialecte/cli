@@ -77,7 +77,7 @@ function prepare(params: { lotFiles: Record<string, string> }): { root: string; 
 async function runFolder(out: string): Promise<{ exitCode: number; lotFileLines: string[] }> {
 	const lines: string[] = []
 	removeHookLogs({ lines })
-	const exitCode = await runHandoverRun({
+	const result = await runHandoverRun({
 		probe: noRepositoryCli,
 		argv: [out],
 		write: (line) => lines.push(line),
@@ -86,6 +86,9 @@ async function runFolder(out: string): Promise<{ exitCode: number; lotFileLines:
 		scratchRoot: temporaryFolder('dialecte-scratch-root-'),
 		spawner: createRecordingSpawner().spawner,
 	})
+	const exitCode = result.exitCode
+	// the refusals and a stopped run's verdict come back as the result (FIX-loud-refusals D3)
+	if (result.output !== '') lines.push(...result.output.split('\n'))
 	return { exitCode, lotFileLines: lines.filter((line) => line.startsWith('lot file')) }
 }
 

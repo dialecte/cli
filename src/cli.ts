@@ -24,7 +24,7 @@ import {
 import { GIVEN_ENVIRONMENT } from './lib/given-environment.constants.ts'
 import { HELP_FLAGS } from './lib/parse-invocation.constants.ts'
 import { parseInvocation } from './lib/parse-invocation.ts'
-import { printLines, printOut } from './lib/print/print.ts'
+import { printLines, printOut, textOf } from './lib/print/print.ts'
 import { workplaceSignerRefusal } from './lib/store/signer-rules.ts'
 
 import type { PrintedText } from './lib/print/print.types.ts'
@@ -64,7 +64,8 @@ async function main(): Promise<void> {
 		cwd: process.cwd(),
 	})
 	if (signerRefusal !== undefined) {
-		printLines({ stream: 'stderr', lines: [signerRefusal] })
+		// written whole before the exit: a pipe gets the refusal
+		printOut({ stream: 'stderr', text: textOf([signerRefusal]), synchronous: true })
 		process.exit(2)
 	}
 	await COMMANDS_BY_NAME[invocation.command](invocation.argv)
@@ -100,9 +101,10 @@ function helpWords(argv: string[]): string[] {
 
 main().catch(function printFailure(error: unknown) {
 	// the message is one value (it may quote a record): one escaped line, a line feed in it printed as \u{a}
-	printLines({
+	printOut({
 		stream: 'stderr',
-		lines: [error instanceof Error ? error.message : String(error)],
+		text: textOf([error instanceof Error ? error.message : String(error)]),
+		synchronous: true,
 	})
 	process.exit(1)
 })

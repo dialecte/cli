@@ -89,7 +89,9 @@ describe('handover run: the card line', { timeout: SCRATCH_REPOSITORY_TIMEOUT },
 		const feature = featureOf(lot)
 		resetCapturedStandardError()
 
-		await expect(runHandoverRun(runArguments({ lot, lines: printedLines() }))).resolves.toBe(0)
+		await expect(
+			runHandoverRun(runArguments({ lot, lines: printedLines() })),
+		).resolves.toMatchObject({ exitCode: 0 })
 
 		const head = headOf(lot.root)
 		const lines = cardsLogLines(lot)
@@ -161,7 +163,9 @@ describe('handover run: the card line', { timeout: SCRATCH_REPOSITORY_TIMEOUT },
 		const lot = createHandoverLot()
 		const feature = featureOf(lot)
 
-		await expect(runHandoverRun(runArguments({ lot, lines: printedLines() }))).resolves.toBe(0)
+		await expect(
+			runHandoverRun(runArguments({ lot, lines: printedLines() })),
+		).resolves.toMatchObject({ exitCode: 0 })
 
 		const [line] = cardsLogLines(lot)
 		expect({
@@ -184,7 +188,7 @@ describe('handover run: the card line', { timeout: SCRATCH_REPOSITORY_TIMEOUT },
 
 		await expect(
 			runHandoverRun(runArguments({ lot, argv: [...GO_AHEAD_ARGV], lines: printedLines() })),
-		).resolves.toBe(0)
+		).resolves.toMatchObject({ exitCode: 0 })
 
 		const lines = cardsLogLines(lot)
 		expect(lines).toHaveLength(1)
@@ -251,9 +255,11 @@ describe('handover run: no card line', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, 
 
 		await expect(
 			runHandoverRun(runArguments({ lot, argv: ['--rehearse'], lines: printedLines() })),
-		).resolves.toBe(0)
+		).resolves.toMatchObject({ exitCode: 0 })
 		expect(existsSync(cardsLogOf(lot))).toBe(false)
-		await expect(runHandoverRun(runArguments({ lot, lines: printedLines() }))).resolves.toBe(0)
+		await expect(
+			runHandoverRun(runArguments({ lot, lines: printedLines() })),
+		).resolves.toMatchObject({ exitCode: 0 })
 
 		expect(cardsLogLines(lot).map((line) => line.by)).toEqual(['handover-run'])
 	})
@@ -263,7 +269,7 @@ describe('handover run: no card line', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, 
 
 		await expect(
 			runHandoverRun(runArguments({ lot: refused, lines: printedLines() })),
-		).resolves.toBe(1)
+		).resolves.toMatchObject({ exitCode: 1 })
 
 		expect(existsSync(cardsLogOf(refused))).toBe(false)
 	})
@@ -283,7 +289,7 @@ describe(
 
 			await expect(
 				runHandoverRun(runArguments({ lot: blocked, lines: printedLines() })),
-			).resolves.toBe(0)
+			).resolves.toMatchObject({ exitCode: 0 })
 
 			const lines = capturedStandardErrorLines()
 			expect({

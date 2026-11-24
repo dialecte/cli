@@ -98,7 +98,7 @@ describe('the keep-awake hold of handover run', { timeout: SCRATCH_REPOSITORY_TI
 		const probe = countingHold()
 
 		await runFolder({ out, holdAwake: run.holdAwake })
-		const exitCode = await runHandoverRun({
+		const { exitCode } = await runHandoverRun({
 			argv: ['--probe'],
 			write: () => undefined,
 			clock: createFakeClock(),

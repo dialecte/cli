@@ -1,27 +1,35 @@
 /**
- * The cli floor of `dialecte lot`: a running cli older than the version a repository asks for (its own version in
- * the cli repository, else its `@dialecte/cli` pin) runs no verb. The floor of a folder is read from its working
+ * The cli floor of `dialecte lot`, `tdd` and `handover`: a running cli older than the version a repository asks for
+ * (its own version in the cli repository, else its `@dialecte/cli` pin) runs no verb. The floor of a folder is read from its working
  * tree; only when that would refuse is the base branch's tip read, and the cli is refused only below both. The
- * folders that ask are the cwd and the repositories of the lots and briefs the words name. The happy path runs no
+ * folders that ask are the cwd and the repositories of the lots and briefs the words name, and for `handover` the
+ * repositories of the hand-overs and lots files its words name (the hand-over store found once: one git lookup). The happy path runs no
  * git process but a brief's, whose repository resolves as `lot start` resolves it.
  */
 import { existsSync, readFileSync, statSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 
 import { isAtOrInside, isFolder, realPathOf } from '../file-system.ts'
 import { findBaseBranchRef } from '../gate/gate-base.ts'
 import { GIT_FOLDER_NAME } from '../git-hooks.constants.ts'
-import { readFilesAtRevision } from '../git.ts'
+import { mainCheckoutOf, readFilesAtRevision } from '../git.ts'
+import { resolveHandoverArgument } from '../handover/handover-store.ts'
+import { storeOfFolder } from '../handover/named-handover.ts'
+import { readHandoverFolder } from '../handover/read-handover-folder.ts'
+import { readLotsFile } from '../handover/read-lots-file.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { PACKAGE_MANIFEST_FILE } from '../package-json.constants.ts'
 import { declaredSpecOf } from '../package-json.ts'
 import { packageRootOf } from '../package-root.ts'
+import { asksJson } from '../parse-invocation.ts'
 import { readCliVersion } from '../read-cli-version.ts'
+import { workTreeTopOf } from '../review-rounds/worktree-state.ts'
 import { compareSemVer, parseSemVer, rangeLowerBoundOf } from '../semver.ts'
 import { CLI_PACKAGE } from '../skills/cli-invocations.constants.ts'
 import { findInstalledPackage } from '../skills/sync-skills.ts'
 import { briefRepositoryOf } from '../store/brief.ts'
 import { readIdentity } from '../store/identity.ts'
+import { lotRefusalExit } from '../store/lot-exits.ts'
 import { resolveLot } from '../store/resolve-lot.ts'
 import { workTreeHolding } from '../store/store-folder.ts'
 import {
@@ -33,14 +41,16 @@ import {
 	OPTION_PREFIX,
 	OWN_CLI_HINT,
 	PACKAGE_CLI_HINT,
+	PACKAGE_INSTALL_HINT,
 	STALE_INSTALL_HINT,
 	STARTED_AS_LINKED,
 	UNREADABLE_VERSION_LINE,
 } from './cli-floor.constants.ts'
 
+import type { CommandResult } from '../command-result.types.ts'
 import type { PackageJson } from '../package-json.types.ts'
 import type { SemVer } from '../semver.types.ts'
-import type { CliFloor, RunningCli } from './cli-floor.types.ts'
+import type { CliFloor, FloorCommand, RunningCli } from './cli-floor.types.ts'
 
 /** The floor a package folder asks for; undefined when it asks for none. */
 export function cliFloorOf(params: { folder: string }): CliFloor | undefined {
@@ -48,11 +58,52 @@ export function cliFloorOf(params: { folder: string }): CliFloor | undefined {
 }
 
 /** The folders whose floor counts for a `lot` invocation: the cwd, the repositories of the lots and briefs its words name. */
-export function floorFoldersOf(params: { cwd: string; argv: string[] }): string[] {
-	// every word, those after `--` too: the verbs read their positional words there
-	const words = params.argv.slice(1).filter((word) => !word.startsWith(OPTION_PREFIX))
-	const named = words.flatMap((word) => foldersNamedBy({ word, cwd: params.cwd }))
+export function floorFoldersOf(params: {
+	cwd: string
+	argv: string[]
+	command?: FloorCommand
+}): string[] {
+	// every word, those after `--` too: the verbs read their positional words there; `handover <lots.json>` has no verb
+	const words = (params.command === 'handover' ? params.argv : params.argv.slice(1)).filter(
+		function isWord(word) {
+			return !word.startsWith(OPTION_PREFIX)
+		},
+	)
+	const store = params.command === 'handover' ? storeOfFolder(params.cwd) : undefined
+	const named = words.flatMap(function foldersOfWord(word) {
+		return [
+			...foldersNamedBy({ word, cwd: params.cwd }),
+			...(params.command === 'handover'
+				? handoverRepositoriesOf({ word, cwd: params.cwd, store })
+				: []),
+		]
+	})
 	return [...new Set([params.cwd, ...named])]
+}
+
+/**
+ * The repositories a `handover` word names: a lots file's (`handover <lots.json>`), and the hand-over's a name or a
+ * folder resolves to. Files are only read, never written; nothing for a word that names neither.
+ */
+function handoverRepositoriesOf(params: {
+	word: string
+	cwd: string
+	store: string | undefined
+}): string[] {
+	const path = resolve(params.cwd, params.word)
+	const lotsFile = isRegularFile({ path }) ? readLotsFile(path) : undefined
+	const folder = resolveHandoverArgument({
+		argument: params.word,
+		store: params.store,
+		cwd: params.cwd,
+	})
+	const handover = isFolder(folder) ? readHandoverFolderOrNone({ folder }) : undefined
+	return [
+		...(lotsFile === undefined || typeof lotsFile === 'string' ? [] : [lotsFile.repository]),
+		...(handover === undefined || typeof handover === 'string'
+			? []
+			: [handover.lotsFile.repository]),
+	]
 }
 
 /** The refusal lines of a running cli older than the highest floor of the invocation's folders; undefined when allowed. */
@@ -60,8 +111,11 @@ export function floorRefusalOf(params: {
 	cwd: string
 	argv: string[]
 	running: RunningCli
+	/** The command guarded, named by the refusal and its hints. */
+	command: FloorCommand
 }): string[] | undefined {
-	const folders = floorFoldersOf({ cwd: params.cwd, argv: params.argv })
+	const { command } = params
+	const folders = floorFoldersOf({ cwd: params.cwd, argv: params.argv, command })
 	const running =
 		params.running.version === undefined ? undefined : parseSemVer(params.running.version)
 	const floors = folders.flatMap((folder) => {
@@ -73,9 +127,36 @@ export function floorRefusalOf(params: {
 	const highestVersion = parseSemVer(highest.version)
 	if (running !== undefined && highestVersion !== undefined)
 		return compareSemVer(running, highestVersion) < 0
-			? refusalLinesOf({ floor: highest, running: params.running, readable: true })
+			? refusalLinesOf({ floor: highest, running: params.running, readable: true, command })
 			: undefined
-	return refusalLinesOf({ floor: highest, running: params.running, readable: false })
+	return refusalLinesOf({ floor: highest, running: params.running, readable: false, command })
+}
+
+/**
+ * The refusal result of a running cli older than the floor of the invocation's folders, for `command`: exit 2, the
+ * lines (or `{ error, next: null }` when the words ask for JSON) on standard error through the one writer; undefined
+ * when allowed.
+ *
+ * @intent refuse every verb of a guarded command the same way when the cli is too old
+ * @internal
+ */
+export function floorRefusalResultOf(params: {
+	cwd: string
+	argv: string[]
+	command: FloorCommand
+	/** The path the running cli was started by (`process.argv[1]`). */
+	invokedPath: string
+}): CommandResult | undefined {
+	const lines = floorRefusalOf({
+		cwd: params.cwd,
+		argv: params.argv,
+		command: params.command,
+		running: runningCliOf({
+			invokedPath: params.invokedPath,
+			realPath: realPathOf(params.invokedPath),
+		}),
+	})
+	return lines === undefined ? undefined : lotRefusalExit({ lines, json: asksJson(params.argv) })
 }
 
 /** The cli that runs this process, started by `invokedPath`: its own version (undefined when unreadable). */
@@ -110,6 +191,17 @@ function foldersNamedBy(params: { word: string; cwd: string }): string[] {
 	if (!isRegularFile({ path })) return []
 	const repository = briefRepositoryOf({ briefFile: path })
 	return repository === undefined ? [] : [repository]
+}
+
+/** The hand-over folder read; undefined when it throws (a damaged record): the floor never fails on it, the verb names it. */
+function readHandoverFolderOrNone(params: {
+	folder: string
+}): ReturnType<typeof readHandoverFolder> | undefined {
+	try {
+		return readHandoverFolder(params.folder)
+	} catch {
+		return undefined
+	}
 }
 
 /** Whether a regular file is at the path (links followed); false when nothing is, or it cannot be read. */
@@ -277,9 +369,13 @@ function refusalLinesOf(params: {
 	floor: CliFloor
 	running: RunningCli
 	readable: boolean
+	command: FloorCommand
 }): string[] {
 	const { floor, running } = params
+	const main = mainCheckoutPackageOf({ root: floor.root })
 	const values = {
+		command: params.command,
+		main: main ?? '',
 		package: CLI_PACKAGE,
 		running: running.version ?? MISSING_VERSION,
 		version: running.version ?? MISSING_VERSION,
@@ -295,7 +391,7 @@ function refusalLinesOf(params: {
 	const checkout = cliCheckoutOf({ running })
 	return [
 		first,
-		fillMessage({ template: hintOf({ floor, running }), values }),
+		fillMessage({ template: hintOf({ floor, running, main }), values }),
 		...(checkout === undefined
 			? []
 			: [fillMessage({ template: CHECKOUT_UPDATE_HINT, values: { root: checkout } })]),
@@ -322,10 +418,36 @@ function sourceTextOf(params: { floor: CliFloor }): string {
 		: `${source}${fillMessage({ template: AT_BRANCH_SUFFIX, values: { branch: floor.branch } })}`
 }
 
-/** The hint's template: the cli repository's sources, a stale install's `npm install`, or the package's npx. */
-function hintOf(params: { floor: CliFloor; running: RunningCli }): string {
+/**
+ * The hint's template: the cli repository's sources, a stale install's `npm install`, or for a package `npm install`
+ * there and, from a linked worktree, the main checkout's own cli.
+ */
+function hintOf(params: {
+	floor: CliFloor
+	running: RunningCli
+	main: string | undefined
+}): string {
 	if (params.floor.source === 'own') return OWN_CLI_HINT
-	return runsInstalledCli(params) ? STALE_INSTALL_HINT : PACKAGE_CLI_HINT
+	if (runsInstalledCli(params)) return STALE_INSTALL_HINT
+	return params.main === undefined ? PACKAGE_INSTALL_HINT : PACKAGE_CLI_HINT
+}
+
+/**
+ * The same package in the repository's main checkout (the package's path below its work tree's top kept); undefined
+ * when the package is in the main checkout itself or outside git.
+ */
+function mainCheckoutPackageOf(params: { root: string }): string | undefined {
+	const root = realPathOf(params.root)
+	const top = workTreeTopOf(root)
+	if (top === undefined) return undefined
+	let main: string
+	try {
+		main = mainCheckoutOf(top)
+	} catch {
+		return undefined
+	}
+	const inMain = join(realPathOf(main), relative(realPathOf(top), root))
+	return realPathOf(inMain) === root ? undefined : inMain
 }
 
 /**

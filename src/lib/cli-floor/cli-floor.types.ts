@@ -20,3 +20,6 @@ export type RunningCli = {
 	invokedPath: string
 	realPath: string
 }
+
+/** A command the cli floor guards: its refusal and hints name it. */
+export type FloorCommand = 'lot' | 'tdd' | 'handover'
