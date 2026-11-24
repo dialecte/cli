@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-24
+
+### Added
+
+- `dialecte lot design --approve --verdict <file>` (repeatable) adds review files to those of the design's folder.
+- The approved line records `reviews: [{ name, hash }]`, and the lot folder keeps each review it rests on as `design-reviews/<sha256>.md`.
+- While a design is not approved, `dialecte lot design <id>` and `--from` print a verdict line, and `--json` holds `verdict`.
+
+### Changed
+
+- **Breaking:** `dialecte lot design --approve` used to approve any recorded design without reading a review. It now refuses (exit 2, nothing written) unless a saved review passes exactly the recorded design. A review is a `*.md` file in the design's folder, or one named with `--verdict`, that holds `Design: <hash prefix>` and `Verdict: READY`. Its `Verdict:` lines must agree, and a quoted, listed or headed sample counts while a fenced one is never read. A READY of an earlier revision does not carry over, and a review of the same hash that does not pass it blocks the approval. The refusal names the folder, the hash, the two lines to save, `--verdict` and `--waive`.
+- **Breaking:** `dialecte handover run` printed its refusals on standard output with the run's lines. Every refusal before the run (nothing or several to run, no store, a canceled, gone, unreadable or abandoned hand-over, a refused go-ahead, an invalid gate config, an abandon that came in between, a usage error) now goes to standard error, and nothing goes to standard output. The `handover run <folder>` header line is written only once the checks pass. A run that stops ends with one line on standard error after its lines: `handover run: <name> stopped (exit <n>): the hand-over reads <its state now>; the lines on stdout say what ran`. A failed rehearsal ends with `the rehearsal of <name> failed (exit <n>); nothing committed`.
+- **Breaking:** `dialecte lot forecast` whose record cannot be written prints its failure on standard error. Its exit 1 used to go to standard output, the same as the conflict verdict.
+- **Breaking:** `dialecte worktree prune --reclaim` and `--reclaim --dry-run` exit 1 when a worktree is kept because the processes are not known, a process list that cannot be read at all included. They exited 0 before. A worktree kept for any other reason (a lot, a lock, recent activity, a process working in it) still exits 0.
+- **Breaking:** `dialecte lot status --json` reports `checks.worktree: "removed"` for a closed lot whose worktree is gone, and the text form no longer warns `worktree missing` for it; an open lot whose worktree is gone still reads `missing`.
+- **Breaking:** `dialecte lot close` on a lot closed already names the id given, then the other id of the same lot: `<id> already closed (<other>)`; with `--json` its outcome's `handover` is the id given (it was the hand-over entry's name) and `also` carries the other id.
+- **Breaking:** in a package whose vitest config declares projects, `dialecte tdd red`, `tdd green` and the collect behind `tdd status`, the gate and the hook run each vitest test file in the projects the package's CI runs it in, read from its own `.github/workflows/_test.yml` and the npm scripts it reaches, no longer in every project of the config. `tdd red` and `tdd green` print `vitest projects: <names> (as <source> runs them)` first; a file no CI project holds still runs where its config holds it, said as `not in CI's projects: <file>`. A CI project name the config does not declare fails the run. When CI cannot be read whole, every project runs as before and `tdd red` and `tdd green` say why (`vitest projects: all (<reason>)`): a package whose CI also runs a script the reader does not follow (such as a `tsx` script) keeps every project and gains only the module-mock refusal below. A package without vitest projects runs as before.
+- **Breaking:** a changed test file mocking a module (`vi.mock`, `vi.doMock`) in a project that shares modules between files (`isolate: false`) is refused: `tdd red` refuses the file before its run, `tdd green` refuses every case of it with the reason `module mock`. Test it without a module mock, or move it to a project that isolates files.
+- **Breaking:** one writer prints every result of `lot`, `inbox`, `tdd` and `handover`: standard output for exit 0 and for an answer (a lot's state, a forecast's verdict, `inbox` with nothing waiting), standard error for every other exit. It sets the exit code first, flushes what the process has already queued, then writes the result whole. A full pipe is waited on, and a closed pipe (`| head`) stops the writing without a crash line, the exit code kept.
+- **Breaking:** `dialecte tdd` and `dialecte handover` are guarded by the cli floor, as `dialecte lot` is: a cli older than the version the package asks for runs nothing (exit 2, on standard error). For `handover`, the floor also reads the repositories of the hand-overs and lots files its words name.
+- `dialecte lot design --waive` also covers a design recorded on a lot that needs none, which used to stay stuck until approved.
+- The floor refusal names the fix: `npm install` in the package's folder, or, from a linked worktree, `cd <main checkout> && npx --no-install dialecte <command> …`.
+
+### Fixed
+
+- A lot started on another lot that merged its base branch no longer counts the base's commits as its own. Its base is the join of the lines it holds, so its version, scope, tdd cases, quality base and stack rebase take its own work alone, and `dialecte lot land` no longer refuses its title for a version the base branch set. Lines that do not merge clean refuse, naming the ways out: rebase onto the base once the parent landed, or merge the base into the parent first.
+- The commit hook's tdd step measures from the lot's base as resolved, not from a merge-base read again.
+- A lot whose parent was squash-merged and later edited on the base branch no longer refuses its base after merging the base branch, once the parent's landing is recorded: the base's content wins for the lines the parent changed, and only the lot's own commits replay when it lands. Before the parent's landing is recorded, the refusal names how to record it.
+- `dialecte lot land` of a lot started on an open parent that merged the base branch no longer refuses its title for a version the base branch set.
+- The change request body of a lot started on another lists only its own changed files and changelog fragments, as `dialecte lot describe` and `lot land` both read it from the lot's own base.
+- When git cannot compare the lines a lot holds, the refusal says so instead of reading as a lot that shares no commit with its base; when git prints nothing while joining them, the refusal names what git left out instead of "exit 0".
+- `dialecte worktree prune --reclaim` no longer stops when the process list cannot be read (the lister throws): each worktree that reaches the process rule is kept, its line saying the processes are not known, at the plan and before each move, and nothing of it is moved.
+- `dialecte lot review`'s approve line names every refusal `dialecte lot approve` gives, read by the same reader: a stacked lot whose parent is not queued or merged, a host without stacks, and a change request text that does not render are no longer shown as ready.
+- `dialecte lot approve` names every reason at once (the text checked once a stacked lot's route stands), where it stopped at the first group that refused.
+- A text that does not render, and a checks read the host refuses, read as the refused line of `lot approve`: `<lot> not approved: <reason>; nothing recorded, nothing queued`.
+- A lot merged on the host but not closed yet no longer holds its scope: the next `dialecte lot start` or `dialecte lot scope --add` that meets it settles it (a pushed lot read merged by git, else by the host when git cannot tell), writing its landed fact and printing `settled <lot>: …` (`--json`: `settled`). A lot with commits after its landing, or uncommitted changes in its worktree, still holds, printed `! <lot> merged … but <why>: it still holds its scope` (`--json`: `settleWarnings`); a dry run or a simulated start writes nothing.
+- Every forecast leaves out such a lot (a lot that still holds work is compared as before), and `dialecte lot forecast` names it: `! <lot>: merged on <base> at <tip>, not settled yet: it holds nothing`.
+- A close no longer rewrites a hand-over's registry entry already in the state it records.
+- A test file passing alone in `tdd` while CI fails it: a module mock in a project sharing modules between files is not applied when CI loaded the module first, and a file ran in projects CI does not run (or twice). tdd now runs the projects CI runs and refuses such a mock.
+
 ## [0.12.0] - 2026-11-23
 
 ### Added
