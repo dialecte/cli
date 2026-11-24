@@ -6,6 +6,8 @@ import {
 	DISPLAY_ESCAPED_RANGES,
 	ESCAPE_RADIX,
 	LINE_FEED,
+	FULL_PIPE_PAUSE_MS,
+	PAUSE_CELL,
 	STREAM_DESCRIPTORS,
 } from './print.constants.ts'
 
@@ -56,8 +58,9 @@ export function refreshedOf(text: PrintedText): PrintedText {
 /**
  * Writes `text` to the stream: with a line feed after it (`ending: 'line'`, the default), or `as-is` (an answer
  * that ends its own last line, a line refreshed in place); an empty text `as-is` writes nothing. `synchronous`:
- * `writeSync` on the stream's descriptor until every byte is written (a short write loses nothing), so a closed pipe throws here (for the caller to catch) instead of raising
- * an asynchronous EPIPE that ends the process.
+ * `writeSync` on the stream's descriptor until every byte is written (a short write loses nothing, a full pipe is
+ * waited on, a closed pipe stops the writing without throwing), instead of an asynchronous write that a process exit can
+ * cut short.
  */
 export function printOut(params: {
 	stream: PrintStream
@@ -78,14 +81,37 @@ export function printOut(params: {
 }
 
 /**
- * Writes every byte of `text` (UTF-8) to `descriptor`: the text itself first (one write in the common case), then the
- * bytes a short write left, calling `writeSync` again until none is left.
+ * Writes every byte of `text` (UTF-8) to `descriptor`, working on its bytes from the first write: a short write writes
+ * the rest; a full non-blocking pipe (`EAGAIN`) waits a moment and writes again, losing and repeating nothing; a reader
+ * gone (`EPIPE`) stops the writing, nothing thrown, so the command still ends with its own exit. Any other error
+ * throws.
  */
 function writeAllSync(params: { descriptor: number; text: string }): void {
 	const bytes = Buffer.from(params.text, 'utf8')
-	let offset = writeSync(params.descriptor, params.text)
+	let offset = 0
 	while (offset < bytes.length) {
-		offset += writeSync(params.descriptor, bytes.subarray(offset))
+		const written = writtenOrSignal({
+			descriptor: params.descriptor,
+			bytes: bytes.subarray(offset),
+		})
+		if (written === 'gone') return
+		if (written === 'full') {
+			Atomics.wait(PAUSE_CELL, 0, 0, FULL_PIPE_PAUSE_MS)
+			continue
+		}
+		offset += written
+	}
+}
+
+/** One synchronous write of `bytes`: how many it took, `full` on `EAGAIN`, `gone` on `EPIPE`. */
+function writtenOrSignal(params: { descriptor: number; bytes: Buffer }): number | 'full' | 'gone' {
+	try {
+		return writeSync(params.descriptor, params.bytes)
+	} catch (error) {
+		const code = (error as NodeJS.ErrnoException).code
+		if (code === 'EAGAIN') return 'full'
+		if (code === 'EPIPE') return 'gone'
+		throw error
 	}
 }
 

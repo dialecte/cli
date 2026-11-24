@@ -181,7 +181,7 @@ async function runFolder(params: {
 }): Promise<{ exitCode: number; lines: string[]; text: string }> {
 	const lines: string[] = []
 	removeHookLogs({ lines })
-	const exitCode = await runHandoverRun({
+	const result = await runHandoverRun({
 		probe: params.probe ?? noRepositoryCli,
 		argv: [params.out, ...(params.argv ?? [])],
 		write: (line) => lines.push(line),
@@ -190,6 +190,9 @@ async function runFolder(params: {
 		scratchRoot: params.scratchRoot ?? temporaryFolder('dialecte-scratch-root-'),
 		spawner: createRecordingSpawner().spawner,
 	})
+	const exitCode = result.exitCode
+	// the refusals and a stopped run's verdict come back as the result (FIX-loud-refusals D3)
+	if (result.output !== '') lines.push(...result.output.split('\n'))
 	return { exitCode, lines, text: lines.join('\n') }
 }
 
@@ -1652,7 +1655,7 @@ describe('handover run', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 	it('--probe → answers that this cli runs hand-overs, touches nothing', async () => {
 		const lines: string[] = []
 
-		const exitCode = await runHandoverRun({
+		const result = await runHandoverRun({
 			probe: noRepositoryCli,
 			argv: ['--probe'],
 			write: (line) => lines.push(line),
@@ -1660,6 +1663,9 @@ describe('handover run', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 			colour: false,
 			scratchRoot: temporaryFolder('dialecte-scratch-root-'),
 		})
+		const exitCode = result.exitCode
+		// the refusals and a stopped run's verdict come back as the result (FIX-loud-refusals D3)
+		if (result.output !== '') lines.push(...result.output.split('\n'))
 
 		expect({ exitCode, lines }).toEqual({ exitCode: 0, lines: ['handover run'] })
 	})
@@ -2061,7 +2067,7 @@ describe(
 				written.push(line)
 			}
 
-			const exitCode = await runHandoverRun({
+			const result = await runHandoverRun({
 				probe: noRepositoryCli,
 				argv: [out],
 				write: record,
@@ -2070,6 +2076,9 @@ describe(
 				scratchRoot: temporaryFolder('dialecte-scratch-root-'),
 				live: { tty: false, writeLine: record, rewriteLines: () => undefined },
 			})
+			const exitCode = result.exitCode
+			// the refusals and a stopped run's verdict come back as the result (FIX-loud-refusals D3)
+			if (result.output !== '') written.push(...result.output.split('\n'))
 
 			const texts = lines.map((entry) => entry.line)
 			const start = texts.indexOf(`▶ ${LOT} 1/1  2 file(s)  feat(read): read answers one`)
@@ -2086,7 +2095,7 @@ describe(
 			const terminal = createFakeTerminal({ tty: true })
 			removeHookLogs({ lines: terminal.written })
 
-			const exitCode = await runHandoverRun({
+			const result = await runHandoverRun({
 				probe: noRepositoryCli,
 				argv: [out],
 				write: terminal.output.writeLine,
@@ -2095,6 +2104,7 @@ describe(
 				scratchRoot: temporaryFolder('dialecte-scratch-root-'),
 				live: terminal.output,
 			})
+			const exitCode = result.exitCode
 
 			expect(exitCode).toBe(0)
 			expect(terminal.rewrites.map((region) => region[0])).toEqual(
@@ -2321,6 +2331,8 @@ function runLive(params: {
 		scratchRoot: temporaryFolder('dialecte-scratch-root-'),
 		live,
 		spawner: createRecordingSpawner().spawner,
+	}).then(function exitOf(result) {
+		return result.exitCode
 	})
 }
 

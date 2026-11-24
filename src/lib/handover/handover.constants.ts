@@ -95,7 +95,14 @@ export const HANDOVER_RUN_TEXTS = {
 	several:
 		'handover run: {count} hand-overs to run in {store}, nothing run: name one (dialecte handover run <name>)',
 	abandoned: 'handover run: {folder} is abandoned ({marker}): nothing run; write a new hand-over',
+	stopped:
+		'handover run: {name} stopped (exit {code}): the hand-over reads {state}; the lines on stdout say what ran',
+	rehearsalFailed:
+		'handover run --rehearse: the rehearsal of {name} failed (exit {code}); nothing committed',
 } as const
+
+/** What a run's verdict says of a hand-over whose folder no longer reads. */
+export const HANDOVER_UNREADABLE_STATE = 'unreadable'
 
 /** `handover` without a lots file or a verb: its verbs, `write` first. */
 export const HANDOVER_USAGE =

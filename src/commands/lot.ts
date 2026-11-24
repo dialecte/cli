@@ -18,7 +18,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from
 import { dirname, join } from 'node:path'
 import { createInterface } from 'node:readline/promises'
 
-import { floorRefusalOf, runningCliOf } from '../lib/cli-floor/cli-floor.ts'
+import { floorRefusalResultOf } from '../lib/cli-floor/cli-floor.ts'
 import { closestNames } from '../lib/closest-names.ts'
 import { renderLotUsage } from '../lib/command-map/render-help.ts'
 import { resultOf } from '../lib/command-result.ts'
@@ -28,7 +28,8 @@ import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { statusLandingOf } from '../lib/landing/lot-landing.ts'
 import { MUTATION_MODES } from '../lib/mutation/mutation.constants.ts'
 import { packageRootOf } from '../lib/package-root.ts'
-import { linesOf, printOut, textOf } from '../lib/print/print.ts'
+import { printCommandResult } from '../lib/print/command-output.ts'
+import { linesOf, textOf } from '../lib/print/print.ts'
 import { formOfLotVerb } from '../lib/review-rounds/review-round-verbs.ts'
 import { REVIEW_ROUND_VALUE_OPTIONS } from '../lib/review-rounds/review-rounds.constants.ts'
 import { effortOfClass, isEffort } from '../lib/risk/risk-records.ts'
@@ -65,7 +66,6 @@ import { askedClassOf, finishStart, prepareStart, startLot } from './lot-start.t
 import { lotStation } from './lot-station.ts'
 import { lotStatus } from './lot-status.ts'
 import { lotStop } from './lot-stop.ts'
-import { printsOnStandardError } from './lot-streams.ts'
 import { runLotVerify } from './lot-verify.ts'
 import { waitLot } from './lot-wait.ts'
 import {
@@ -76,7 +76,6 @@ import {
 	LOT_REMOVE_LINES,
 	LOT_REMOVE_OPTION,
 } from './lot.constants.ts'
-import { asksJson } from './mutants-output.ts'
 import { runRecap } from './recap.ts'
 import { runRecordVerb } from './record.ts'
 import { runDelta } from './review.ts'
@@ -100,15 +99,16 @@ export async function run(argv: string[]): Promise<void> {
 	const [verb, ...words] = argv
 	const cliPath = realpathSync(process.argv[1])
 	// a cli older than a repository the invocation reaches asks for runs no verb (wait included)
-	const floorLines = floorRefusalOf({
+	const floorRefusal = floorRefusalResultOf({
 		cwd: process.cwd(),
 		argv,
-		running: runningCliOf({ invokedPath: process.argv[1], realPath: cliPath }),
+		command: 'lot',
+		invokedPath: process.argv[1],
 	})
 	// `wait` sleeps between its reads and tells its progress on standard error when that is a terminal
 	const result =
-		floorLines !== undefined
-			? lotRefusalExit({ lines: floorLines, json: asksJson(argv) })
+		floorRefusal !== undefined
+			? floorRefusal
 			: verb === 'wait'
 				? await waitLot({ cwd: process.cwd(), argv: words, isTerminal: process.stderr.isTTY })
 				: await runLotCommand({
@@ -118,11 +118,7 @@ export async function run(argv: string[]): Promise<void> {
 						ask: askOnTerminal,
 						cliPath,
 					})
-	printOut({
-		stream: printsOnStandardError({ verb, exitCode: result.exitCode }) ? 'stderr' : 'stdout',
-		text: result.output,
-	})
-	if (result.exitCode !== 0) process.exit(result.exitCode)
+	await printCommandResult({ result })
 }
 
 /**

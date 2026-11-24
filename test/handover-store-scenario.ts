@@ -265,7 +265,7 @@ export async function runIn(params: {
 	removeHookLogs({ lines })
 	// a rehearsal's background removal recorded, never started: a detached rm would race the test's own cleanup
 	const removals = createRecordingSpawner()
-	const exitCode = await runHandoverRun({
+	const result = await runHandoverRun({
 		argv: params.argv,
 		write: (line) => lines.push(line),
 		clock: createFakeClock(),
@@ -278,6 +278,9 @@ export async function runIn(params: {
 		afterCheck: params.afterCheck,
 		spawner: removals.spawner,
 	})
+	const exitCode = result.exitCode
+	// the refusals and a stopped run's verdict come back as the result (FIX-loud-refusals D3)
+	if (result.output !== '') lines.push(...result.output.split('\n'))
 	return { exitCode, lines, text: lines.join('\n'), removals: removals.calls }
 }
 

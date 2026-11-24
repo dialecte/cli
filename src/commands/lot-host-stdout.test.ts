@@ -84,6 +84,21 @@ describe(
 			).toMatchObject({ exitCode: 5, stderrEmpty: true, json: { lot: name, state: 'working' } })
 		})
 
+		it('inbox with nothing waiting: exit 1 on stdout, stderr empty', () => {
+			const start = createStartWorkspace()
+			const run = runCliSplit({ argv: ['inbox'], cwd: start.repository })
+
+			expect({
+				exitCode: run.exitCode,
+				stdoutWritten: run.stdout.length > 0,
+				stderr: run.stderr,
+			}).toEqual({
+				exitCode: 1,
+				stdoutWritten: true,
+				stderr: '',
+			})
+		})
+
 		it('a failure lot: wait --json exits 1 and status --json exits 0, both on stdout with stderr empty', () => {
 			const { start, name } = startedThroughCli('failure')
 

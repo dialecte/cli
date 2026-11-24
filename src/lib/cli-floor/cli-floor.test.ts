@@ -14,7 +14,7 @@ import {
 	isolateState,
 	manifestPinning,
 } from '../../../test/cli-floor-workspace.ts'
-import { writeFiles } from '../../../test/scratch-repository.ts'
+import { git, temporaryFolder, writeFiles } from '../../../test/scratch-repository.ts'
 import { CLI_PACKAGE } from '../skills/cli-invocations.constants.ts'
 import { cliFloorOf, floorRefusalOf } from './cli-floor.ts'
 
@@ -192,6 +192,7 @@ describe('floorRefusalOf', () => {
 		expect(
 			textOf(
 				floorRefusalOf({
+					command: 'lot',
 					cwd,
 					argv: ['status', 'x'],
 					running: runningAt({ version: undefined }),
@@ -209,6 +210,7 @@ describe('floorRefusalOf', () => {
 		expect(
 			textOf(
 				floorRefusalOf({
+					command: 'lot',
 					cwd,
 					argv: ['status', 'x'],
 					running: runningAt({ version: 'not-a-version' }),
@@ -222,7 +224,12 @@ describe('floorRefusalOf', () => {
 		isolateState()
 
 		expect(
-			floorRefusalOf({ cwd, argv: ['status', 'x'], running: runningAt({ version: undefined }) }),
+			floorRefusalOf({
+				command: 'lot',
+				cwd,
+				argv: ['status', 'x'],
+				running: runningAt({ version: undefined }),
+			}),
 		).toBeUndefined()
 	})
 
@@ -242,6 +249,7 @@ describe('floorRefusalOf', () => {
 		expect(
 			hintsOf(
 				floorRefusalOf({
+					command: 'lot',
 					cwd: folder,
 					argv: ['status', 'x'],
 					running: { version: OWN_VERSION, invokedPath: realPath, realPath },
@@ -276,6 +284,7 @@ describe('floorRefusalOf', () => {
 		expect(
 			hintsOf(
 				floorRefusalOf({
+					command: 'lot',
 					cwd: root,
 					argv: ['status', 'x'],
 					running: { version: OWN_VERSION, invokedPath, realPath },
@@ -311,6 +320,7 @@ describe('floorRefusalOf', () => {
 			expect(
 				updateHintOf({
 					lines: floorRefusalOf({
+						command: 'lot',
 						cwd,
 						argv: ['status', 'x'],
 						running: { version: OWN_VERSION, invokedPath: realPath, realPath },
@@ -325,7 +335,12 @@ describe('floorRefusalOf', () => {
 		isolateState()
 
 		expect(
-			floorRefusalOf({ cwd, argv: ['status', 'x'], running: runningAt({ version: OWN_VERSION }) }),
+			floorRefusalOf({
+				command: 'lot',
+				cwd,
+				argv: ['status', 'x'],
+				running: runningAt({ version: OWN_VERSION }),
+			}),
 		).toBeUndefined()
 	})
 
@@ -338,6 +353,7 @@ describe('floorRefusalOf', () => {
 		expect(
 			foldersNamedIn({
 				lines: floorRefusalOf({
+					command: 'lot',
 					cwd,
 					argv: ['start', start.workspace.briefPath],
 					running: runningAt({ version: OWN_VERSION }),
@@ -346,5 +362,120 @@ describe('floorRefusalOf', () => {
 				lower: realpathSync(cwd),
 			}),
 		).toEqual({ highest: true, lower: false })
+	})
+})
+
+/** A repository whose package (at `path`, the top by default) pins the cli above the running one, and a worktree of it. */
+function pinnedWithWorktree(params: { path?: string } = {}): { main: string; worktree: string } {
+	const path = params.path ?? '.'
+	const main = realpathSync(
+		createPackageRepository({ manifest: manifestPinning({ spec: `^${ABOVE_VERSION}` }) }),
+	)
+	if (path !== '.') {
+		writeFiles({
+			root: main,
+			files: { [join(path, 'package.json')]: manifestPinning({ spec: `^${ABOVE_VERSION}` }) },
+		})
+		git({ root: main, args: ['add', '-A'] })
+		git({ root: main, args: ['commit', '-q', '-m', 'chore: add the package'] })
+	}
+	const worktree = join(realpathSync(temporaryFolder('dialecte-floor-worktree-')), 'lot')
+	git({ root: main, args: ['worktree', 'add', '-q', '-b', 'lot', worktree] })
+	return { main, worktree }
+}
+
+describe('the floor of tdd and handover, and the fix it names', () => {
+	afterEach(function restoreEnvironment() {
+		vi.unstubAllEnvs()
+	})
+
+	it('tdd under a pin above -> its refusal names tdd', () => {
+		isolateState()
+		const root = createPackageRepository({
+			manifest: manifestPinning({ spec: `^${ABOVE_VERSION}` }),
+		})
+
+		expect(
+			floorRefusalOf({
+				cwd: root,
+				argv: ['red'],
+				running: runningAt({ version: OWN_VERSION }),
+				command: 'tdd',
+			})?.[0],
+		).toMatch(/^tdd: this cli is /)
+	})
+
+	it("a lot worktree -> the fix names npm install there, or the main checkout's own cli", () => {
+		isolateState()
+		const { main, worktree } = pinnedWithWorktree()
+
+		expect(
+			textOf(
+				floorRefusalOf({
+					cwd: worktree,
+					argv: ['red'],
+					running: runningAt({ version: OWN_VERSION }),
+					command: 'tdd',
+				}),
+			),
+		).toContain(
+			`fix: run npm install in ${worktree}, or run the repository’s own cli from its main checkout: cd ${main} && npx --no-install dialecte tdd …`,
+		)
+	})
+
+	it("a package in a subfolder of a worktree -> the main checkout's same subfolder", () => {
+		isolateState()
+		const { main, worktree } = pinnedWithWorktree({ path: 'packages/x' })
+
+		expect(
+			textOf(
+				floorRefusalOf({
+					cwd: join(worktree, 'packages', 'x'),
+					argv: [],
+					running: runningAt({ version: OWN_VERSION }),
+					command: 'handover',
+				}),
+			),
+		).toContain(`cd ${join(main, 'packages', 'x')} && npx --no-install dialecte handover …`)
+	})
+
+	it('the main checkout itself -> the fix names npm install only', () => {
+		isolateState()
+		const { main } = pinnedWithWorktree()
+		const text = textOf(
+			floorRefusalOf({
+				cwd: main,
+				argv: [],
+				running: runningAt({ version: OWN_VERSION }),
+				command: 'tdd',
+			}),
+		)
+
+		expect({
+			npmInstall: text?.includes(`fix: run npm install in ${main}`),
+			npx: text?.includes('npx'),
+		}).toEqual({ npmInstall: true, npx: false })
+	})
+
+	it('a package outside git -> the fix names npm install only', () => {
+		isolateState()
+		const folder = realpathSync(bareFolder())
+		writeFiles({
+			root: folder,
+			files: { 'package.json': manifestPinning({ spec: `^${ABOVE_VERSION}` }) },
+		})
+		const text = textOf(
+			floorRefusalOf({
+				cwd: folder,
+				argv: [],
+				running: runningAt({ version: OWN_VERSION }),
+				command: 'tdd',
+			}),
+		)
+
+		expect({
+			npmInstall: text?.includes(`fix: run npm install in ${folder}`),
+			npx: text?.includes('npx'),
+		}).toEqual({ npmInstall: true, npx: false })
 	})
 })

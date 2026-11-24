@@ -15,6 +15,11 @@ handover - The guarded commit-by-lots hand-over a human runs, from a lots file
   dialecte handover list [--root <dir>] [--json]
   dialecte handover --legend
 
+  every verb - the cli floor of lot (see lot's help) guards handover too, read before any live
+    output opens: the folders read are the current folder's package and the repositories of the
+    hand-overs and lots files its words name (handover <lots.json> included); a cli older than their
+    floor runs nothing (exit 2, the refusal and its fix on standard error), the repository probe of
+    the card included
   write - the hand-over folder (lots.json, snapshot, one-line commit.sh) and its card, registered in
           <git common dir>/dialecte-handover/<name>.json under the real path of the folder; handover
           <lots.json> is the same; --out <id> writes into the lot folder, refused (exit 2, nothing
@@ -45,7 +50,13 @@ handover - The guarded commit-by-lots hand-over a human runs, from a lots file
         that committed lots archives every non-empty lot file of the worktree (the root's and each
         tracked package's) in the folder, lots/<package path>/ for a package, lot.landed.json beside
         a lot.json holding other bytes, and empties it; a run that committed none leaves them as
-        they are
+        they are; every refusal before the run (usage, nothing or several to run, no store, a
+        canceled, gone, unreadable or abandoned hand-over, a refused go-ahead, an invalid gate
+        config, an abandon that came in between) prints on standard error and nothing on standard
+        output, the header line written only once the checks passed; a run that stops ends with one
+        line on standard error after its lines: handover run: <name> stopped (exit <n>): the
+        hand-over reads <its state now>; the lines on stdout say what ran (--rehearse: the rehearsal
+        of <name> failed (exit <n>); nothing committed)
   abandon - marks a hand-over that will not run (abandoned.json) and releases its lock; refuses a
             lot folder (exit 2): rewrite it with write --rehash --out <full name>, end the lot with
             lot stop
