@@ -47,7 +47,11 @@ export async function printCommandResult(params: {
  * @internal
  */
 export function flushStreams(params: { streams: readonly FlushableStream[] }): Promise<void> {
-	return Promise.all(params.streams.map(flushedOf)).then(function allFlushed() {
+	return Promise.all(
+		params.streams.map(function flushOne(stream) {
+			return flushedOf({ stream })
+		}),
+	).then(function allFlushed() {
 		return undefined
 	})
 }
@@ -74,7 +78,8 @@ function processResultSink(): ResultSink {
  * One stream flushed: its write callback, or its error (once), whichever comes first. The error listener stays: a
  * reader gone later (an exit-0 path still writing) is swallowed there instead of ending the process with a crash line.
  */
-function flushedOf(stream: FlushableStream): Promise<void> {
+function flushedOf(params: { stream: FlushableStream }): Promise<void> {
+	const { stream } = params
 	return new Promise(function waitForWrites(resolve) {
 		stream.once('error', function readerGone() {
 			resolve()

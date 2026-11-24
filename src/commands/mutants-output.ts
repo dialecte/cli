@@ -1,17 +1,11 @@
 /** What the `mutants` verbs print: a text, or with `--json` exactly one JSON object, a refusal included. */
 import { resultOf } from '../lib/command-result.ts'
-import { JSON_FLAG, OPTION_PREFIX } from '../lib/mutation/mutation-agent.constants.ts'
+import { OPTION_PREFIX } from '../lib/mutation/mutation-agent.constants.ts'
 import { MUTANTS_USAGE, MUTANTS_USAGE_LINES } from '../lib/mutation/mutation.constants.ts'
 import { jsonOf } from '../lib/print/print.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { VerbJsonFields, VerbOptions } from '../lib/mutation/mutation-agent.types.ts'
-
-/** The words ask for JSON: `--json` before any `--`. */
-export function asksJson(argv: readonly string[]): boolean {
-	const end = argv.indexOf('--')
-	return (end < 0 ? argv : argv.slice(0, end)).includes(JSON_FLAG)
-}
 
 /** A verb's answer: its lines, or `{ "verb", "ok": true, ...fields }`. */
 export function answered(params: {

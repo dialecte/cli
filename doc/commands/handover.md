@@ -15,11 +15,11 @@ handover - The guarded commit-by-lots hand-over a human runs, from a lots file
   dialecte handover list [--root <dir>] [--json]
   dialecte handover --legend
 
-  every verb - the cli floor of lot (see lot's help) guards handover too, read before any live
-    output opens: the folders read are the current folder's package and the repositories of the
-    hand-overs and lots files its words name (handover <lots.json> included); a cli older than their
-    floor runs nothing (exit 2, the refusal and its fix on standard error), the repository probe of
-    the card included
+  floor - the cli floor of lot (see lot's help) guards handover too, read before any live output
+          opens: the folders read are the current folder's package and the repositories of the
+          hand-overs and lots files its words name (handover <lots.json> included); a cli older than
+          their floor runs nothing (exit 2, the refusal and its fix on standard error), the
+          repository probe of the card included
   write - the hand-over folder (lots.json, snapshot, one-line commit.sh) and its card, registered in
           <git common dir>/dialecte-handover/<name>.json under the real path of the folder; handover
           <lots.json> is the same; --out <id> writes into the lot folder, refused (exit 2, nothing

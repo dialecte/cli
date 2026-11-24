@@ -587,9 +587,9 @@ async function runHandoverOf(params: {
 	const commitRoot = realPathOf(handover.lotsFile.repository)
 	const stepPlace =
 		lotFolder === undefined ? null : { lot: lotFolder, worktree: commitRoot, throwaway: false }
-	// read before the header, the marker and the step, rehearsed or real: an invalid gate config writes nothing
-	const scopeRefusal = gateScopeRefusalOf({ handover })
-	if (scopeRefusal !== undefined) return scopeRefusal
+	// read once, before the header, the marker and the step, rehearsed or real: an invalid gate config writes nothing
+	const gateScope = resolveHandoverGateScope({ handover })
+	if ('refusal' in gateScope) return resultOf({ exitCode: 2, lines: [gateScope.refusal] })
 	if (hasFlag(argv, 'rehearse')) {
 		write(textOf([`handover run ${handover.folder}`]))
 		const rehearsalExit = await rehearseHandover({
@@ -609,12 +609,11 @@ async function runHandoverOf(params: {
 			full: hasFlag(argv, 'full'),
 			spawner: params.spawner,
 			relink: params.relink,
+			gateScope,
 		})
 		return runVerdictOf({ exitCode: rehearsalExit, handover, rehearsal: true })
 	}
 	params.afterCheck?.()
-	const gateScope = resolveHandoverGateScope({ handover })
-	if ('refusal' in gateScope) return resultOf({ exitCode: 2, lines: [gateScope.refusal] })
 	// a real run marks its folder: a gate does not run under a hand-over committing now
 	const releaseRunMarker = writeRunMarker({ folder: handover.folder, now: new Date() })
 	// an abandon that checked before this marker existed: its marker wins, nothing is committed
@@ -662,12 +661,6 @@ async function runHandoverOf(params: {
 		recorder.end({ exit: stepExit, stateHash: null })
 	}
 	return runVerdictOf({ exitCode: stepExit, handover, rehearsal: false })
-}
-
-/** The refusal of a hand-over whose gate config does not read; undefined when it reads. */
-function gateScopeRefusalOf(params: { handover: HandoverFolder }): CommandResult | undefined {
-	const gateScope = resolveHandoverGateScope({ handover: params.handover })
-	return 'refusal' in gateScope ? resultOf({ exitCode: 2, lines: [gateScope.refusal] }) : undefined
 }
 
 /**

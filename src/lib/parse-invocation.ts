@@ -24,3 +24,14 @@ export function parseInvocation(params: {
 	if (!params.commandNames.includes(command)) return { kind: 'unknown', command }
 	return { kind: 'run', command, argv: rest }
 }
+
+/**
+ * Whether the words ask for JSON: `--json` before any `--`.
+ *
+ * @intent answer a refusal in the form the invocation asked for
+ * @internal
+ */
+export function asksJson(argv: readonly string[]): boolean {
+	const end = argv.indexOf('--')
+	return (end < 0 ? argv : argv.slice(0, end)).includes(JSON_FLAG)
+}

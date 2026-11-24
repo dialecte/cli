@@ -9,7 +9,6 @@
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 
-import { asksJson } from '../../commands/mutants-output.ts'
 import { isAtOrInside, isFolder, realPathOf } from '../file-system.ts'
 import { findBaseBranchRef } from '../gate/gate-base.ts'
 import { GIT_FOLDER_NAME } from '../git-hooks.constants.ts'
@@ -22,6 +21,7 @@ import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { PACKAGE_MANIFEST_FILE } from '../package-json.constants.ts'
 import { declaredSpecOf } from '../package-json.ts'
 import { packageRootOf } from '../package-root.ts'
+import { asksJson } from '../parse-invocation.ts'
 import { readCliVersion } from '../read-cli-version.ts'
 import { workTreeTopOf } from '../review-rounds/worktree-state.ts'
 import { compareSemVer, parseSemVer, rangeLowerBoundOf } from '../semver.ts'
@@ -97,7 +97,7 @@ function handoverRepositoriesOf(params: {
 		store: params.store,
 		cwd: params.cwd,
 	})
-	const handover = isFolder(folder) ? readHandoverFolderOrNone(folder) : undefined
+	const handover = isFolder(folder) ? readHandoverFolderOrNone({ folder }) : undefined
 	return [
 		...(lotsFile === undefined || typeof lotsFile === 'string' ? [] : [lotsFile.repository]),
 		...(handover === undefined || typeof handover === 'string'
@@ -194,11 +194,11 @@ function foldersNamedBy(params: { word: string; cwd: string }): string[] {
 }
 
 /** The hand-over folder read; undefined when it throws (a damaged record): the floor never fails on it, the verb names it. */
-function readHandoverFolderOrNone(
-	folder: string,
-): ReturnType<typeof readHandoverFolder> | undefined {
+function readHandoverFolderOrNone(params: {
+	folder: string
+}): ReturnType<typeof readHandoverFolder> | undefined {
 	try {
-		return readHandoverFolder(folder)
+		return readHandoverFolder(params.folder)
 	} catch {
 		return undefined
 	}

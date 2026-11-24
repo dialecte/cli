@@ -1,7 +1,8 @@
 /** `dialecte mutants drop <run id> [--json]`: removes a finished run's entry from the store. */
 import { dropRun } from '../lib/mutation/drop-run.ts'
+import { asksJson } from '../lib/parse-invocation.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
-import { answered, asksJson, refused, usageResult } from './mutants-output.ts'
+import { answered, refused, usageResult } from './mutants-output.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { OwnerCheck } from '../lib/mutation/mutation.types.ts'

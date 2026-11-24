@@ -71,12 +71,12 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
     package's folder and, from a linked worktree, the main checkout's own cli (cd <main> && npx
     --no-install dialecte <command> …), the same package path kept below the main checkout's top;
     tdd and handover are guarded by the same floor
-  every verb - the streams: every result prints through one writer, standard output for exit 0 and
-    for an answer (a lot's state, wait's and result's exits, a forecast's verdict), standard error
-    for every other exit (a refusal, a failure such as a forecast record that could not be written),
-    so redirecting standard output never hides a refusal; it is written whole after what the process
-    already queued on both streams, the exit code set first; a reader that closes the pipe stops the
-    writing without a crash line, the exit kept
+  streams - every result prints through one writer, standard output for exit 0 and for an answer (a
+            lot's state, wait's and result's exits, a forecast's verdict), standard error for every
+            other exit (a refusal, a failure such as a forecast record that could not be written),
+            so redirecting standard output never hides a refusal; it is written whole after what the
+            process already queued on both streams, the exit code set first; a reader that closes
+            the pipe stops the writing without a crash line, the exit kept
   start - checks the brief (every refusal at once, exit 2), claims the next index, publishes the lot
           folder in <git common folder>/dialecte-lots/, makes the numbered worktree at the base
           commit with its .dialecte/lot link; --dry-run checks (the store list included), names the

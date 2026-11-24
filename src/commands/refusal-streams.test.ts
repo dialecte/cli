@@ -45,9 +45,14 @@ import { lotForecast } from './lot-forecast.ts'
 import { waitLot } from './lot-wait.ts'
 import { runLot } from './lot.ts'
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
+
+// the forecast and brief workspaces point XDG_STATE_HOME and git's config into the case's own folder
+afterEach(function restoreEnvironment() {
+	vi.unstubAllEnvs()
+})
 
 /** The cli's entry in the sources: Node runs it with its type stripping. */
 const CLI_SOURCE = join(import.meta.dirname, '..', 'cli.ts')
@@ -63,8 +68,14 @@ function spawnCli(params: { cwd: string; argv: string[] }): {
 	const run = spawnSync(process.execPath, [CLI_SOURCE, ...params.argv], {
 		cwd: params.cwd,
 		encoding: 'utf8',
+		env: childEnvironment(),
 	})
 	return { status: run.status, stdout: run.stdout, stderr: run.stderr }
+}
+
+/** The environment of a spawned cli: its temporary files in a folder of the case's own, removed when the case ends. */
+function childEnvironment(): NodeJS.ProcessEnv {
+	return { ...process.env, TMPDIR: temporaryFolder('dialecte-spawned-tmp-') }
 }
 
 /** A forecast lot whose record cannot be written: a folder stands where the record file goes. */
@@ -371,9 +382,11 @@ describe('handover run: its verdict', { timeout: HANDOVER_CASE_TIMEOUT }, () => 
 		const run = spawnSync(
 			'sh',
 			['-c', `"${process.execPath}" "${CLI_SOURCE}" handover run "${folder}" 2>&1`],
-			{ cwd: root, encoding: 'utf8' },
+			{ cwd: root, encoding: 'utf8', env: childEnvironment() },
 		)
 		const lines = run.stdout.trimEnd().split('\n')
+		// the hook log folders its lines name go when the case ends
+		removeHookLogs({ lines })
 
 		expect({ failed: run.status !== 0, last: lines.at(-1), before: lines.length > 1 }).toEqual({
 			failed: true,

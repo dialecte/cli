@@ -11,10 +11,10 @@ tdd - Receipts that each new test failed on an assertion before the code, then p
   dialecte tdd green [<test file> | <test file>::<case name>]... [--base <ref>]
   dialecte tdd status [--base <ref>] [--json] [--flags] | tdd status --legend
 
-  every subcommand - the cli floor of lot (see lot's help) guards tdd too, read before any live
-    output opens: a cli older than the package's floor runs nothing (exit 2, the refusal and its fix
-    on standard error; --json { error, next: null }); results print on standard output when they
-    exit 0, on standard error otherwise, after the progress already written
+  floor - the cli floor of lot (see lot's help) guards tdd too, read before any live output opens: a
+          cli older than the package's floor runs nothing (exit 2, the refusal and its fix on
+          standard error; --json { error, next: null }); results print on standard output when they
+          exit 0, on standard error otherwise, after the progress already written
   red - every case of the changed test files must fail on an assertion (or a stub's 'not
         implemented' inside an asserting expect); a passing new case, a missing export, a type or
         syntax error, a timeout, a .only is refused; the files without a refusal are frozen
