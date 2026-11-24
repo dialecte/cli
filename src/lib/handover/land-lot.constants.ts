@@ -33,6 +33,8 @@ export const LANDING_LINES = {
 	pushedOutside:
 		'lot land: {branch} exists on origin, pushed outside lot land: nothing overwritten; delete it there or land the lot on another branch',
 	registryRefused: 'lot land: {reason}: nothing pushed',
+	// a failing test on record, or a tests record that does not read (FIX-land-refuses-failing-test D5)
+	failingTests: 'lot land: {reason}: nothing pushed',
 	closeWhenMerged: 'once merged: dialecte lot close {entry} (or lot land {lot} again)',
 	// a lot kept on purpose: its close would keep every item, landing again records the merge (KEEP 3.8)
 	closeWhenMergedKept: 'once merged: dialecte lot land {lot} again (it records the merge; {kept})',

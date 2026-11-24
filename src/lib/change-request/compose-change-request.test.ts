@@ -409,6 +409,70 @@ describe('composeChangeRequest ticks the tests box only on a gate record', () =>
 	})
 })
 
+describe('composeChangeRequest reads the gate part’s ledger (D6)', () => {
+	const gate = FULL.tests?.gate
+	const tdd = FULL.tests?.tdd
+
+	it.each([
+		{
+			what: 'a flaky run of this tree (a failure counted, no entry open)',
+			failures: [],
+			ticked: '- [x] Tests:',
+		},
+		{
+			what: 'an open entry of this tree',
+			failures: [
+				{
+					key: 'src/x.test.ts',
+					cases: [],
+					mode: 'full' as const,
+					head: HEAD,
+					stateHash: TREE,
+					at: 'T1',
+				},
+			],
+			ticked: '- [ ] Tests:',
+		},
+	])('$what → the tests box reads $ticked', ({ failures, ticked }) => {
+		const flakyGate = gate && {
+			...gate,
+			tests: { passed: 41, failed: 1, skipped: 0, total: 42 },
+			failures,
+		}
+		const body = bodyOf({
+			sources: {
+				...FULL,
+				tests: { schema: 1, ...(tdd && { tdd }), ...(flakyGate && { gate: flakyGate }) },
+			},
+		})
+
+		expect(partOf({ body, heading: 'Checklist' }).split('\n')[0]).toContain(ticked)
+	})
+
+	it('a seeded part (no mode, one unknown entry) → its gate line names the unknown failure, never a null mode', () => {
+		const seeded = {
+			mode: null,
+			at: 'T1',
+			head: HEAD,
+			stateHash: TREE,
+			failures: [
+				{
+					key: null,
+					unknown: 'tests.json did not read (it holds no object): its failures cannot be told',
+					at: 'T1',
+				},
+			],
+		}
+		const body = bodyOf({
+			sources: { ...FULL, tests: { schema: 1, ...(tdd && { tdd }), gate: seeded } },
+		})
+
+		expect(partOf({ body, heading: 'Tests' }).split('\n')[1]).toBe(
+			'- gate: tests.json did not read (it holds no object): its failures cannot be told: only a whole-suite pass clears it',
+		)
+	})
+})
+
 describe('composeChangeRequest names no reviewer', () => {
 	it.each([
 		['a person', { kind: 'person' as const, name: 'Jane Doe' }, '- person: approve'],

@@ -269,3 +269,19 @@ describe(
 		})
 	},
 )
+
+describe('runGateSteps: how a test step chose its tests (D1)', { timeout: 30_000 }, () => {
+	it.each([
+		{ how: 'a whole-suite step', step: TESTS_STEP, selects: 'all' },
+		{ how: 'a changedOnly step', step: { ...TESTS_STEP, changedOnly: true }, selects: 'changed' },
+	])(
+		'$how that ran → a test step selecting $selects, no ran key when the output names no module',
+		async ({ step, selects }) => {
+			const root = packageIn('broken')
+
+			const [result] = await runSteps({ root, steps: [step] })
+
+			expect(result).toMatchObject({ status: 'failed', testStep: true, selects, ranFiles: [] })
+		},
+	)
+})

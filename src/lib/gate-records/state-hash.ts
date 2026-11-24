@@ -48,3 +48,8 @@ function listWorkingChanges(top: string): string[] {
 	)
 	return [...paths]
 }
+
+/** The state hash of the committed HEAD of the worktree `root` is in: what a gate run on that tree, uncommitted work committed, holds. */
+export function headStateHashOf(params: { root: string }): string {
+	return hashStateTree(readGit({ root: params.root, args: ['rev-parse', 'HEAD^{tree}'] }).trim())
+}

@@ -36,7 +36,6 @@ import { shellQuote } from '../shell-quote.ts'
 import {
 	ARGUMENT_SEPARATOR_PATTERN,
 	FAILED_OUTPUT_TAIL_LINES,
-	FAILING_FILE_PATTERN,
 	FLAKY_NOTE,
 	GATE_SKIP_LABEL,
 	NO_AFFECTED_TEST_NOTE,
@@ -69,6 +68,13 @@ import {
 } from './selection.ts'
 import { readStepCounts } from './step-counts.ts'
 import { findUnwiredSteps } from './unwired-steps.ts'
+import {
+	failingCasesOf,
+	failingFilesOf,
+	failingKeysOf,
+	ranKeysOf,
+	sortedUnique,
+} from './vitest-output.ts'
 
 import type { PackageJson } from '../package-json.types.ts'
 import type { Clock } from '../progress/clock.types.ts'
@@ -82,6 +88,7 @@ import type {
 	StepResult,
 	StepRun,
 	StepShellCommand,
+	TestSelects,
 } from './gate.types.ts'
 
 /**
@@ -192,7 +199,7 @@ async function runEachStep(params: {
 			isRerunnable({ step, packageJson, first }) &&
 			!isAlreadySerial({ step, packageJson })
 				? await rerunSerially({ ...run, step, first })
-				: withFailing({ result: first.result, runs: [first] })
+				: withRunFacts({ result: first.result, runs: [first] })
 		const noted = withSelfNote(result)
 		results.push(noted)
 		finished?.(noted)
@@ -216,24 +223,55 @@ function isRerunnable(params: {
 	if (step.scoped !== true || step.counts !== 'tests' || first.result.exitCode === 0) return false
 	return (
 		(first.result.counts.tests?.failed ?? 0) > 0 ||
-		failingFiles(first.output).length > 0 ||
+		failingFilesOf(first.output).length > 0 ||
 		VITEST_ERROR_PATTERN.test(first.output)
 	)
 }
 
 /**
- * `result` with the files its runs name as failing (`failing`): those their whole output names and those a scoped
- * step's selection declares, sorted and unique; only on a failed or flaky step, and only when there are some.
+ * `result` with what its runs name: on a failed or flaky step the files (those their whole output names and those a
+ * scoped step's selection declares, sorted and unique), the test keys and the cases they fail, each only when there
+ * are some; on a step configured to count tests that ran (passed or failed) the test-step mark, how its step chose
+ * its tests, and the keys `ranRuns` ran (every run of the step: a flaky step's failures are its first run's, its ran
+ * keys both runs').
  */
-function withFailing(params: { result: StepResult; runs: readonly StepRun[] }): StepResult {
+function withRunFacts(params: {
+	result: StepResult
+	runs: readonly StepRun[]
+	ranRuns?: readonly StepRun[]
+}): StepResult {
+	const tested = withTestStep({ result: params.result, runs: params.ranRuns ?? params.runs })
+	if (tested.status !== 'failed' && tested.note !== FLAKY_NOTE) return tested
+	const failing = sortedUnique(
+		params.runs.flatMap((run) => [...failingFilesOf(run.output), ...(run.declaredFailing ?? [])]),
+	)
+	const failingKeys = sortedUnique(params.runs.flatMap((run) => failingKeysOf(run.output)))
+	const failingCases = sortedUnique(params.runs.flatMap((run) => failingCasesOf(run.output)))
+	return {
+		...tested,
+		...(failing.length && { failing }),
+		...(failingKeys.length && { failingKeys }),
+		...(failingCases.length && { failingCases }),
+	}
+}
+
+/** `result` marked as a test step that ran, with how it selects and the keys `runs` ran; as it was for any other step. */
+function withTestStep(params: { result: StepResult; runs: readonly StepRun[] }): StepResult {
 	const { result } = params
-	if (result.status !== 'failed' && result.note !== FLAKY_NOTE) return result
-	const failing = [
-		...new Set(
-			params.runs.flatMap((run) => [...failingFiles(run.output), ...(run.declaredFailing ?? [])]),
-		),
-	].sort()
-	return failing.length ? { ...result, failing } : result
+	if (result.step.counts !== 'tests') return result
+	if (result.status !== 'passed' && result.status !== 'failed') return result
+	return {
+		...result,
+		testStep: true,
+		selects: selectsOf(result.step),
+		ranFiles: sortedUnique(params.runs.flatMap((run) => ranKeysOf(run.output))),
+	}
+}
+
+/** How a configured test step chooses its tests. */
+function selectsOf(step: GateStep): TestSelects {
+	if (step.changedOnly === true) return 'changed'
+	return step.scoped === true ? 'scoped' : 'all'
 }
 
 /** A step that counts tests and runs vitest: its command names it, or the npm script it runs does. */
@@ -273,7 +311,7 @@ async function rerunSerially(params: {
 }): Promise<StepResult> {
 	const { step } = params
 	const first = params.first.result
-	const files = failingFiles(params.first.output)
+	const files = failingFilesOf(params.first.output)
 	const words = [...files.map(shellQuote), SERIAL_FLAG].join(' ')
 	// through npm the words go to the script, after the one `--`
 	const separator =
@@ -287,7 +325,7 @@ async function rerunSerially(params: {
 		scopeRun: params.scopeRun,
 		resolveOwnCommand: params.resolveOwnCommand,
 	})
-	const failing = failingFiles(rerun.output)
+	const failing = failingFilesOf(rerun.output)
 	// a rerun that ran no test proves nothing, even one a `--changed` step lets pass
 	const passed = rerun.result.status === 'passed' && (rerun.result.counts.tests?.passed ?? 0) > 0
 	const details = files.map((file) => `${failing.includes(file) ? 'failed' : 'flaky'}  ${file}`)
@@ -303,7 +341,7 @@ async function rerunSerially(params: {
 		: undefined
 	const bothRuns = [params.first, rerun]
 	if (passed && selectionFailure !== undefined)
-		return withFailing({
+		return withRunFacts({
 			result: {
 				...first,
 				reason: selectionFailure,
@@ -316,7 +354,7 @@ async function rerunSerially(params: {
 	if (passed) {
 		const { reason: _parallelReason, tail: _parallelTail, ...kept } = first
 		// a flaky step keeps the files its first run failed
-		return withFailing({
+		return withRunFacts({
 			result: {
 				...kept,
 				status: 'passed',
@@ -326,9 +364,10 @@ async function rerunSerially(params: {
 				...(details.length && { details }),
 			},
 			runs: [params.first],
+			ranRuns: bothRuns,
 		})
 	}
-	return withFailing({
+	return withRunFacts({
 		result: {
 			...first,
 			reason: `${REAL_FAILURE_PREFIX}${rerun.result.reason ?? NO_TEST_RAN_REASON}`,
@@ -350,11 +389,6 @@ function rerunSelectionFailure(params: { first: StepRun; rerun: StepResult }): s
 	// no selection and no problem: the step had no scope to select against
 	if (firstSelection === undefined) return params.first.selectionProblem ?? NO_GATE_SCOPE_REASON
 	return rerunIdsMismatch({ first: firstSelection.ids, rerun: params.rerun.selection?.ids ?? [] })
-}
-
-/** The test files a vitest output names as failing, each once, in the order it names them. */
-function failingFiles(output: string): string[] {
-	return [...new Set([...output.matchAll(FAILING_FILE_PATTERN)].map((match) => match[1]))]
 }
 
 /**

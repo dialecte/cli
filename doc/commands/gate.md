@@ -23,6 +23,12 @@ gate - The package's Definition of Done with the real counts
     change; none in a review throwaway, none for --release
   a failing vitest test step is rerun once, serially, on its failing files: passing there it is
     flagged flaky in parallel
+  a test step's record keeps the test keys its runs ran and failed (|<project>| <file>, or the file
+    alone for vitest's default project), its failing cases (<key> > <case path>) and how it chose
+    its tests (all, changed or scoped); in a lot's own worktree each run (--release included) folds
+    into the gate part of the lot's tests.json, whose ledger keeps a failure open until a newer run
+    ran its key and nothing in that run failed it, or a whole-suite pass (lot land and lot approve
+    refuse while one is open)
   the default lists end with a scoped rules step (dialecte rules); a step whose run starts with the
     word dialecte runs as the gate's own cli (its node and entry file, never node_modules/.bin), its
     line ending (dialecte <version>); a missing dialecte bin fails that step, never the gate

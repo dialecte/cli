@@ -46,6 +46,30 @@ const TDD_BASE_TORN =
 	'tdd base: stack.json does not read as a stack record; the lot is never measured as one not stacked'
 const STACK_DAMAGED = `${LOT_NAME} is damaged: its stack.json does not read as a stack record`
 
+/** An unknown failure on record: only a whole-suite pass clears it, whatever file the lot's HEAD holds. */
+const UNKNOWN_FAILURE = {
+	key: null,
+	unknown: 'a gate run of an older cli failed 1 test(s) and named none',
+	at: 'T10',
+}
+
+/** The lot's `tests.json`: a gate part of another tree holding `failures`, written whole. */
+function writeTestsRecord(params: { lot: LandedLot; failures: unknown[] }): void {
+	writeFileSync(
+		join(params.lot.lotFolder, STORE_FILES.tests),
+		JSON.stringify({
+			schema: 1,
+			gate: {
+				mode: 'fast',
+				at: 'T10',
+				head: params.lot.head,
+				stateHash: '9'.repeat(64),
+				failures: params.failures,
+			},
+		}),
+	)
+}
+
 /** Green checks on `head`. */
 function greenOn(head: string): ChangeRequestChecks {
 	return { head, state: 'green', failing: [], pending: [] }
@@ -266,6 +290,44 @@ describe(
 			expect(
 				readyAnswers({ lot, host: { ...host, parent: { ...host.parent, queued: true } } }),
 			).toEqual({ review: READY_LINE, exitCode: 0, recorded: true })
+		})
+
+		it('a tests record holding a failure → both name it, approve records nothing; a pass of another tree → ready', () => {
+			const failing = landedLot()
+			writeTestsRecord({ lot: failing, failures: [UNKNOWN_FAILURE] })
+			const stale = landedLot()
+			writeTestsRecord({ lot: stale, failures: [] })
+			function host(lot: LandedLot): HostParams {
+				return {
+					existing: lot.changeRequest,
+					checks: greenOn(lot.head),
+					queueKind: { kind: 'queue', noun: 'merge queue' },
+				}
+			}
+			const reason = `tests.json holds failing tests: ${UNKNOWN_FAILURE.unknown}: only a whole-suite pass clears it: run dialecte gate --release in ${failing.worktree} to record a whole-suite pass`
+
+			const approve = runLotApprove({
+				cwd: failing.workspace.repository,
+				argv: [LOT_NAME, '--by', REVIEWER],
+				host: recordingHost(host(failing)).host,
+			})
+			const review = runLotReview({
+				cwd: failing.workspace.repository,
+				argv: [LOT_NAME, '--no-open'],
+				host: recordingHost(host(failing)).host,
+			})
+
+			expect({
+				review: review.output.split('\n').find((line) => line.startsWith('approve: ')),
+				approve: approve.output,
+				recorded: existsSync(join(failing.lotFolder, STORE_FILES.approvals)),
+				stale: readyAnswers({ lot: stale, host: host(stale) }),
+			}).toEqual({
+				review: `approve: would refuse: ${reason}`,
+				approve: `lot approve: ${LOT_NAME} not approved: ${reason}; nothing recorded, nothing queued`,
+				recorded: false,
+				stale: { review: READY_LINE, exitCode: 0, recorded: true },
+			})
 		})
 	},
 )

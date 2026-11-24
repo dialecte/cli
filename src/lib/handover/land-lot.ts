@@ -48,6 +48,7 @@ import { SCOPE_REFUSAL_LINES } from '../store/scope-guard.constants.ts'
 import { scopeGuardOf, scopeRefusalLinesOf } from '../store/scope-guard.ts'
 import { STORE_FILES, STORE_REFUSAL } from '../store/store.constants.ts'
 import { resolveTddBase } from '../tdd/tdd-base.ts'
+import { testEvidenceRefusalOf } from '../tdd/test-evidence.ts'
 import { packagePathsOf } from '../worktree/lot-files.ts'
 import { registeredEntryOf } from './handover-store-read.ts'
 import { findHandoverStore, recordHandoverState, registerHandover } from './handover-store.ts'
@@ -107,6 +108,10 @@ export function landLot(params: {
 	// the lot's committed work held to its scope before anything is written: no entry, no rebase, no push (SAFE 3.4)
 	const scopeRefusal = landingScopeRefusalOf({ lotFolder: params.lotFolder, worktree })
 	if (scopeRefusal !== undefined) return { exitCode: 1, lines: scopeRefusal }
+	// a failing test on record holds the committed head before anything is written: no entry, no rebase, no push (D5)
+	const testsRefusal = testEvidenceRefusalOf({ lotFolder: params.lotFolder, worktree })
+	if (testsRefusal !== undefined)
+		return refused(LANDING_LINES.failingTests.replace('{reason}', () => testsRefusal))
 	// a lot started on another lands on it (33CI CI4): rebased onto its parent, or off it once the parent merged
 	const stack = prepareStackLanding({ ...params, landing })
 	if (stack !== undefined && 'refusal' in stack)

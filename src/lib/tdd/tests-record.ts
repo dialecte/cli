@@ -1,25 +1,34 @@
 /**
  * A lot's `tests.json` (33CI CI2a): the public record of its tests, what a change request may show. Its tdd part is the
  * cases of the change with their status (`tdd status`), written by `tdd green`; its gate part the newest gate run of
- * the worktree that counted tests, written by the gate. Each writer replaces its own part and keeps the other; the
+ * the worktree that ran tests and the ledger of the failures still open (`foldGateRecords`), written by the gate. Each writer replaces its own part and keeps the other; the
  * file is written whole. Never a receipt's reason or message, nor a skipped receipt; a part with no source is absent.
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import {
+	RECORD_CASE_STATUSES,
+	RECORD_GATE_MODES,
+} from '../change-request/change-request.constants.ts'
 import { realPathOf } from '../file-system.ts'
-import { readGateRecords } from '../gate-records/gate-records.ts'
+import { readGateRecords, readReleaseRecord } from '../gate-records/gate-records.ts'
 import { computeStateHash } from '../gate-records/state-hash.ts'
 import { tryReadGit } from '../git.ts'
+import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { readIdentity } from '../store/identity.ts'
 import { replaceWhole } from '../store/publish.ts'
 import { lotOfWorktree } from '../store/resolve-lot.ts'
 import { STORE_FILES } from '../store/store.constants.ts'
+import { foldGateRecords, seededGatePart } from './gate-ledger.ts'
 import { readLedger } from './tdd-files.ts'
 import { readTddState } from './tdd-state.ts'
 import {
 	HEAD_ARGUMENTS,
 	NO_HEAD_REASON,
+	GATE_COUNT_FIELDS,
+	PART_STRING_FIELDS,
+	TESTS_FILE_FAULTS,
 	TESTS_RECORD_SCHEMA,
 	WORKTREE_TOP_ARGUMENTS,
 } from './tests-record.constants.ts'
@@ -31,25 +40,37 @@ import type { TestCodePresence } from './test-code-presence.types.ts'
 import type {
 	TestsRecord,
 	TestsRecordCase,
+	TestsFileRead,
 	TestsRecordGate,
 	TestsRecordTdd,
 	TddPartSource,
 } from './tests-record.types.ts'
 
 /**
- * Writes the folder's `tests.json` whole: the tdd part from `tdd` when given, the gate part from `gateRecords` when
- * given (none when no record counted tests), each part not given kept as the file holds it. A record with no part and
- * no file yet is not written.
+ * Writes the folder's `tests.json` whole: the tdd part from `tdd` when given, the gate part folded from `gateRecords`
+ * when given (`foldGateRecords`), each part not given kept as the file holds it. A file that does not read, or holds a
+ * field its writers never write so, keeps no part: the gate part is seeded with an unknown failure (`seededGatePart`),
+ * so a rewrite never drops a failure it could not read. A record with no part and no file yet is not written.
  */
 export function writeTestsRecord(params: {
 	folder: string
 	tdd?: TddPartSource
 	gateRecords?: readonly GateRecord[]
+	/** ISO time of the write; default: now. */
+	now?: string
 }): void {
 	const path = join(params.folder, STORE_FILES.tests)
-	const previous = readTestsRecord({ folder: params.folder })
+	const read = readTestsFile({ folder: params.folder })
+	const damage = damageOf(read)
+	const previous = damage === undefined && 'record' in read ? read.record : undefined
 	const tdd = params.tdd === undefined ? previous?.tdd : tddPartOf(params.tdd)
-	const gate = params.gateRecords === undefined ? previous?.gate : gatePartOf(params.gateRecords)
+	const gate = nextGatePart({
+		previous: previous?.gate,
+		damage,
+		tdd: params.tdd,
+		gateRecords: params.gateRecords,
+		now: params.now ?? new Date().toISOString(),
+	})
 	if (tdd === undefined && gate === undefined && !existsSync(path)) return
 	const record: TestsRecord = {
 		schema: TESTS_RECORD_SCHEMA,
@@ -68,7 +89,11 @@ export function refreshGatePart(params: { cwd: string }): string | undefined {
 	const found = testsRecordFolderOf(params)
 	if (found === undefined || 'warning' in found) return found?.warning
 	try {
-		writeTestsRecord({ folder: found.folder, gateRecords: readGateRecords(params.cwd) })
+		const release = readReleaseRecord(params.cwd)
+		writeTestsRecord({
+			folder: found.folder,
+			gateRecords: [...readGateRecords(params.cwd), ...(release ? [release] : [])],
+		})
 		return undefined
 	} catch (error) {
 		return notWrittenLine((error as Error).message)
@@ -128,19 +153,37 @@ export async function refreshTddPart(params: {
 	}
 }
 
-/** The folder's `tests.json`; undefined without one, or when it is no record of schema 1. */
+/** The folder's `tests.json`; undefined without one, or when it is no record of schema 1 (`readTestsFile`'s view). */
 export function readTestsRecord(params: { folder: string }): TestsRecord | undefined {
+	const read = readTestsFile(params)
+	return 'record' in read ? read.record : undefined
+}
+
+/** The one reader of the folder's `tests.json`: absent, the record, or why it does not read. */
+export function readTestsFile(params: { folder: string }): TestsFileRead {
 	const path = join(params.folder, STORE_FILES.tests)
-	if (!existsSync(path)) return undefined
+	if (!existsSync(path)) return { absent: true }
+	let parsed: unknown
 	try {
-		const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'))
-		const isRecord = typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
-		return isRecord && (parsed as TestsRecord).schema === TESTS_RECORD_SCHEMA
-			? (parsed as TestsRecord)
-			: undefined
-	} catch {
-		return undefined
+		parsed = JSON.parse(readFileSync(path, 'utf8'))
+	} catch (error) {
+		return { unreadable: (error as Error).message }
 	}
+	if (!isObject(parsed)) return { unreadable: TESTS_FILE_FAULTS.noObject }
+	if (parsed.schema !== TESTS_RECORD_SCHEMA) return { unreadable: TESTS_FILE_FAULTS.schema }
+	return { record: parsed as TestsRecord }
+}
+
+/**
+ * The first field of `record` its writers never write so, by one rule per field: the types the judgement reads and
+ * their values (a gate mode, a case status); undefined when every field holds. The gate part first, then the tdd part.
+ */
+export function testsRecordFault(params: { record: TestsRecord }): string | undefined {
+	const { gate, tdd } = params.record as { gate?: unknown; tdd?: unknown }
+	return (
+		(gate === undefined ? undefined : gatePartFault(gate)) ??
+		(tdd === undefined ? undefined : tddPartFault(tdd))
+	)
 }
 
 /** The tdd part of the cases of the change: each as a public row, in the given order, and the count of each status. */
@@ -167,31 +210,129 @@ function publicCaseOf(line: CaseStatusLine): TestsRecordCase {
 	}
 }
 
-/** The gate part: the newest record one of whose steps counted tests; undefined when none did. */
-function gatePartOf(records: readonly GateRecord[]): TestsRecordGate | undefined {
-	let newest: { record: GateRecord; counts: GateRecord['steps'][number]['counts'] } | undefined
-	for (const record of records) {
-		// the step that counted tests, whatever the package named it
-		const step = record.steps.find(function countedTests(candidate) {
-			return candidate.counts.tests !== undefined
-		})
-		if (step?.counts.tests === undefined) continue
-		if (newest === undefined || record.at > newest.record.at)
-			newest = { record, counts: step.counts }
-	}
-	if (newest === undefined) return undefined
-	const { record, counts } = newest
-	return {
-		mode: record.mode,
-		at: record.at,
-		head: record.head,
-		stateHash: record.stateHash,
-		tests: counts.tests,
-		...(counts.testFiles !== undefined && { testFiles: counts.testFiles }),
-	}
-}
-
 /** The `!` line of a `tests.json` that could not be written, and why. */
 function notWrittenLine(reason: string): string {
 	return `! ${STORE_FILES.tests} not written: ${reason}`
+}
+
+/**
+ * The gate part to write: a gate refresh folds the records into the previous part (into a seeded one over a damaged
+ * file, folding only its newest record: the run that just ended); a tdd refresh keeps the previous part, or seeds one
+ * at its own tree over a damaged file.
+ */
+function nextGatePart(params: {
+	previous: TestsRecordGate | undefined
+	damage: string | undefined
+	tdd: TddPartSource | undefined
+	gateRecords: readonly GateRecord[] | undefined
+	now: string
+}): TestsRecordGate | undefined {
+	const { damage, gateRecords } = params
+	if (gateRecords === undefined) {
+		if (damage === undefined || params.tdd === undefined) return params.previous
+		return seededGatePart({
+			why: damage,
+			at: params.tdd.at,
+			head: params.tdd.head,
+			stateHash: params.tdd.stateHash,
+		})
+	}
+	if (damage === undefined)
+		return foldGateRecords({ previous: params.previous, records: gateRecords })
+	const newest = [...gateRecords].sort((one, other) => other.at.localeCompare(one.at))[0]
+	const seeded = seededGatePart({
+		why: damage,
+		at: '',
+		head: newest?.head ?? '',
+		stateHash: newest?.stateHash ?? '',
+	})
+	const folded = foldGateRecords({ previous: seeded, records: newest ? [newest] : [] }) ?? seeded
+	return folded.at === '' ? { ...folded, at: newest?.at ?? params.now } : folded
+}
+
+/** Why the file's parts cannot be carried over: it does not read, or a field holds what no writer writes. */
+function damageOf(read: TestsFileRead): string | undefined {
+	if ('unreadable' in read)
+		return fillMessage({ template: TESTS_FILE_FAULTS.damaged, values: { why: read.unreadable } })
+	if (!('record' in read)) return undefined
+	const field = testsRecordFault({ record: read.record })
+	return field === undefined
+		? undefined
+		: fillMessage({
+				template: TESTS_FILE_FAULTS.damaged,
+				values: { why: fillMessage({ template: TESTS_FILE_FAULTS.field, values: { field } }) },
+			})
+}
+
+/** The gate part's first faulty field. */
+function gatePartFault(gate: unknown): string | undefined {
+	if (!isObject(gate)) return 'gate'
+	const failures = gate.failures
+	if (failures !== undefined && (!Array.isArray(failures) || !failures.every(isFailureEntry)))
+		return 'failures'
+	const holdsUnknown =
+		Array.isArray(failures) && failures.some((entry) => isObject(entry) && 'unknown' in entry)
+	if (gate.mode === null ? !holdsUnknown : !isGateMode(gate.mode)) return 'mode'
+	for (const field of PART_STRING_FIELDS) if (typeof gate[field] !== 'string') return field
+	for (const field of GATE_COUNT_FIELDS)
+		if (gate[field] !== undefined && !isCounts(gate[field])) return field
+	return undefined
+}
+
+/** The tdd part's first faulty field. */
+function tddPartFault(tdd: unknown): string | undefined {
+	if (!isObject(tdd)) return 'tdd'
+	if (isObject(tdd.counts) && Object.keys(tdd.counts).some((status) => !isCaseStatus(status)))
+		return 'status'
+	for (const field of PART_STRING_FIELDS) if (typeof tdd[field] !== 'string') return field
+	if (!Array.isArray(tdd.cases)) return 'cases'
+	for (const testCase of tdd.cases) {
+		if (
+			!isObject(testCase) ||
+			typeof testCase.file !== 'string' ||
+			typeof testCase.name !== 'string'
+		)
+			return 'cases'
+		if (!isCaseStatus(testCase.status)) return 'status'
+	}
+	return undefined
+}
+
+/** An entry of the ledger as `foldGateRecords` writes it: named, nameless or unknown. */
+function isFailureEntry(entry: unknown): boolean {
+	if (!isObject(entry)) return false
+	if (entry.key === null && 'unknown' in entry)
+		return typeof entry.unknown === 'string' && typeof entry.at === 'string'
+	const run =
+		isGateMode(entry.mode) &&
+		typeof entry.head === 'string' &&
+		typeof entry.stateHash === 'string' &&
+		typeof entry.at === 'string'
+	if (!run) return false
+	if (typeof entry.key === 'string') return isStringList(entry.cases)
+	return (
+		entry.key === null &&
+		isStringList(entry.ranFiles) &&
+		(entry.failed === null || typeof entry.failed === 'number')
+	)
+}
+
+function isGateMode(value: unknown): boolean {
+	return (RECORD_GATE_MODES as readonly unknown[]).includes(value)
+}
+
+function isCaseStatus(value: unknown): boolean {
+	return (RECORD_CASE_STATUSES as readonly unknown[]).includes(value)
+}
+
+function isCounts(value: unknown): boolean {
+	return isObject(value) && Object.values(value).every((count) => typeof count === 'number')
+}
+
+function isStringList(value: unknown): boolean {
+	return Array.isArray(value) && value.every((item) => typeof item === 'string')
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

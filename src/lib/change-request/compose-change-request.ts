@@ -9,6 +9,7 @@ import { SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { REGEX_SPECIAL_PATTERN, REGEX_SPECIAL_REPLACEMENT } from '../knowledge/ask/ask.constants.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { qualityBodyLines } from '../quality/quality-body.ts'
+import { gateVerdictOf, unknownFailuresText } from '../tdd/test-evidence.ts'
 import {
 	BODY_LINES,
 	CHECKLIST_LINES,
@@ -288,6 +289,9 @@ function tddLine(params: { tdd: TestsRecordTdd; treeHash: string; nouns: HostNou
 
 function gateLine(params: { gate: TestsRecordGate; treeHash: string; nouns: HostNouns }): string {
 	const { gate } = params
+	// a part seeded over a damaged tests.json names its unknown failure, never a mode
+	if (gate.mode === null)
+		return BODY_LINES.gateUnknown.replace('{unknown}', () => unknownFailuresText(gate))
 	const head = gate.head.slice(0, SHORT_SHA_LENGTH)
 	if (gate.stateHash !== params.treeHash)
 		return fillMessage({
@@ -396,7 +400,8 @@ function checklistLines(sources: ChangeRequestSources): string[] {
 
 /**
  * Every case of the change done (green, or accepted / revised / unchanged) on the landed tree, and a gate record of
- * that tree without a failure; with no gate record the box stays for CI, the proof.
+ * that tree whose ledger holds no open failure (`gateVerdictOf`: a run flaky in parallel passes); with no gate record
+ * the box stays for CI, the proof.
  */
 function testsDone(sources: ChangeRequestSources): boolean {
 	const { tdd, gate } = sources.tests ?? {}
@@ -404,9 +409,5 @@ function testsDone(sources: ChangeRequestSources): boolean {
 		return false
 	if (!tdd.cases.every((testCase) => DONE_CASE_STATUSES.includes(testCase.status))) return false
 	if (gate === undefined) return false
-	return (
-		gate.stateHash === sources.treeHash &&
-		(gate.tests?.failed ?? 0) === 0 &&
-		(gate.testFiles?.failed ?? 0) === 0
-	)
+	return gate.stateHash === sources.treeHash && gateVerdictOf(gate) === 'passing'
 }

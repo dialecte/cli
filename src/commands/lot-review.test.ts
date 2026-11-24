@@ -214,3 +214,60 @@ describe('dialecte lot review', { timeout: STORE_CASE_TIMEOUT }, () => {
 		expect(calls).toEqual([])
 	})
 })
+
+describe(
+	'dialecte lot review: the tests line of a seeded gate part',
+	{ timeout: STORE_CASE_TIMEOUT },
+	() => {
+		it('a gate part with no mode and one unknown entry → the tests line names the unknown failure, never a null mode', () => {
+			const lot = landedLot()
+			const unknown = 'tests.json did not read (it holds no object): its failures cannot be told'
+			writeFileSync(
+				join(lot.lotFolder, STORE_FILES.tests),
+				JSON.stringify({
+					schema: 1,
+					gate: {
+						mode: null,
+						at: 'T1',
+						head: lot.head,
+						stateHash: '9'.repeat(64),
+						failures: [{ key: null, unknown, at: 'T1' }],
+					},
+				}),
+			)
+			const { host } = recordingHost({ existing: lot.changeRequest })
+
+			const result = runLotReview({
+				cwd: lot.workspace.repository,
+				argv: [LOT_NAME, '--no-open'],
+				host,
+			})
+
+			expect(result.output.split('\n').find((line) => line.startsWith('tests: '))).toBe(
+				`tests: tdd not recorded · gate: ${unknown}: only a whole-suite pass clears it`,
+			)
+		})
+
+		it('a gate part whose ledger is no list → the tests line names the unreadable field, no crash', () => {
+			const lot = landedLot()
+			writeFileSync(
+				join(lot.lotFolder, STORE_FILES.tests),
+				JSON.stringify({
+					schema: 1,
+					gate: { mode: null, at: 'T1', head: lot.head, stateHash: '9'.repeat(64), failures: {} },
+				}),
+			)
+			const { host } = recordingHost({ existing: lot.changeRequest })
+
+			const result = runLotReview({
+				cwd: lot.workspace.repository,
+				argv: [LOT_NAME, '--no-open'],
+				host,
+			})
+
+			expect(result.output.split('\n').find((line) => line.startsWith('tests: '))).toBe(
+				'tests: tests.json cannot be read: its field failures holds what no writer writes',
+			)
+		})
+	},
+)
