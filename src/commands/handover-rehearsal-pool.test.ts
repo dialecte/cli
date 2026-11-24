@@ -132,7 +132,7 @@ async function rehearse(params: {
 	removeHookLogs({ lines })
 	const scratchRoot = realpathSync(temporaryFolder('dialecte-scratch-root-'))
 	const { spawner, calls } = createRecordingSpawner()
-	const exitCode = await runHandoverRun({
+	const result = await runHandoverRun({
 		probe: noRepositoryCli,
 		argv: [params.out, '--rehearse', ...(params.keep ? ['--keep'] : [])],
 		write: (line) => lines.push(line),
@@ -142,6 +142,9 @@ async function rehearse(params: {
 		spawner,
 		relink: params.relink,
 	})
+	const exitCode = result.exitCode
+	// the refusals and a stopped run's verdict come back as the result (FIX-loud-refusals D3)
+	if (result.output !== '') lines.push(...result.output.split('\n'))
 	return { exitCode, text: lines.join('\n'), scratchRoot, calls }
 }
 

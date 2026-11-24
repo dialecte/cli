@@ -88,7 +88,7 @@ afterEach(function restoreEnvironment() {
 async function runHandover(params: { lot: HandoverLot; argv?: string[] }) {
 	const lines: string[] = []
 	removeHookLogs({ lines })
-	const exitCode = await runHandoverRun({
+	const result = await runHandoverRun({
 		probe: noRepositoryCli,
 		argv: [params.lot.folder, ...(params.argv ?? [])],
 		write: (line) => lines.push(line),
@@ -98,6 +98,9 @@ async function runHandover(params: { lot: HandoverLot; argv?: string[] }) {
 		spawner: createRecordingSpawner().spawner,
 		cwd: params.lot.bystander.worktree,
 	})
+	const exitCode = result.exitCode
+	// the refusals and a stopped run's verdict come back as the result (FIX-loud-refusals D3)
+	if (result.output !== '') lines.push(...result.output.split('\n'))
 	return { exitCode, text: lines.join('\n') }
 }
 

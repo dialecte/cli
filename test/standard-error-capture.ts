@@ -18,7 +18,7 @@ export function capturedStandardErrorLines(): string[] {
 }
 
 /**
- * The `node:fs` module with `writeSync` recording what goes to descriptor 2 (and still writing it). Pass the original
+ * The `node:fs` module with `writeSync` recording what goes to descriptor 2, a text or its bytes (and still writing it). Pass the original
  * module and a recording-aware `writeSync` wrapper is returned in its place.
  */
 export function withCapturedStandardError<Module extends { writeSync: (...args: any[]) => number }>(
@@ -27,8 +27,11 @@ export function withCapturedStandardError<Module extends { writeSync: (...args: 
 	return {
 		...actual,
 		writeSync(...args: Parameters<Module['writeSync']>) {
+			// the synchronous print writes bytes (a Buffer) since it learned short, full and closed pipes
 			if (args[0] === STANDARD_ERROR && typeof args[1] === 'string')
 				captured.push(args[1].trimEnd())
+			else if (args[0] === STANDARD_ERROR && args[1] instanceof Uint8Array)
+				captured.push(Buffer.from(args[1]).toString('utf8').trimEnd())
 			return actual.writeSync(...args)
 		},
 	}

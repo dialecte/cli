@@ -3,7 +3,7 @@
  * (its own version in the cli repository, else its `@dialecte/cli` pin) runs no verb. The floor of a folder is read from its working
  * tree; only when that would refuse is the base branch's tip read, and the cli is refused only below both. The
  * folders that ask are the cwd and the repositories of the lots and briefs the words name, and for `handover` the
- * repositories of the hand-overs and lots files its words name. The happy path runs no
+ * repositories of the hand-overs and lots files its words name (the hand-over store found once: one git lookup). The happy path runs no
  * git process but a brief's, whose repository resolves as `lot start` resolves it.
  */
 import { existsSync, readFileSync, statSync } from 'node:fs'
@@ -69,10 +69,13 @@ export function floorFoldersOf(params: {
 			return !word.startsWith(OPTION_PREFIX)
 		},
 	)
+	const store = params.command === 'handover' ? storeOfFolder(params.cwd) : undefined
 	const named = words.flatMap(function foldersOfWord(word) {
 		return [
 			...foldersNamedBy({ word, cwd: params.cwd }),
-			...(params.command === 'handover' ? handoverRepositoriesOf({ word, cwd: params.cwd }) : []),
+			...(params.command === 'handover'
+				? handoverRepositoriesOf({ word, cwd: params.cwd, store })
+				: []),
 		]
 	})
 	return [...new Set([params.cwd, ...named])]
@@ -82,15 +85,19 @@ export function floorFoldersOf(params: {
  * The repositories a `handover` word names: a lots file's (`handover <lots.json>`), and the hand-over's a name or a
  * folder resolves to. Files are only read, never written; nothing for a word that names neither.
  */
-function handoverRepositoriesOf(params: { word: string; cwd: string }): string[] {
+function handoverRepositoriesOf(params: {
+	word: string
+	cwd: string
+	store: string | undefined
+}): string[] {
 	const path = resolve(params.cwd, params.word)
 	const lotsFile = isRegularFile({ path }) ? readLotsFile(path) : undefined
 	const folder = resolveHandoverArgument({
 		argument: params.word,
-		store: storeOfFolder(params.cwd),
+		store: params.store,
 		cwd: params.cwd,
 	})
-	const handover = isFolder(folder) ? readHandoverFolder(folder) : undefined
+	const handover = isFolder(folder) ? readHandoverFolderOrNone(folder) : undefined
 	return [
 		...(lotsFile === undefined || typeof lotsFile === 'string' ? [] : [lotsFile.repository]),
 		...(handover === undefined || typeof handover === 'string'
@@ -184,6 +191,17 @@ function foldersNamedBy(params: { word: string; cwd: string }): string[] {
 	if (!isRegularFile({ path })) return []
 	const repository = briefRepositoryOf({ briefFile: path })
 	return repository === undefined ? [] : [repository]
+}
+
+/** The hand-over folder read; undefined when it throws (a damaged record): the floor never fails on it, the verb names it. */
+function readHandoverFolderOrNone(
+	folder: string,
+): ReturnType<typeof readHandoverFolder> | undefined {
+	try {
+		return readHandoverFolder(folder)
+	} catch {
+		return undefined
+	}
 }
 
 /** Whether a regular file is at the path (links followed); false when nothing is, or it cannot be read. */

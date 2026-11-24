@@ -70,7 +70,10 @@ function processResultSink(): ResultSink {
 	}
 }
 
-/** One stream flushed: its write callback, or its error (once), whichever comes first. */
+/**
+ * One stream flushed: its write callback, or its error (once), whichever comes first. The error listener stays: a
+ * reader gone later (an exit-0 path still writing) is swallowed there instead of ending the process with a crash line.
+ */
 function flushedOf(stream: FlushableStream): Promise<void> {
 	return new Promise(function waitForWrites(resolve) {
 		stream.once('error', function readerGone() {

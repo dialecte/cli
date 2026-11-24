@@ -111,9 +111,10 @@ export function runInbox(params: InboxParams): CommandResult {
 		health.some((finding) => finding.severity === 'red')
 	const exitCode = waits ? 0 : 1
 	// nothing waiting (exit 1) is an answer (D2)
+	const answer = exitCode === 1 ? ({ answer: true } as const) : {}
 	if (json)
-		return { exitCode, output: jsonOf(inboxJsonOf({ items, listing, health }), 2), answer: true }
-	return { exitCode, output: textOf(inboxLines({ items, listing, health })), answer: true }
+		return { exitCode, output: jsonOf(inboxJsonOf({ items, listing, health }), 2), ...answer }
+	return { exitCode, output: textOf(inboxLines({ items, listing, health })), ...answer }
 }
 
 function sumOf(counts: readonly number[]): number {
