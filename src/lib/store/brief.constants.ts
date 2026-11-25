@@ -119,10 +119,10 @@ export const SECTIONS_MAX_COUNT = 20
 export const SECTIONS_MAX_LENGTH = 20_000
 
 /**
- * A markdown task box at the start of a line (GFM): a bullet (`-`, `*`, `+`) or an ordered marker (`1.`, `1)`), any
- * spaces, then `[ ]` or `[x]`. One pattern for the sections' refusal and the change request's tick-blind line reading.
+ * A markdown task box at the start of a line (GFM), in a blockquote or not (its `>` marks the first group): a bullet
+ * (`-`, `*`, `+`) or an ordered marker (`1.`, `1)`), any spaces, then `[ ]` or `[x]`. One pattern for the sections' refusal and the change request's tick-blind line reading.
  */
-export const TASK_MARKER_PATTERN = /^\s*(?:[-*+]|\d{1,9}[.)])\s+\[[ xX]\](?=\s|$)/
+export const TASK_MARKER_PATTERN = /^\s*((?:>\s*)*)(?:[-*+]|\d{1,9}[.)])\s+\[[ xX]\](?=\s|$)/
 
 /** A `<details>` element opened, and closed: a section holds as many of each, or the host folds what follows. */
 export const DETAILS_OPEN_PATTERN = /<details(?=[\s>])/gi

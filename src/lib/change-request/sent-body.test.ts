@@ -85,6 +85,7 @@ describe('aboveKeptLines reads the lines a render owns', () => {
 			'<!-- dialecte:reviewer-sections -->',
 			'- [x] ticked by hand',
 			'  1.   [X] ordered',
+			'> - [x] quoted',
 			'### For the reviewer',
 			'quoted once',
 			'### For the reviewer',
@@ -95,6 +96,7 @@ describe('aboveKeptLines reads the lines a render owns', () => {
 			'### Summary',
 			'- [ ] ticked by hand',
 			'- [ ] ordered',
+			'> - [ ] quoted',
 			'### For the reviewer',
 			'quoted once',
 		])

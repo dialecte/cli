@@ -36,7 +36,9 @@ export function aboveKeptLines(params: { template: string; body: string }): stri
 	return regionAboveKept(params)
 		.map((line) => line.trimEnd())
 		.filter((line) => line.trim() !== '' && !RENDERER_COMMENT_PATTERN.test(line.trim()))
-		.map((line) => line.replace(TASK_MARKER_PATTERN, UNTICKED_TASK_MARKER))
+		.map((line) =>
+			line.replace(TASK_MARKER_PATTERN, (_box, quote: string) => `${quote}${UNTICKED_TASK_MARKER}`),
+		)
 }
 
 // dialecte-allow duplicate-read: the mutation judge's hashLine trims both ends; a sent line keeps its indentation

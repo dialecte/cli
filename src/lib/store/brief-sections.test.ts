@@ -99,6 +99,11 @@ const SECTION_ROWS: SectionRow[] = [
 		refused: ['shape:sections[0].text'],
 	},
 	{
+		name: 'a text holding a task box in a blockquote',
+		value: oneWith({ text: 'Check:\n\n> - [ ] the reader\n>> 1. [x] nested' }),
+		refused: ['shape:sections[0].text'],
+	},
+	{
 		name: 'more than 20 sections',
 		value: Array.from({ length: 21 }, (_, index) => ({ heading: `Part ${index}`, text: 'x' })),
 		refused: ['shape:sections'],

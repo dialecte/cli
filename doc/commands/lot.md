@@ -1339,7 +1339,8 @@ word: each send appends the hashes of the lines it sent above the kept heading t
 change request, never rewritten), and a render refuses, sending nothing, a body holding there a line neither recorded
 nor in the new render. The refusal names the lines and the ways out: record them in the brief's sections (or the record
 they belong to), move them under the kept heading, or remove them from the body. A line the cli wrote earlier (a count
-since changed, a section since removed) was recorded and passes. A task box above the kept heading reads unticked: the
+since changed, a section since removed) was recorded and passes. The record is of every line ever sent: a line a person writes that
+equals one the cli sent earlier passes as the cli's (a known limit). A task box above the kept heading reads unticked: the
 records decide it. Every send reads the change request again just before the host call and renders over that body, so
 an edit made while `lot land` pushed is carried or refused, never overwritten; the host has no compare-and-swap, so the
 moment between that read and the edit is the one window left.
