@@ -9,7 +9,7 @@ import { SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { REGEX_SPECIAL_PATTERN, REGEX_SPECIAL_REPLACEMENT } from '../knowledge/ask/ask.constants.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { qualityBodyLines } from '../quality/quality-body.ts'
-import { gateVerdictOf, unknownFailuresText } from '../tdd/test-evidence.ts'
+import { gateVerdictOf, unknownFailuresText } from '../tdd/tests-record-rules.ts'
 import {
 	BODY_LINES,
 	CHECKLIST_LINES,
@@ -291,7 +291,10 @@ function gateLine(params: { gate: TestsRecordGate; treeHash: string; nouns: Host
 	const { gate } = params
 	// a part seeded over a damaged tests.json names its unknown failure, never a mode
 	if (gate.mode === null)
-		return BODY_LINES.gateUnknown.replace('{unknown}', () => unknownFailuresText(gate))
+		return fillMessage({
+			template: BODY_LINES.gateUnknown,
+			values: { unknown: unknownFailuresText(gate) },
+		})
 	const head = gate.head.slice(0, SHORT_SHA_LENGTH)
 	if (gate.stateHash !== params.treeHash)
 		return fillMessage({

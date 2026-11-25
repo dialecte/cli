@@ -23,11 +23,10 @@ import { STORE_FILES } from '../store/store.constants.ts'
 import { foldGateRecords, seededGatePart } from './gate-ledger.ts'
 import { readLedger } from './tdd-files.ts'
 import { readTddState } from './tdd-state.ts'
+import { isObject, testsRecordFault } from './tests-record-rules.ts'
 import {
 	HEAD_ARGUMENTS,
 	NO_HEAD_REASON,
-	GATE_COUNT_FIELDS,
-	PART_STRING_FIELDS,
 	TESTS_FILE_FAULTS,
 	TESTS_RECORD_SCHEMA,
 	WORKTREE_TOP_ARGUMENTS,
@@ -174,18 +173,6 @@ export function readTestsFile(params: { folder: string }): TestsFileRead {
 	return { record: parsed as TestsRecord }
 }
 
-/**
- * The first field of `record` its writers never write so, by one rule per field: the types the judgement reads and
- * their values (a gate mode, a case status); undefined when every field holds. The gate part first, then the tdd part.
- */
-export function testsRecordFault(params: { record: TestsRecord }): string | undefined {
-	const { gate, tdd } = params.record as { gate?: unknown; tdd?: unknown }
-	return (
-		(gate === undefined ? undefined : gatePartFault(gate)) ??
-		(tdd === undefined ? undefined : tddPartFault(tdd))
-	)
-}
-
 /** The tdd part of the cases of the change: each as a public row, in the given order, and the count of each status. */
 function tddPartOf(params: TddPartSource): TestsRecordTdd {
 	const counts: TestsRecordTdd['counts'] = {}
@@ -264,75 +251,4 @@ function damageOf(read: TestsFileRead): string | undefined {
 			})
 }
 
-/** The gate part's first faulty field. */
-function gatePartFault(gate: unknown): string | undefined {
-	if (!isObject(gate)) return 'gate'
-	const failures = gate.failures
-	if (failures !== undefined && (!Array.isArray(failures) || !failures.every(isFailureEntry)))
-		return 'failures'
-	const holdsUnknown =
-		Array.isArray(failures) && failures.some((entry) => isObject(entry) && 'unknown' in entry)
-	if (gate.mode === null ? !holdsUnknown : !isGateMode(gate.mode)) return 'mode'
-	for (const field of PART_STRING_FIELDS) if (typeof gate[field] !== 'string') return field
-	for (const field of GATE_COUNT_FIELDS)
-		if (gate[field] !== undefined && !isCounts(gate[field])) return field
-	return undefined
-}
-
-/** The tdd part's first faulty field. */
-function tddPartFault(tdd: unknown): string | undefined {
-	if (!isObject(tdd)) return 'tdd'
-	if (isObject(tdd.counts) && Object.keys(tdd.counts).some((status) => !isCaseStatus(status)))
-		return 'status'
-	for (const field of PART_STRING_FIELDS) if (typeof tdd[field] !== 'string') return field
-	if (!Array.isArray(tdd.cases)) return 'cases'
-	for (const testCase of tdd.cases) {
-		if (
-			!isObject(testCase) ||
-			typeof testCase.file !== 'string' ||
-			typeof testCase.name !== 'string'
-		)
-			return 'cases'
-		if (!isCaseStatus(testCase.status)) return 'status'
-	}
-	return undefined
-}
-
-/** An entry of the ledger as `foldGateRecords` writes it: named, nameless or unknown. */
-function isFailureEntry(entry: unknown): boolean {
-	if (!isObject(entry)) return false
-	if (entry.key === null && 'unknown' in entry)
-		return typeof entry.unknown === 'string' && typeof entry.at === 'string'
-	const run =
-		isGateMode(entry.mode) &&
-		typeof entry.head === 'string' &&
-		typeof entry.stateHash === 'string' &&
-		typeof entry.at === 'string'
-	if (!run) return false
-	if (typeof entry.key === 'string') return isStringList(entry.cases)
-	return (
-		entry.key === null &&
-		isStringList(entry.ranFiles) &&
-		(entry.failed === null || typeof entry.failed === 'number')
-	)
-}
-
-function isGateMode(value: unknown): boolean {
-	return (RECORD_GATE_MODES as readonly unknown[]).includes(value)
-}
-
-function isCaseStatus(value: unknown): boolean {
-	return (RECORD_CASE_STATUSES as readonly unknown[]).includes(value)
-}
-
-function isCounts(value: unknown): boolean {
-	return isObject(value) && Object.values(value).every((count) => typeof count === 'number')
-}
-
-function isStringList(value: unknown): boolean {
-	return Array.isArray(value) && value.every((item) => typeof item === 'string')
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-	return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
+export { testsRecordFault } from './tests-record-rules.ts'

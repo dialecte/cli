@@ -99,6 +99,7 @@ import { GIVEN_ENVIRONMENT } from '../lib/given-environment.constants.ts'
 import { readHandoverHold } from '../lib/handover/handover-lock.ts'
 import { GATE_UNDER_HANDOVER, HANDOVER_FILES } from '../lib/handover/handover.constants.ts'
 import { startLongRun } from '../lib/keep-awake/long-run.ts'
+import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { jsonOf, joinedOf, printOut, textOf } from '../lib/print/print.ts'
 import { childLinesOf, relayedTextOf } from '../lib/print/relayed.ts'
 import { openProcessLiveOutput } from '../lib/progress/process-live-output.ts'
@@ -107,6 +108,7 @@ import { createSystemClock } from '../lib/progress/system-clock.ts'
 import { shellQuote, shellWord } from '../lib/shell-quote.ts'
 import { isStackedLotWorktree } from '../lib/tdd/tdd-base.ts'
 import { TDD_BASE_SOURCES, TDD_STEP } from '../lib/tdd/tdd.constants.ts'
+import { UNFOLDED_GATE_REFUSAL } from '../lib/tdd/tests-record.constants.ts'
 import { refreshGatePart } from '../lib/tdd/tests-record.ts'
 import { checkHygiene } from '../lib/worktree/hygiene.ts'
 import { checkInstallMatchesTree } from '../lib/worktree/tree-install.ts'
@@ -227,6 +229,14 @@ async function runModeGate(params: GateRunParams & { mode: GateMode }): Promise<
 			: startLongRun({ holdAwake: params.holdAwake, runClocks: params.runClocks })
 	const setup = readGateSetup(params)
 	if ('refused' in setup) return setup.refused
+	// the records of earlier runs folded into the lot's tests.json first: this run overwrites the record of its mode,
+	// so a failure an earlier refresh could not write would be lost; a fold that cannot be written runs nothing
+	const unfolded = refreshGatePart({ cwd })
+	if (unfolded !== undefined)
+		return resultOf({
+			exitCode: 1,
+			lines: [fillMessage({ template: UNFOLDED_GATE_REFUSAL, values: { line: unfolded } })],
+		})
 	const view: GateView = params.live
 		? {
 				live: params.live,

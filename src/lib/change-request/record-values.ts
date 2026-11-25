@@ -10,7 +10,7 @@ import {
 	VERDICT_WORD_PATTERN,
 } from '../review-rounds/review-record.constants.ts'
 import { FINDING_ID_PATTERN } from '../review-rounds/review-rounds.constants.ts'
-import { testsRecordFault } from '../tdd/tests-record.ts'
+import { testsRecordFault } from '../tdd/tests-record-rules.ts'
 import { PIECE_RECORDS, ROW_SEVERITIES, ROW_VERDICTS } from './change-request.constants.ts'
 
 import type { FindingRow, VerdictRow } from '../review-rounds/review-record.types.ts'

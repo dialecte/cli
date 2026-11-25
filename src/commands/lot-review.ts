@@ -23,9 +23,9 @@ import { DECISIONS_FILE, LEDGER_FILE } from '../lib/review-rounds/review-rounds.
 import { parseRound, readArguments } from '../lib/review-rounds/round-arguments.ts'
 import { readStandardLine } from '../lib/standard/read-standard-line.ts'
 import { STORE_FILES } from '../lib/store/store.constants.ts'
-import { unknownFailuresText } from '../lib/tdd/test-evidence.ts'
-import { TESTS_FILE_FAULTS } from '../lib/tdd/tests-record.constants.ts'
-import { readTestsFile, testsRecordFault } from '../lib/tdd/tests-record.ts'
+import { testEvidenceOf } from '../lib/tdd/test-evidence.ts'
+import { unknownFailuresText } from '../lib/tdd/tests-record-rules.ts'
+import { readTestsRecord } from '../lib/tdd/tests-record.ts'
 import { approvalReadinessOf } from './lot-approve-readiness.ts'
 import { resolveLotPlace } from './lot-describe.ts'
 import { LOT_REVIEW_FLAGS, LOT_REVIEW_LINES, LOT_REVIEW_OPTIONS } from './lot-review.constants.ts'
@@ -271,7 +271,7 @@ function privateLines(place: LotPlace): string[] {
 		'',
 		...briefLines(folder),
 		'',
-		testsLine(folder),
+		testsLine({ folder, worktree: place.worktree }),
 		'',
 		LOT_REVIEW_LINES.decisions,
 		...orNone(
@@ -334,17 +334,15 @@ function briefOf(folder: string): Record<string, unknown> {
  * The tests record's tdd counts and gate run, each `not recorded` when absent; a record that does not read, or holds a
  * field its writers never write so, is named unreadable with why, never read further.
  */
-function testsLine(folder: string): string {
-	const read = readTestsFile({ folder })
-	const unreadable =
-		'unreadable' in read
-			? read.unreadable
-			: 'record' in read
-				? faultText(testsRecordFault({ record: read.record }))
-				: undefined
-	if (unreadable !== undefined)
-		return fillMessage({ template: LOT_REVIEW_LINES.testsUnreadable, values: { why: unreadable } })
-	const record = 'record' in read ? read.record : undefined
+function testsLine(params: { folder: string; worktree: string }): string {
+	// the evidence's own reader says why a record does not read (testEvidenceOf), never a second derivation
+	const evidence = testEvidenceOf({ lotFolder: params.folder, worktree: params.worktree })
+	if (evidence.state === 'unreadable')
+		return fillMessage({
+			template: LOT_REVIEW_LINES.testsUnreadable,
+			values: { why: evidence.why },
+		})
+	const record = readTestsRecord({ folder: params.folder })
 	const counts = Object.entries(record?.tdd?.counts ?? {})
 	const tdd =
 		record?.tdd === undefined
@@ -361,19 +359,15 @@ function testsLine(folder: string): string {
 		part === undefined
 			? LOT_REVIEW_LINES.noGate
 			: part.mode === null
-				? LOT_REVIEW_LINES.gateUnknown.replace('{unknown}', () => unknownFailuresText(part))
+				? fillMessage({
+						template: LOT_REVIEW_LINES.gateUnknown,
+						values: { unknown: unknownFailuresText(part) },
+					})
 				: fillMessage({
 						template: LOT_REVIEW_LINES.gate,
 						values: { mode: part.mode, head: part.head.slice(0, SHORT_SHA_LENGTH) },
 					})
 	return fillMessage({ template: LOT_REVIEW_LINES.tests, values: { tdd, gate } })
-}
-
-/** Why a record's field does not read, or undefined for none. */
-function faultText(field: string | undefined): string | undefined {
-	return field === undefined
-		? undefined
-		: fillMessage({ template: TESTS_FILE_FAULTS.field, values: { field } })
 }
 
 /** Each finding of the ledger with its text and state as written. */

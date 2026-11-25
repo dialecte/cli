@@ -32,3 +32,7 @@ export const PART_STRING_FIELDS = ['at', 'head', 'stateHash'] as const
 
 /** The count fields a gate part may hold, each an object of numbers. */
 export const GATE_COUNT_FIELDS = ['tests', 'testFiles'] as const
+
+/** A gate run refused before its steps: the records of earlier runs could not be folded into the lot's tests.json. */
+export const UNFOLDED_GATE_REFUSAL =
+	'gate: {line}: the earlier gate runs are not folded into it, and this run would overwrite the record of its mode: nothing run'

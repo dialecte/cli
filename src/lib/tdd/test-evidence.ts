@@ -14,8 +14,9 @@ import {
 	HEAD_FILES_ARGUMENTS,
 	TEST_EVIDENCE_TEXTS,
 } from './test-evidence.constants.ts'
+import { gateVerdictOf, testsRecordFault } from './tests-record-rules.ts'
 import { TESTS_FILE_FAULTS } from './tests-record.constants.ts'
-import { readTestsFile, testsRecordFault } from './tests-record.ts'
+import { readTestsFile } from './tests-record.ts'
 
 import type { EvidenceFailure, TestEvidence } from './test-evidence.types.ts'
 import type {
@@ -116,20 +117,6 @@ export function evidenceRefusalOf(params: {
 			),
 		},
 	})
-}
-
-/** The unknown failures of a gate part, as the refusal names them (a part seeded over a damaged `tests.json`). */
-export function unknownFailuresText(gate: TestsRecordGate): string {
-	return (gate.failures ?? [])
-		.flatMap((failure) => (failure.key === null && 'unknown' in failure ? [failure.unknown] : []))
-		.map((why) => fillMessage({ template: TEST_EVIDENCE_TEXTS.unknown, values: { why } }))
-		.join(TEST_EVIDENCE_TEXTS.itemSeparator)
-}
-
-/** Whether a gate part fails: an open entry, or, on a part an older cli wrote, a failed test or file counted. */
-export function gateVerdictOf(gate: TestsRecordGate): 'failing' | 'passing' {
-	if (gate.failures !== undefined) return gate.failures.length > 0 ? 'failing' : 'passing'
-	return (gate.tests?.failed ?? 0) > 0 || (gate.testFiles?.failed ?? 0) > 0 ? 'failing' : 'passing'
 }
 
 /**
@@ -283,3 +270,5 @@ function treeWord(current: boolean): string {
 function shortOf(head: string): string {
 	return head.slice(0, SHORT_SHA_LENGTH)
 }
+
+export { gateVerdictOf, unknownFailuresText } from './tests-record-rules.ts'

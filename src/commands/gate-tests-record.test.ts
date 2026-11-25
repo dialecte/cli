@@ -71,33 +71,29 @@ describe('gate - tests.json', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		expect(testsRecordOf(lot.lotFolder)).toBeUndefined()
 	})
 
-	it('a tests.json that cannot be written -> the run stands: the ! line before the verdict', async () => {
+	it('a tests.json that cannot be written -> refused before the steps, exit 1: an earlier run of this mode must be folded before this one overwrites its record', async () => {
 		const lot = createStepLot({ fast: [COUNTED_STEP] })
 		mkdirSync(join(lot.lotFolder, STORE_FILES.tests, 'blocked'), { recursive: true })
 
 		const result = await runGate({ cwd: lot.worktree, argv: [] })
 
-		expect({
-			exitCode: result.exitCode,
-			lines: result.output.trimEnd().split('\n').slice(-2),
-		}).toEqual({
-			exitCode: 0,
-			lines: [expect.stringMatching(/^! tests\.json not written: /), 'gate --fast: green'],
+		expect({ exitCode: result.exitCode, output: result.output.trimEnd() }).toEqual({
+			exitCode: 1,
+			output: expect.stringMatching(
+				/^gate: ! tests\.json not written: .*: the earlier gate runs are not folded into it, and this run would overwrite the record of its mode: nothing run$/,
+			),
 		})
 	})
 
-	it('a tests.json that cannot be written, gate --json -> the ! line in its warnings', async () => {
+	it('a tests.json that cannot be written, gate --json -> refused the same way, nothing run', async () => {
 		const lot = createStepLot({ fast: [COUNTED_STEP] })
 		mkdirSync(join(lot.lotFolder, STORE_FILES.tests, 'blocked'), { recursive: true })
 
 		const result = await runGate({ cwd: lot.worktree, argv: ['--json'] })
 
-		expect({
-			exitCode: result.exitCode,
-			warnings: (JSON.parse(result.output) as { warnings?: unknown }).warnings,
-		}).toEqual({
-			exitCode: 0,
-			warnings: [expect.stringMatching(/^! tests\.json not written: /)],
+		expect({ exitCode: result.exitCode, refused: result.output.includes('nothing run') }).toEqual({
+			exitCode: 1,
+			refused: true,
 		})
 	})
 })
