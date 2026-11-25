@@ -53,6 +53,8 @@ export const STORE_FILES: StoreFileNames = {
 	carry: 'carry.json',
 	// `lot start --from` copies the source's ledger and lot file into this folder, as `ledger.json` and `lot.json`
 	carryCopies: 'carry',
+	// every send of the change request text appends the hashes of the lines it sent above the kept heading here
+	sentBody: 'sent-body.jsonl',
 }
 
 /** The folder of the store in the repository's git common folder. */

@@ -49,6 +49,11 @@ function withScopeAndLots(params: {
 
 const FIELD_ROWS: FieldRow[] = [
 	{ name: 'the valid brief', overrides: {}, refused: [] },
+	{
+		name: 'reviewer sections',
+		overrides: { sections: [{ heading: 'Deviations from the design', text: 'One pass kept.' }] },
+		refused: [],
+	},
 	// shape: unknown keys, case 1
 	{
 		name: 'a misspelt `scopes` for `scope`',
@@ -329,6 +334,12 @@ const FIELD_ROWS: FieldRow[] = [
 ]
 
 describe('checkBriefFields: every refusal of the git-free fields, in one run', () => {
+	it('a brief with reviewer sections -> the parsed brief holds them as given', () => {
+		const sections = [{ heading: 'Deviations from the design', text: 'One pass kept.' }]
+
+		expect(checkBriefFields({ value: briefWith({ sections }) }).brief?.sections).toEqual(sections)
+	})
+
 	it.each(FIELD_ROWS)('$name', (row) => {
 		const value = briefWith(row.overrides)
 		if (row.partial)

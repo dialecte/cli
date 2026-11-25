@@ -1,6 +1,7 @@
 /**
  * `dialecte lot brief <id> --from <brief.json> --by <who> --reason <text>`: a started lot's public text rewritten - the
- * summary, the issue, step titles and behaviours, each lot's commit message, which its change request shows - and nothing
+ * summary, the issue, the reviewer sections, step titles and behaviours, each lot's commit message, which its change
+ * request shows - and nothing
  * else (scope, the steps' and lots' count and order, specs, a lot's paths, branch, plan... stay as started). The new brief passes the start's field and
  * public-text checks; it replaces the stored one whole, and a `brief` transition records the old and new hashes, who
  * and why, the lot's state and position kept.

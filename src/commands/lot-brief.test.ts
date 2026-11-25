@@ -86,6 +86,40 @@ describe('dialecte lot brief', { timeout: STORE_CASE_TIMEOUT }, () => {
 		})
 	})
 
+	it('reviewer sections added, then reordered, then removed → each rewrite stored, the line naming sections', () => {
+		const lot = changeRequestLot()
+		const first = { heading: 'Deviations from the design', text: 'One pass kept.' }
+		const second = { heading: 'Removals this fix refuses', text: 'Nothing outside the lot.' }
+
+		const added = rewrite({ lot, changes: { sections: [first, second] } })
+		expect(added.result.output).toBe(`lot brief: ${LOT_NAME} rewritten (sections) by ${BY}`)
+		expect(storedBriefOf(lot).value.sections).toEqual([first, second])
+
+		rewrite({ lot, changes: { sections: [second, first] } })
+		expect(storedBriefOf(lot).value.sections).toEqual([second, first])
+
+		const removed = rewrite({ lot, changes: { sections: [] } })
+		expect(removed.result.exitCode).toBe(0)
+		expect(storedBriefOf(lot).value.sections).toEqual([])
+	})
+
+	it('a reviewer section led by # → refused by the field check, nothing written', () => {
+		const lot = changeRequestLot()
+		const before = storedBriefOf(lot).text
+
+		const { result } = rewrite({
+			lot,
+			changes: { sections: [{ heading: '## Deviations', text: 'One pass kept.' }] },
+		})
+
+		expect(result).toEqual({
+			exitCode: 1,
+			output:
+				'lot brief: sections[0].heading must be one non-empty line of at most 120 characters, without a leading #: nothing written',
+		})
+		expect(storedBriefOf(lot).text).toBe(before)
+	})
+
 	it.each([
 		['its scope', { scope: ['src/', 'changes/', 'docs/'] }, 'scope'],
 		['a step added', { steps: [...stepWith(['a -> b']), ...stepWith(['c -> d'])] }, 'steps'],
@@ -104,7 +138,7 @@ describe('dialecte lot brief', { timeout: STORE_CASE_TIMEOUT }, () => {
 
 		expect(result.exitCode).toBe(1)
 		expect(result.output).toBe(
-			`lot brief: ${field} changed: only the summary, the issue, step titles and behaviours, and each lot's commit message change after the start, nothing written`,
+			`lot brief: ${field} changed: only the summary, the issue, the reviewer sections, step titles and behaviours, and each lot's commit message change after the start, nothing written`,
 		)
 		expect(storedBriefOf(lot).text).toBe(before)
 		expect(readTransitions({ lotFolder: lot.lotFolder })).toHaveLength(transitions)
@@ -135,7 +169,7 @@ describe('dialecte lot brief', { timeout: STORE_CASE_TIMEOUT }, () => {
 
 		expect(result.exitCode).toBe(1)
 		expect(result.output).toBe(
-			`lot brief: ${field} changed: only the summary, the issue, step titles and behaviours, and each lot's commit message change after the start, nothing written`,
+			`lot brief: ${field} changed: only the summary, the issue, the reviewer sections, step titles and behaviours, and each lot's commit message change after the start, nothing written`,
 		)
 		expect(storedBriefOf(lot).text).toBe(before)
 		expect(readTransitions({ lotFolder: lot.lotFolder })).toHaveLength(transitions)

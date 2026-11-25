@@ -139,6 +139,20 @@ describe('publicRefusalOf refuses what a public body never holds', () => {
 })
 
 describe('publicPiecesOf lists the free text of the records', () => {
+	it("a lot's reviewer sections → each heading and text a piece of the brief, checked as the others", () => {
+		const sources: ChangeRequestSources = {
+			messages: ['fix(x): x'],
+			sections: [{ heading: 'Deviations', text: 'Reads `src/x.ts` once.' }],
+			treeHash: 'a',
+			release: false,
+		}
+
+		expect(publicPiecesOf(sources).slice(1)).toEqual([
+			{ record: 'brief.json sections[0].heading', text: 'Deviations' },
+			{ record: 'brief.json sections[0].text', text: 'Reads `src/x.ts` once.' },
+		])
+	})
+
 	it('a lot with messages, summary, steps and a changelog → each piece with its record; no generated row', () => {
 		const sources: ChangeRequestSources = {
 			messages: ['feat(x): x', 'test(x): y'],

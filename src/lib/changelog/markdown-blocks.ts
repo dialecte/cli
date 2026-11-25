@@ -1,6 +1,7 @@
 /**
- * The one reader of markdown block structure for the changelog modules: a CommonMark parser's block tokens, read with
- * their line ranges so every block is sliced from the author's own lines and the parser's output is never written.
+ * The one reader of markdown block structure, for the changelog modules and the change request's sections and body
+ * checks: a CommonMark parser's block tokens, read with their line ranges so every block is sliced from the author's
+ * own lines and the parser's output is never written.
  */
 import {
 	COMMENT_CLOSE,

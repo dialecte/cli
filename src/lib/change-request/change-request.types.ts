@@ -3,6 +3,7 @@ import type { HostNouns } from '../host/host.types.ts'
 import type { BodyQuality } from '../quality/quality.types.ts'
 import type { DesignRow, ReviewRecord } from '../review-rounds/review-record.types.ts'
 import type { Effort, RiskClass } from '../risk/risk.types.ts'
+import type { BriefSection } from '../store/brief.types.ts'
 import type { TestsRecord } from '../tdd/tests-record.types.ts'
 
 /** A step of the brief as the body shows it: its title and behaviours, never its spec. */
@@ -19,6 +20,8 @@ export type ChangeRequestSources = {
 	messages: string[]
 	summary?: string
 	steps?: ChangeRequestStep[]
+	/** The sections the lot writes for its reviewer (the brief's), shown verbatim; absent when it gives none. */
+	sections?: BriefSection[]
 	issue?: number
 	changelog?: ChangeRequestChangelog
 	tests?: TestsRecord
@@ -67,3 +70,9 @@ export type PreparedChangeRequest = {
 	sources: ChangeRequestSources
 	nouns: HostNouns
 }
+
+/**
+ * A row of a lot's sent record (`sent-body.jsonl`): the hashes of lines the cli sent above the kept heading of one change
+ * request; the rows of a number together are every line it ever sent there.
+ */
+export type SentRow = { schema: 1; changeRequest: number; at: string; lines: string[] }

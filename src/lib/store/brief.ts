@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 
+import { linkIn } from '../change-request/public-body.ts'
 import { FORECAST_HOLD_TEXTS } from '../coordination/forecast.constants.ts'
 import { forecastLot } from '../coordination/forecast.ts'
 import { WORKTREE_ADD_STEP } from '../events/lot-report.constants.ts'
@@ -19,6 +20,7 @@ import {
 	normaliseScopeEntry,
 	scopeFaultOf,
 } from './brief-scope.ts'
+import { sectionsOf } from './brief-sections.ts'
 import {
 	BEHAVIOUR_ARROW,
 	BEHAVIOURS_MAX,
@@ -35,10 +37,12 @@ import {
 	ISSUE_DETAIL,
 	KEEP_FIELD,
 	LINE_BREAK_PATTERN,
+	LINK_LABEL,
 	PARENT_SEGMENT,
 	PLAN_LINE_SEPARATOR,
 	REFUSED_BRANCH_NAMES,
 	SCOPE_SEPARATOR,
+	SECTIONS_FIELD,
 	SUMMARY_MAX_LENGTH,
 	SUMMARY_PATH_DETAIL,
 	PUBLIC_TEXT_DETAIL,
@@ -76,6 +80,7 @@ import type {
 	BriefEffort,
 	BriefFieldsResult,
 	BriefLot,
+	BriefSection,
 	BriefStep,
 	CheckBriefResult,
 	CheckedBrief,
@@ -111,6 +116,7 @@ export function checkBriefFields(params: { value: unknown }): BriefFieldsResult 
 		}
 	const scope = scopeEntriesOf(value.scope)
 	const lots = lotsOf(value.lots)
+	const sections = sectionsOf({ value: value.sections })
 	const refused = [
 		...unknownKeyFaults(value),
 		...schemaFaults(value.schema),
@@ -123,6 +129,7 @@ export function checkBriefFields(params: { value: unknown }): BriefFieldsResult 
 		...summaryFaults(value.summary),
 		...issueFaults(value.issue),
 		...keepFaults(value.keep),
+		...sections.refused,
 		...stepFaults(value.steps),
 		...scope.refused,
 		...lots.refused,
@@ -146,6 +153,7 @@ export function checkBriefFields(params: { value: unknown }): BriefFieldsResult 
 			...(value.summary !== undefined && { summary: value.summary as string }),
 			...(value.issue !== undefined && { issue: value.issue as number }),
 			...(value.keep !== undefined && { keep: value.keep as string }),
+			...(sections.sections !== undefined && { sections: sections.sections }),
 		},
 	}
 }
@@ -440,11 +448,12 @@ function publicTextFaults(params: {
  * @internal
  */
 export function briefTextFaults(params: {
-	brief: Pick<ParsedBrief, 'summary' | 'steps'>
+	brief: Pick<ParsedBrief, 'summary' | 'steps' | 'sections'>
 	root: string
 	ids: ReadonlySet<string>
 }): Refusal[] {
 	const { brief } = params
+	const sections = sectionPiecesOf(brief.sections)
 	const texts = [
 		...(brief.summary === undefined
 			? []
@@ -459,13 +468,21 @@ export function briefTextFaults(params: {
 				})),
 			]
 		}),
+		...sections,
 	]
 	try {
-		return texts.flatMap(function faultOf({ field, text, path }) {
+		return texts.flatMap(function faultOf(piece: {
+			field: string
+			text: string
+			path: boolean
+			link?: boolean
+		}) {
+			const { field, text, path } = piece
 			const label = path
 				? publicTextLabel({ text, root: params.root, ids: params.ids })
 				: (referenceLabelIn({ text, root: params.root }) ??
-					(holdsPlanEntryId({ text, ids: params.ids }) ? PLAN_ENTRY_ID_LABEL : undefined))
+					(holdsPlanEntryId({ text, ids: params.ids }) ? PLAN_ENTRY_ID_LABEL : undefined) ??
+					(piece.link === true && linkIn(text) !== undefined ? LINK_LABEL : undefined))
 			return label === undefined
 				? []
 				: [
@@ -1016,4 +1033,24 @@ export function briefRepositoryOf(params: { briefFile: string }): string | undef
 	const repository = read.value.repository
 	if (typeof repository !== 'string' || repository === '') return undefined
 	return repositoryCheckoutOf({ value: repository, briefFolder: dirname(briefFile) }).main
+}
+
+/**
+ * The public pieces of a brief's sections, as `briefTextFaults` checks them: a reference, a plan entry id and a link
+ * are refused; a path is not (the render checks it against the lot's tree; the start has none to check it against).
+ */
+function sectionPiecesOf(
+	sections: readonly BriefSection[] | undefined,
+): { field: string; text: string; path: boolean; link: boolean }[] {
+	return (sections ?? []).flatMap(function sectionTexts(section, index) {
+		return [
+			{
+				field: `${SECTIONS_FIELD}[${index}].heading`,
+				text: section.heading,
+				path: false,
+				link: true,
+			},
+			{ field: `${SECTIONS_FIELD}[${index}].text`, text: section.text, path: false, link: true },
+		]
+	})
 }

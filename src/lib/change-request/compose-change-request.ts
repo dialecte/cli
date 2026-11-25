@@ -24,8 +24,10 @@ import {
 	CHANGE_REQUEST_LINES,
 	RENDERER_COMMENT_PATTERN,
 	REVIEWER_KINDS,
+	SECTIONS_PART,
 	TEMPLATE_FAULTS,
 } from './change-request.constants.ts'
+import { sectionClashOf, sectionLinesOf } from './reviewer-sections.ts'
 
 import type { HostNouns } from '../host/host.types.ts'
 import type {
@@ -51,20 +53,42 @@ export function composeChangeRequest(params: {
 	const lines = linesOf(params.template)
 	const markers = lines.map(markerOf)
 	const keptAt = markers.indexOf(KEPT_PART)
+	const sections = params.sources.sections ?? []
+	const clash = sectionClashOf({
+		sections,
+		lines,
+		anchor: keptAnchorOf(params.template),
+		nouns: params.nouns,
+	})
+	if (clash !== undefined) return { refusal: clash }
 	const kept =
 		params.kept ??
 		lines
 			.slice(keptAt + 1)
 			.join('\n')
 			.trim()
+	const sectionsAt = markers.indexOf(SECTIONS_PART)
 	const rendered = lines.slice(0, keptAt).flatMap(function renderLine(line, index) {
 		const part = markers[index]
+		if (part === SECTIONS_PART) return sectionLinesOf({ sections, lines, at: index })
+		// an empty sections part takes the blank line after its marker with it: no run of blank lines is left
+		if (
+			sectionsAt !== -1 &&
+			index === sectionsAt + 1 &&
+			sections.length === 0 &&
+			line.trim() === ''
+		)
+			return []
 		if (part !== undefined) return partLines({ part, sources: params.sources, nouns: params.nouns })
 		return RENDERER_COMMENT_PATTERN.test(line) ? [] : [line]
 	})
+	const before =
+		sectionsAt === -1 && sections.length > 0
+			? [sectionLinesOf({ sections, lines, at: keptAt }).join('\n')]
+			: []
 	return {
 		title: params.sources.messages[0] ?? '',
-		body: [rendered.join('\n').trim(), kept].join('\n\n').trim(),
+		body: [rendered.join('\n').trim(), ...before, kept].join('\n\n').trim(),
 	}
 }
 
@@ -102,8 +126,14 @@ export function templateFaultOf(template: string): string | undefined {
 	if (missing !== undefined) return TEMPLATE_FAULTS.missing.replace('{part}', missing)
 	const twice = parts.find((part) => markers.indexOf(part) !== markers.lastIndexOf(part))
 	if (twice !== undefined) return TEMPLATE_FAULTS.twice.replace('{part}', twice)
+	const unknown = markers.find(
+		(part) => part !== undefined && part !== SECTIONS_PART && !parts.includes(part),
+	)
+	if (unknown !== undefined) return TEMPLATE_FAULTS.unknown.replace('{part}', unknown)
+	if (markers.indexOf(SECTIONS_PART) !== markers.lastIndexOf(SECTIONS_PART))
+		return TEMPLATE_FAULTS.twice.replace('{part}', SECTIONS_PART)
 	const keptAt = markers.indexOf(KEPT_PART)
-	const late = FILLED_PARTS.find((part) => markers.indexOf(part) > keptAt)
+	const late = [...FILLED_PARTS, SECTIONS_PART].find((part) => markers.indexOf(part) > keptAt)
 	return late === undefined ? undefined : TEMPLATE_FAULTS.afterKept.replace('{part}', late)
 }
 
@@ -112,10 +142,8 @@ export function templateFaultOf(template: string): string | undefined {
  * can never push it out); undefined when the body has none.
  */
 export function keptTextOf(params: { template: string; body: string }): string | undefined {
-	const lines = linesOf(params.template)
-	const keptAt = lines.map(markerOf).indexOf(KEPT_PART)
-	const first = lines.slice(keptAt + 1).find((line) => line.trim() !== '')
-	if (keptAt === -1 || first === undefined) return undefined
+	const first = keptAnchorOf(params.template)
+	if (first === undefined) return undefined
 	const body = linesOf(params.body)
 	const at = body.lastIndexOf(first)
 	return at === -1 ? undefined : body.slice(at).join('\n').trim()
@@ -136,16 +164,26 @@ export function keptPartOf(params: {
 	if (kept !== undefined) return { kept }
 	const body = linesOf(params.body).join('\n').trim()
 	if (body === '' || PLACEHOLDER_BODY_PATTERN.test(body)) return { kept: undefined }
-	const lines = linesOf(params.template)
-	const heading = lines
-		.slice(lines.map(markerOf).indexOf(KEPT_PART) + 1)
-		.find((line) => line.trim() !== '')
 	return {
 		refusal: fillMessage({
 			template: CHANGE_REQUEST_LINES.keptMissing,
-			values: { ...params.nouns, heading: heading ?? '' },
+			values: { ...params.nouns, heading: keptAnchorOf(params.template) ?? '' },
 		}),
 	}
+}
+
+/**
+ * The line a body's kept part starts at: the template's first non-blank line after its kept marker; undefined for a
+ * template with no kept marker or nothing after it.
+ *
+ * @intent find where a change request body's person part starts, the one way every reader does
+ * @internal
+ */
+export function keptAnchorOf(template: string): string | undefined {
+	const lines = linesOf(template)
+	const keptAt = lines.map(markerOf).indexOf(KEPT_PART)
+	if (keptAt === -1) return undefined
+	return lines.slice(keptAt + 1).find((line) => line.trim() !== '')
 }
 
 /** The lines of a text, whatever line ends another system gave it. */

@@ -11,6 +11,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { prepareChangeRequest } from '../lib/change-request/change-request-sources.ts'
+import { sendWithRecord } from '../lib/change-request/send-with-record.ts'
 import { renderLotUsage } from '../lib/command-map/render-help.ts'
 import { resultOf } from '../lib/command-result.ts'
 import { EVENT_LINE_LIMIT } from '../lib/events/events.constants.ts'
@@ -35,7 +36,7 @@ import {
 	LOT_APPROVE_LINES,
 	QUEUE_VIA,
 } from './lot-approve.constants.ts'
-import { resolveLotPlace, sendRenderedText } from './lot-describe.ts'
+import { resolveLotPlace } from './lot-describe.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { StackRoute } from '../lib/handover/stack-queue.types.ts'
@@ -219,7 +220,13 @@ function recordAndQueue(params: {
 	const sent =
 		'refusal' in prepared
 			? prepared
-			: sendRenderedText({ host, worktree: place.worktree, prepared, changeRequest })
+			: sendWithRecord({
+					host,
+					worktree: place.worktree,
+					lotFolder: place.lotFolder,
+					prepared,
+					changeRequest,
+				})
 	const queueParams = {
 		root: place.worktree,
 		number: changeRequest.number,

@@ -367,7 +367,7 @@ describe('lot brief of a lot started with a keep', { timeout: STORE_CASE_TIMEOUT
 			started: 0,
 			exitCode: 1,
 			output:
-				"lot brief: keep changed: only the summary, the issue, step titles and behaviours, and each lot's commit message change after the start, nothing written",
+				"lot brief: keep changed: only the summary, the issue, the reviewer sections, step titles and behaviours, and each lot's commit message change after the start, nothing written",
 		})
 	})
 })

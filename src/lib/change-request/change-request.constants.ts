@@ -11,13 +11,46 @@ import type { CaseStatus } from '../tdd/tdd.types.ts'
 export const TEMPLATE_PATHS_JOIN = ' or '
 
 /** A template line the renderer fills: `<!-- dialecte:<part> -->` alone on its line. */
-export const PART_MARKER_PATTERN = /^<!-- dialecte:([a-z]+) -->$/
+export const PART_MARKER_PATTERN = /^<!-- dialecte:([a-z][a-z-]*) -->$/
 
 /** Any template comment of the renderer (the header note included): never in a rendered body. */
 export const RENDERER_COMMENT_PATTERN = /^<!-- dialecte[: ].*-->$/
 
 /** The part whose template text a person owns once the change request exists: kept from the current body. */
 export const KEPT_PART = 'kept'
+
+/** The optional part where the lot's reviewer sections render; a template without it gets them before the kept part. */
+export const SECTIONS_PART = 'reviewer-sections'
+
+/** An ATX heading line of a template or a body: its `#` marks and its text. */
+export const ATX_HEADING_PATTERN = /^(#{1,6})[ \t]+(.*?)[ \t]*#*[ \t]*$/
+
+/** Any line end another system wrote (`\r\n`, a lone `\r`): read as `\n`. */
+export const ANY_LINE_END_PATTERN = /\r\n?/g
+
+/** The spaces and blank lines that end a text. */
+export const TRAILING_SPACE_PATTERN = /\s+$/
+
+/** The hex characters of a line's sha256 the sent record keeps: enough to tell a person's line from the cli's. */
+export const SENT_HASH_LENGTH = 16
+
+/** A hash of the sent record, as its rows hold it. */
+export const SENT_HASH_PATTERN = /^[0-9a-f]{16}$/
+
+/** How many dropped lines a refusal quotes. */
+export const SENT_LINES_NAMED = 3
+
+/** The level of a setext heading by its underline. */
+export const SETEXT_LEVELS: Readonly<Record<string, number>> = { '=': 1, '-': 2 }
+
+/** A task box as the render owns it: unticked (the records decide a tick above the kept heading). */
+export const UNTICKED_TASK_MARKER = '- [ ]'
+
+/** What a refusal names for a block that never closes above the kept heading (the reader cannot see past it). */
+export const UNCLOSED_BLOCK_LINE = 'a fence, comment or HTML block that never closes'
+
+/** The level of the sections' headings when no template heading stands above them. */
+export const DEFAULT_SECTION_LEVEL = 3
 
 /** The parts the renderer fills; a template without all of them is no template of the renderer. */
 export const FILLED_PARTS: readonly string[] = [
@@ -50,6 +83,7 @@ export const TEMPLATE_FAULTS = {
 	missing: 'missing marker <!-- dialecte:{part} -->',
 	twice: 'marker {part} twice',
 	afterKept: 'marker {part} after kept',
+	unknown: 'marker {part} names no part',
 } as const
 
 /** The body an earlier `lot land` wrote before the template rendered it: nobody's text, replaced whole. */
@@ -115,6 +149,8 @@ export const PIECE_RECORDS = {
 	behaviour: 'brief.json steps[{index}].behaviours[{behaviour}]',
 	overlap: 'overlaps.jsonl',
 	review: 'review.jsonl',
+	sectionHeading: 'brief.json sections[{index}].heading',
+	sectionText: 'brief.json sections[{index}].text',
 	tests: 'tests.json',
 } as const
 
@@ -152,6 +188,20 @@ export const CHANGE_REQUEST_LINES = {
 	keptMissing:
 		"the {changeRequestNoun} body holds text the render would drop (no '{heading}' heading): move it under that heading or clear it, nothing sent",
 	recordValue: '{record} holds a {field} its writer never writes: fix that record, nothing sent',
+	handEditedOne:
+		"the {changeRequestNoun} body holds 1 line above '{heading}' that the render would drop ({lines}): record it with dialecte lot brief (sections) or in the record it belongs to, move it under '{heading}', or remove it from the body (a line another cli version wrote is removed there); nothing sent",
+	handEditedMany:
+		"the {changeRequestNoun} body holds {count} lines above '{heading}' that the render would drop ({lines}): record them with dialecte lot brief (sections) or in the record they belong to, move them under '{heading}', or remove them from the body (a line another cli version wrote is removed there); nothing sent",
+	sentUnread:
+		"{file} cannot be read ({reason}): remove it, and the next render checks the body's headings and records again; nothing sent",
+	sentUnwritten: '{file} cannot be written ({reason}): nothing sent',
+	rereadClosed: 'the {changeRequestNoun} #{number} is {state} now: nothing sent',
+	rereadGone:
+		'the {changeRequestNoun} #{number} cannot be read again before the send: nothing sent',
+	sectionHeadingClash:
+		"brief.json sections[{index}].heading repeats the heading '{heading}' of the {changeRequestNoun} template: rename it with dialecte lot brief, nothing sent",
+	sectionKeptLine:
+		"brief.json sections[{index}].text holds the line '{line}' the kept part starts at: reword it with dialecte lot brief, nothing sent",
 } as const
 
 /** The gate record modes a `tests.json` gate part holds: any other value is no gate's. */
