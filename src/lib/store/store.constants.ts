@@ -49,6 +49,10 @@ export const STORE_FILES: StoreFileNames = {
 	designReviews: 'design-reviews',
 	// `lot start` records the shared areas its base declares here (DESIGN-GATE)
 	baseDeclared: 'base-declared.json',
+	// `lot start --from` records the canceled lot it carries receipts from here (FIX-receipt-carry-over)
+	carry: 'carry.json',
+	// `lot start --from` copies the source's ledger and lot file into this folder, as `ledger.json` and `lot.json`
+	carryCopies: 'carry',
 }
 
 /** The folder of the store in the repository's git common folder. */

@@ -39,7 +39,16 @@ import {
 	RISK_SCHEMA,
 } from '../lib/risk/risk.constants.ts'
 import { BRIEF_EFFORTS } from '../lib/store/brief.constants.ts'
-import { checkBrief, overlapHoldOf } from '../lib/store/brief.ts'
+import { briefRepositoryOf, checkBrief, overlapHoldOf } from '../lib/store/brief.ts'
+import {
+	CARRY_DECLARATION_COPY_NAME,
+	CARRY_DRY_RUN_LINE,
+	CARRY_LEDGER_COPY_NAME,
+	CARRY_SCHEMA,
+	CARRY_SIMULATE_USAGE,
+	CARRY_START_LINE,
+} from '../lib/store/carry-source.constants.ts'
+import { checkCarrySource, checkCarrySourceState } from '../lib/store/carry-source.ts'
 import { readIdentity } from '../lib/store/identity.ts'
 import { KEEP_REASON_LIMIT, KEEP_SCHEMA } from '../lib/store/keep-decisions.constants.ts'
 import { appendKeepLine } from '../lib/store/keep-decisions.ts'
@@ -79,6 +88,7 @@ import {
 	GO_AHEAD_LABELS,
 	LOT_LINK_SEGMENTS,
 	RUNNERS,
+	STORE_FILES,
 	STORE_REFUSAL,
 } from '../lib/store/store.constants.ts'
 import { appendTransition } from '../lib/store/transitions.ts'
@@ -119,6 +129,12 @@ import type { StepHandle, WorktreeAddParts } from '../lib/events/record-step.typ
 import type { MetLotsSettled } from '../lib/landing/met-lots.types.ts'
 import type { RiskClass, RiskDerivation } from '../lib/risk/risk.types.ts'
 import type { BriefEffort, CheckedBrief } from '../lib/store/brief.types.ts'
+import type {
+	CarryFile,
+	CarrySource,
+	CarrySourceState,
+	CarrySummary,
+} from '../lib/store/carry-source.types.ts'
 import type { KeepLine } from '../lib/store/keep-decisions.types.ts'
 import type { LotOverlapRecord } from '../lib/store/lot-overlaps.types.ts'
 import type { ScenarioFile } from '../lib/store/scenarios.types.ts'
@@ -184,7 +200,6 @@ export function prepareStart(params: {
 	}
 }
 
-// dialecte-allow duplicate-read: the body of prepareStart, which names the settled lots on its exits
 /** The checks of `prepareStart`; an exit after the brief check carries what the settle of the met lots found. */
 function prepareStartChecks(params: {
 	cwd: string
@@ -232,6 +247,14 @@ function prepareStartChecks(params: {
 	const simulation = scenarioName === undefined ? undefined : simulationOf({ scenarioName, seams })
 	if (typeof simulation === 'string')
 		return { exit: errorOutput({ exitCode: 2, message: simulation, json }) }
+	const carryState = carrySourceStateOf({
+		from: read.values.get('from'),
+		simulated: simulation !== undefined,
+		briefFile: resolve(params.cwd, briefPath),
+		cwd: params.cwd,
+		json,
+	})
+	if (carryState !== undefined && 'exit' in carryState) return carryState
 	const stackOn = read.values.get('on')
 	const checked = checkBrief({
 		briefPath,
@@ -254,6 +277,12 @@ function prepareStartChecks(params: {
 		return { exit: lotRefusalExit({ lines: [checked.stackRefusal], json }), settle: checked.settle }
 	if (!checked.checked)
 		return { exit: refusedOutput({ refused: checked.refused, json }), settle: checked.settle }
+	const carry =
+		carryState === undefined
+			? undefined
+			: checkCarrySource({ source: carryState, repository: checked.checked.repository })
+	if (carry !== undefined && 'refusals' in carry)
+		return { exit: lotRefusalExit({ lines: carry.refusals, json }), settle: checked.settle }
 	const { brief, stack } = stackedBriefOf(checked.checked)
 	const wordRefusal = goAheadRefusalOf({
 		brief,
@@ -304,9 +333,34 @@ function prepareStartChecks(params: {
 			derivation,
 			stack,
 			keep,
+			carry,
 			settle: checked.settle,
 		},
 	}
+}
+
+/**
+ * The lot `--from` names, checked before the brief (a live source still holds its scope, so a rebuild of it would
+ * otherwise be refused as an overlap first), resolved in the brief's repository (the folder the start runs from when
+ * the brief names none: the brief check then refuses it); the exit of a refusal, or of `--from` with `--simulate` (a
+ * simulated lot has no worktree and runs no tdd). Undefined without `--from`.
+ */
+function carrySourceStateOf(params: {
+	from: string | undefined
+	simulated: boolean
+	briefFile: string
+	cwd: string
+	json: boolean
+}): CarrySourceState | { exit: CommandResult } | undefined {
+	const { from, json } = params
+	if (from === undefined) return undefined
+	if (params.simulated)
+		return { exit: errorOutput({ exitCode: 2, message: CARRY_SIMULATE_USAGE, json }) }
+	const state = checkCarrySourceState({
+		cwd: briefRepositoryOf({ briefFile: params.briefFile }) ?? params.cwd,
+		argument: from,
+	})
+	return 'refusals' in state ? { exit: lotRefusalExit({ lines: state.refusals, json }) } : state
 }
 
 /**
@@ -543,7 +597,9 @@ function finishStartChecked(params: {
 			riskLines: [
 				...riskLines,
 				...keepLinesOf({ keep: prepared.keep, template: START_KEEP_TEXTS.dryRun }),
+				...carryLinesOf({ carry: prepared.carry, template: CARRY_DRY_RUN_LINE }),
 			],
+			carry: prepared.carry,
 			json,
 		})
 	try {
@@ -557,6 +613,7 @@ function finishStartChecked(params: {
 			simulation: prepared.simulation,
 			stack: prepared.stack,
 			keep: prepared.keep,
+			carry: prepared.carry,
 		})
 	} catch (error) {
 		return thrownOutput({ error, json })
@@ -568,6 +625,26 @@ function keepLinesOf(params: { keep: KeepLine | undefined; template: string }): 
 	return params.keep === undefined
 		? []
 		: [fillMessage({ template: params.template, values: { reason: params.keep.reason } })]
+}
+
+/** The line naming a start's carry (`would carry from ...` in a dry run, `carry from ...` once started); none without. */
+function carryLinesOf(params: { carry: CarrySource | undefined; template: string }): string[] {
+	const summary = carrySummaryOf(params.carry)
+	return summary === undefined
+		? []
+		: [
+				fillMessage({
+					template: params.template,
+					values: { lot: summary.from, state: summary.state, receipts: String(summary.receipts) },
+				}),
+			]
+}
+
+/** What a start prints and answers of its carry (`--json`'s `carry`); undefined without `--from`. */
+function carrySummaryOf(carry: CarrySource | undefined): CarrySummary | undefined {
+	return carry === undefined
+		? undefined
+		: { from: basename(carry.lot), state: carry.state, receipts: carry.receipts }
 }
 
 /**
@@ -733,8 +810,10 @@ function startChecked(params: {
 	stack: StartStack | undefined
 	/** The first `keep` line, written with the start's records before the publish rename (KEEP 3.4). */
 	keep: KeepLine | undefined
+	/** `--from <lot>`: the canceled lot whose receipts ride the publish rename (never with a simulation). */
+	carry: CarrySource | undefined
 }): CommandResult {
-	const { brief, now, seams, json, simulation, risk, stack, keep } = params
+	const { brief, now, seams, json, simulation, risk, stack, keep, carry } = params
 	const store = locateStore({ from: brief.repository })?.store
 	if (store === undefined)
 		return errorOutput({ exitCode: 2, message: `${brief.repository} holds no git folder`, json })
@@ -781,7 +860,7 @@ function startChecked(params: {
 		...(simulation === undefined
 			? {
 					beforeIdentity: function writeStartRecords(temporary: string) {
-						writeStartRecordsTo({ folder: temporary, brief, risk, now, stack, keep })
+						writeStartRecordsTo({ folder: temporary, brief, risk, now, stack, keep, carry })
 					},
 				}
 			: keep !== undefined && {
@@ -798,9 +877,9 @@ function startChecked(params: {
 		})
 	// a simulated lot holds no lock and no branch: never re-checked, no worktree made
 	if (simulation)
-		return startedOutput({ name, lotFolder, worktree: null, notes: [], risk, json, keep })
+		return startedOutput({ name, lotFolder, worktree: null, notes: [], risk, json, keep, carry })
 	try {
-		return startPublished({ name, lotFolder, brief, now, seams, risk, json, keep })
+		return startPublished({ name, lotFolder, brief, now, seams, risk, json, keep, carry })
 	} catch (error) {
 		// the lot exists from here on: the exit names it
 		return thrownOutput({ error, json, lot: name })
@@ -817,8 +896,9 @@ function startPublished(params: {
 	risk: StartRisk
 	json: boolean
 	keep: KeepLine | undefined
+	carry: CarrySource | undefined
 }): CommandResult {
-	const { name, lotFolder, brief, now, seams, json, risk, keep } = params
+	const { name, lotFolder, brief, now, seams, json, risk, keep, carry } = params
 	const overlap = recheckedFailure({
 		lotFolder,
 		caseInsensitive: brief.caseInsensitive,
@@ -840,6 +920,7 @@ function startPublished(params: {
 		risk,
 		json,
 		keep,
+		carry,
 	})
 }
 
@@ -1029,6 +1110,8 @@ export function writeStartRecordsTo(params: {
 	stack: StartStack | undefined
 	/** The first `keep` line of a start with `--keep` or a brief `keep`. */
 	keep?: KeepLine
+	/** `--from <lot>`: `carry.json` and the copies of the source's ledger and lot file. */
+	carry?: CarrySource
 }): void {
 	const { folder, brief, risk, now, stack } = params
 	writeStartRiskLines({ folder, risk, now })
@@ -1043,6 +1126,30 @@ export function writeStartRecordsTo(params: {
 			lotFolder: folder,
 			record: { schema: STACK_SCHEMA, parent: stack.parent },
 		})
+	if (params.carry !== undefined) writeCarryRecords({ folder, carry: params.carry, now })
+}
+
+/**
+ * `carry.json` and `carry/ledger.json` (`carry/lot.json` when the source has a lot file), the bytes as the check read
+ * them: `tdd red` reads only these copies, checked against the sha256 recorded beside them (FIX-receipt-carry-over D2).
+ */
+function writeCarryRecords(params: { folder: string; carry: CarrySource; now: Date }): void {
+	const { folder, carry } = params
+	const copies = join(folder, STORE_FILES.carryCopies)
+	mkdirSync(copies, { recursive: true })
+	writeFileSync(join(copies, CARRY_LEDGER_COPY_NAME), carry.ledger.bytes)
+	if (carry.declaration !== undefined)
+		writeFileSync(join(copies, CARRY_DECLARATION_COPY_NAME), carry.declaration.bytes)
+	const record: CarryFile = {
+		schema: CARRY_SCHEMA,
+		from: basename(carry.lot),
+		state: carry.state,
+		at: params.now.toISOString(),
+		ledger: carry.ledger.hash,
+		...(carry.declaration !== undefined && { declaration: carry.declaration.hash }),
+		receipts: carry.receipts,
+	}
+	writeFileSync(join(folder, STORE_FILES.carry), recordText(record))
 }
 
 /**
@@ -1214,9 +1321,12 @@ function dryRunOutput(params: {
 	simulation: Simulation | undefined
 	/** The effort line a start would print (D13). */
 	riskLines: string[]
+	/** `--from <lot>`: what the start would carry (`carry` in the JSON). */
+	carry: CarrySource | undefined
 	json: boolean
 }): CommandResult {
 	const { brief, simulation } = params
+	const carry = carrySummaryOf(params.carry)
 	const lot = worktreeFolderName({
 		index: nextWorktreeIndex({ worktreesFolder: params.worktreesFolder }),
 		repository: brief.repository,
@@ -1249,7 +1359,14 @@ function dryRunOutput(params: {
 	}
 	const worktree = join(params.worktreesFolder, lot)
 	const next = startNextOf(params.briefPath)
-	if (params.json) return { exitCode: 0, output: jsonOf({ dryRun: true, lot, worktree, next }, 2) }
+	if (params.json)
+		return {
+			exitCode: 0,
+			output: jsonOf(
+				{ dryRun: true, lot, worktree, ...(carry !== undefined && { carry }), next },
+				2,
+			),
+		}
 	return resultOf({
 		exitCode: 0,
 		lines: [
@@ -1275,8 +1392,11 @@ function startedOutput(params: {
 	json: boolean
 	/** The keep the start wrote: `kept: <why>` in its lines and its JSON. */
 	keep: KeepLine | undefined
+	/** The carry the start wrote: its line and `carry` in its JSON. */
+	carry: CarrySource | undefined
 }): CommandResult {
 	const { risk, worktree, keep } = params
+	const carry = carrySummaryOf(params.carry)
 	// a simulated lot has no worktree: it waits; a real one runs its stations, landing as its repository's flow says
 	const { runner, next } =
 		worktree === null
@@ -1295,6 +1415,7 @@ function startedOutput(params: {
 					riskClass: risk.derivation,
 					notes: params.notes,
 					...(keep !== undefined && { kept: keep.reason }),
+					...(carry !== undefined && { carry }),
 					next,
 				},
 				2,
@@ -1308,6 +1429,7 @@ function startedOutput(params: {
 			`worktree: ${worktree ?? 'none (simulated)'}`,
 			`runner: ${runner}`,
 			...keepLinesOf({ keep, template: START_KEEP_TEXTS.started }),
+			...carryLinesOf({ carry: params.carry, template: CARRY_START_LINE }),
 			...risk.lines,
 			...params.notes.map((note) => `note: ${note}`),
 			`next: ${next}`,

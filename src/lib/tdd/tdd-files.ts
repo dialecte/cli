@@ -33,7 +33,13 @@ import { listRenames, presentTextOf } from './test-code-presence.ts'
 import { testCodeTokens } from './test-code-tokens.ts'
 
 import type { PackageJson } from '../package-json.types.ts'
-import type { ChangedTestFile, ProductionState, TddEntry, TddLedger } from './tdd.types.ts'
+import type {
+	ChangedTestFile,
+	LedgerUnreadable,
+	ProductionState,
+	TddEntry,
+	TddLedger,
+} from './tdd.types.ts'
 import type { ChangeQuery } from './test-code-presence.types.ts'
 
 export function hashFile(path: string): string {
@@ -167,18 +173,33 @@ export function isProductionPath(params: {
 export function readLedger(root: string): TddLedger | { failure: string } {
 	const path = ledgerPath(root)
 	if (!existsSync(path)) return { version: LEDGER_VERSION, entries: [] }
-	let ledger: TddLedger
-	try {
-		ledger = JSON.parse(readFileSync(path, 'utf8')) as TddLedger
-	} catch {
+	const ledger = ledgerOfText(readFileSync(path, 'utf8'))
+	if (!('unreadable' in ledger)) return ledger
+	if (ledger.unreadable === 'json')
 		return {
 			failure: `the receipts in ${path} cannot be read (not JSON); move it aside to start again`,
 		}
+	return {
+		failure: `the receipts in ${path} are not of this cli (version ${LEDGER_VERSION} expected); move it aside to start again`,
+	}
+}
+
+/**
+ * The ledger a ledger file's text holds, or why it holds none: not JSON, or not of this cli's version. Pure: the
+ * reader of a ledger copied as bytes (`lot start --from`) judges the bytes it hashed.
+ *
+ * @intent tell whether a text is a tdd ledger of this cli
+ * @internal
+ */
+export function ledgerOfText(text: string): TddLedger | { unreadable: LedgerUnreadable } {
+	let ledger: TddLedger
+	try {
+		ledger = JSON.parse(text) as TddLedger
+	} catch {
+		return { unreadable: 'json' }
 	}
 	if (ledger?.version !== LEDGER_VERSION || !Array.isArray(ledger.entries))
-		return {
-			failure: `the receipts in ${path} are not of this cli (version ${LEDGER_VERSION} expected); move it aside to start again`,
-		}
+		return { unreadable: 'version' }
 	return ledger
 }
 
@@ -212,7 +233,13 @@ export function appendEntries(params: {
 	writeFileSync(ledgerPath(params.root), `${JSON.stringify(next, null, '\t')}\n`)
 }
 
-function ledgerPath(root: string): string {
+/**
+ * Where the ledger of the worktree `root` is: its git folder's `dialecte-tdd.json`.
+ *
+ * @intent find the tdd ledger file of a worktree
+ * @internal
+ */
+export function ledgerPath(root: string): string {
 	return join(gitFolderOf(root), TDD_LEDGER_FILE)
 }
 

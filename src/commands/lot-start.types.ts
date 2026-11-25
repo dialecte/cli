@@ -3,6 +3,7 @@ import type { HostAdapter } from '../lib/host/host.types.ts'
 import type { MetLotsSettled } from '../lib/landing/met-lots.types.ts'
 import type { RiskDerivation } from '../lib/risk/risk.types.ts'
 import type { BriefEffort, CheckedBrief } from '../lib/store/brief.types.ts'
+import type { CarrySource } from '../lib/store/carry-source.types.ts'
 import type { KeepLine } from '../lib/store/keep-decisions.types.ts'
 import type { ScenarioStep, ScenarioTable } from '../lib/store/scenarios.types.ts'
 import type { SynchronousPause } from '../lib/store/store.types.ts'
@@ -85,6 +86,8 @@ export type PreparedStart = {
 	stack: StartStack | undefined
 	/** The first `keep` line of a start with `--keep` or a brief `keep` (KEEP 3.4); none without. */
 	keep: KeepLine | undefined
+	/** `--from <lot>`: the canceled lot the start carries receipts from, as checked; none without. */
+	carry: CarrySource | undefined
 	/** What the settle of the lots the scope met found (FIX-start-settles-landed); none when none was met. */
 	settle: MetLotsSettled | undefined
 }
