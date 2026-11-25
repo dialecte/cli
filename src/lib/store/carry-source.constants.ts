@@ -17,7 +17,7 @@ export const CARRY_REFUSALS = {
 	damaged: 'lot start: --from {lot} is damaged: lot status {lot} says how, nothing written',
 	simulated:
 		'lot start: --from {lot} is simulated: it has no worktree and no receipts, nothing written',
-	live: 'lot start: --from {lot} is {state}: stop it first (lot stop {lot}), nothing written',
+	live: `lot start: --from {lot} is {state}: stop it first (${CARRY_STOP_COMMAND} {lot}), nothing written`,
 	markerOnly:
 		'lot start: --from {lot} is canceled by its marker only: its cancel is not settled, wait for the run its marker names to end, nothing written',
 	onMain:

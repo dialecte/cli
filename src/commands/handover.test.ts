@@ -4331,6 +4331,12 @@ const LEGEND: Array<Array<{ term: string; meaning: string; look: string }>> = [
 			look: 'look: when the move was more than a split or a rename',
 		},
 		{
+			term: 'carried',
+			meaning:
+				'a case of a lot rebuilt with lot start --from: its red carried from the same case of the canceled lot, its test call, test code and production slice the ones that lot proved it on; its green is run again in this lot',
+			look: 'look: when the canceled lot red-proved it in a way you would not trust (its other flags show it)',
+		},
+		{
 			term: 'helper code changed near unchanged cases (noise)',
 			meaning:
 				'unchanged cases flagged because test code around them changed; nothing proven is weakened',

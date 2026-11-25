@@ -200,6 +200,7 @@ export function prepareStart(params: {
 	}
 }
 
+// dialecte-allow duplicate-read: the body of prepareStart, which names the settled lots on its exits
 /** The checks of `prepareStart`; an exit after the brief check carries what the settle of the met lots found. */
 function prepareStartChecks(params: {
 	cwd: string
