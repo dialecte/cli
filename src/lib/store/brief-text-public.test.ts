@@ -121,3 +121,69 @@ describe(
 			})
 	},
 )
+
+describe('brief sections - their public text', { timeout: STORE_CASE_TIMEOUT }, () => {
+	it('a section text naming a path → no refusal at the start: the render checks it against the tree', () => {
+		const workspace = createBriefWorkspace()
+
+		expect(
+			refusedOf({
+				workspace,
+				overrides: {
+					sections: [{ heading: 'Deviations', text: 'The reader moved to src/lib/reader.ts.' }],
+				},
+			}),
+		).toEqual([])
+	})
+
+	it('a section text holding a link → refused, the field named', () => {
+		const workspace = createBriefWorkspace()
+
+		expect(
+			refusedOf({
+				workspace,
+				overrides: {
+					sections: [{ heading: 'Deviations', text: 'As https://example.org/notes says.' }],
+				},
+			}),
+		).toEqual([
+			{ field: 'sections[0].text', rule: 'public-text', detail: 'sections[0].text holds a link' },
+		])
+	})
+
+	it('a section heading holding an entry id of the plan that holds the lot → refused', () => {
+		const workspace = createBriefWorkspace()
+		markWordPlan(workspace)
+
+		expect(
+			refusedOf({
+				workspace,
+				overrides: { sections: [{ heading: 'What CONFIG left', text: 'One reader.' }] },
+			}),
+		).toEqual([
+			{
+				field: 'sections[0].heading',
+				rule: 'public-text',
+				detail: 'sections[0].heading holds a plan entry id',
+			},
+		])
+	})
+
+	it('a section text holding a forbidden word → refused, the label named, never the word', () => {
+		const workspace = createBriefWorkspace()
+		configureMachine({ userFileLines: [FIRST_WORD] })
+
+		expect(
+			refusedOf({
+				workspace,
+				overrides: { sections: [{ heading: 'Deviations', text: `The ${FIRST_WORD} reader.` }] },
+			}),
+		).toEqual([
+			{
+				field: 'sections[0].text',
+				rule: 'public-text',
+				detail: 'sections[0].text holds a forbidden word',
+			},
+		])
+	})
+})

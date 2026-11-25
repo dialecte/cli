@@ -2,7 +2,7 @@
  * `dialecte lot describe <id>`: the lot's pull request rendered from its records through the repository's template, its
  * open pull request updated when it reads otherwise; a body holding what a public text never holds is not sent.
  */
-import { rmSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { FIXTURE_TEMPLATE_PATH } from '../../test/change-request-template.constants.ts'
@@ -110,7 +110,7 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 		const result = runLotDescribe({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
 
 		expect(result.exitCode).toBe(0)
-		expect(calls).toEqual(['read feat/x', `edit 7 "${LOT_MESSAGE}"`])
+		expect(calls).toEqual(['read feat/x', 'read 7', `edit 7 "${LOT_MESSAGE}"`])
 		expect(bodies[0]).toContain(LOT_SUMMARY)
 		expect(result.output).toBe(
 			'change request #7 updated from the lot records: https://host.test/pull/7',
@@ -126,7 +126,7 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 
 		const result = runLotDescribe({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
 
-		expect(calls.slice(2)).toEqual(['read feat/x'])
+		expect(calls.slice(3)).toEqual(['read feat/x', 'read 7'])
 		expect(result.output).toBe(
 			'change request #7 already reads the lot records: https://host.test/pull/7',
 		)
@@ -324,7 +324,7 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 			host: windows.host,
 		})
 
-		expect(windows.calls).toEqual(['read feat/x'])
+		expect(windows.calls).toEqual(['read feat/x', 'read 7'])
 		expect(result.output).toContain('already reads the lot records')
 	})
 
@@ -398,7 +398,46 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 			output:
 				"lot describe: the change request body holds text the render would drop (no '### Checklist for the reviewer when doing the PR review' heading): move it under that heading or clear it, nothing sent",
 		})
-		expect(calls).toEqual(['read feat/x'])
+		expect(calls).toEqual(['read feat/x', 'read 7'])
+	})
+
+	it('a paragraph written on the host above the kept heading after a send → refused naming it, nothing sent', () => {
+		const lot = changeRequestLot()
+		const first = recordingHost({ existing: openChangeRequest({ title: 'old', body: '' }) })
+		runLotDescribe({ cwd: lot.workspace.repository, argv: [LOT_NAME], host: first.host })
+		const edited = first.bodies[0].replace(
+			`${LOT_SUMMARY}\n`,
+			`${LOT_SUMMARY}\n\nA note by hand.\n`,
+		)
+		const { host, calls } = recordingHost({
+			existing: openChangeRequest({ title: LOT_MESSAGE, body: edited }),
+		})
+
+		const result = runLotDescribe({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
+
+		expect({ result, calls }).toEqual({
+			result: {
+				exitCode: 1,
+				output:
+					"lot describe: the change request body holds 1 line above '### Checklist for the reviewer when doing the PR review' that the render would drop ('A note by hand.'): record it with dialecte lot brief (sections) or in the record it belongs to, move it under '### Checklist for the reviewer when doing the PR review', or remove it from the body (a line another cli version wrote is removed there); nothing sent",
+			},
+			calls: ['read feat/x', 'read 7'],
+		})
+	})
+
+	it('a send → its lines recorded in the lot folder; --print after it → the record as it was', () => {
+		const lot = changeRequestLot()
+		const { host } = recordingHost({ existing: openChangeRequest({ title: 'old', body: '' }) })
+		runLotDescribe({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
+		const file = join(lot.lotFolder, 'sent-body.jsonl')
+		const recorded = existsSync(file) ? readFileSync(file, 'utf8') : 'no record'
+
+		runLotDescribe({ cwd: lot.workspace.repository, argv: [LOT_NAME, '--print'], host })
+
+		expect({
+			recorded: recorded.startsWith('{"schema":1,"changeRequest":7,'),
+			after: existsSync(file) ? readFileSync(file, 'utf8') : 'no record',
+		}).toEqual({ recorded: true, after: recorded })
 	})
 
 	it("an open pull request with lot land's old placeholder body → replaced: no person wrote it", () => {

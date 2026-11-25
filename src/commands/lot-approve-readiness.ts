@@ -4,7 +4,8 @@
  * git, and the host (the queue kind for a lot queued alone, a stacked lot's parent and the host's stacks).
  */
 import { prepareChangeRequest } from '../lib/change-request/change-request-sources.ts'
-import { keptPartOf } from '../lib/change-request/compose-change-request.ts'
+import { readSentBody } from '../lib/change-request/send-with-record.ts'
+import { renderChangeRequest } from '../lib/change-request/sent-body.ts'
 import { designGateOf } from '../lib/design/design-gate.ts'
 import { designStateWithReasons } from '../lib/design/design-line.ts'
 import { DESIGN_APPROVE_REASON } from '../lib/design/design.constants.ts'
@@ -97,12 +98,24 @@ function stackReasons(params: {
 	return refused === undefined ? [] : [refused.refusal]
 }
 
-/** Why the change request's text cannot be sent: the records do not render, or the live body holds text it would drop. */
+/**
+ * Why the change request's text cannot be sent: the records do not render, the sent record cannot be read, or the live
+ * body holds a line the render would drop.
+ */
 function renderReasons(params: { place: LotPlace; changeRequest: ChangeRequest }): string[] {
 	const prepared = prepareChangeRequest({ ...params.place, templateRefs: ['HEAD'] })
-	const kept =
-		'refusal' in prepared ? prepared : keptPartOf({ ...prepared, body: params.changeRequest.body })
-	return 'refusal' in kept ? [kept.refusal] : []
+	if ('refusal' in prepared) return [prepared.refusal]
+	const record = readSentBody({
+		lotFolder: params.place.lotFolder,
+		changeRequest: params.changeRequest.number,
+	})
+	if ('refusal' in record) return [record.refusal]
+	const text = renderChangeRequest({
+		...prepared,
+		current: params.changeRequest.body,
+		sent: record.sent,
+	})
+	return 'refusal' in text ? [text.refusal] : []
 }
 
 /**

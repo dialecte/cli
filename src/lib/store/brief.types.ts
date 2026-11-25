@@ -9,6 +9,12 @@ export type BriefStep = { title: string; spec: string; behaviours: string[] }
 
 export type BriefLot = { paths: string[]; message: string }
 
+/** A section a lot writes for its reviewer: a one-line heading (no `#`) and its markdown text, shown verbatim. */
+export type BriefSection = { heading: string; text: string }
+
+/** The sections a brief value holds once read, and every refusal of their shape. */
+export type BriefSectionsRead = { sections: BriefSection[] | undefined; refused: Refusal[] }
+
 /** A brief that passed every check that needs no file system and no git; its scope and lot paths are normalised. */
 export type ParsedBrief = {
 	schema: 1
@@ -26,6 +32,8 @@ export type ParsedBrief = {
 	summary?: string
 	/** The issue the lot's change request closes; absent when the brief gives none. */
 	issue?: number
+	/** The sections the lot writes for its reviewer; absent when the brief gives none. */
+	sections?: BriefSection[]
 	/** Why the lot is kept on purpose from its start (KEEP 3.4): its first `keep` line; absent when the brief gives none. */
 	keep?: string
 }

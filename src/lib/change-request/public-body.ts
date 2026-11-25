@@ -43,6 +43,7 @@ export function publicPiecesOf(sources: ChangeRequestSources): PublicPiece[] {
 			})),
 		]
 	})
+	const sections = sectionPiecesOf(sources)
 	const { changelog } = sources
 	const changes =
 		changelog === undefined
@@ -74,7 +75,43 @@ export function publicPiecesOf(sources: ChangeRequestSources): PublicPiece[] {
 		sources.quality === undefined
 			? []
 			: qualityBodyPieces(sources.quality).map((piece) => ({ ...piece, committed: true }))
-	return [...messages, ...summary, ...steps, ...changes, ...overlaps, ...review, ...quality]
+	return [
+		...messages,
+		...summary,
+		...steps,
+		...sections,
+		...changes,
+		...overlaps,
+		...review,
+		...quality,
+	]
+}
+
+/** The pieces of the lot's reviewer sections: each heading and text, by its brief field. */
+function sectionPiecesOf(sources: ChangeRequestSources): PublicPiece[] {
+	return (sources.sections ?? []).flatMap(function sectionPieces(section, index) {
+		return [
+			{
+				record: PIECE_RECORDS.sectionHeading.replace('{index}', String(index)),
+				text: section.heading,
+			},
+			{ record: PIECE_RECORDS.sectionText.replace('{index}', String(index)), text: section.text },
+		]
+	})
+}
+
+/**
+ * The first token of `text` that is a link (a scheme or `www.`), read as the body's path check reads its tokens;
+ * undefined with none.
+ *
+ * @intent tell a link in a public text by the one rule the body's check uses
+ * @internal
+ */
+export function linkIn(text: string): string | undefined {
+	return text
+		.split(TOKEN_SEPARATOR_PATTERN)
+		.map((token) => token.replace(TOKEN_TRIM_PATTERN, ''))
+		.find((token) => LINK_PATTERN.test(token))
 }
 
 /** The first piece holding what a public body never holds, by record; undefined when every piece passes. */

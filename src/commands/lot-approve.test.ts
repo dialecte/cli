@@ -65,6 +65,7 @@ describe('dialecte lot approve', { timeout: STORE_CASE_TIMEOUT }, () => {
 		expect(calls).toEqual([
 			`read ${REVIEW_CHANGE_REQUEST_NUMBER}`,
 			`checks ${REVIEW_CHANGE_REQUEST_NUMBER}`,
+			`read ${REVIEW_CHANGE_REQUEST_NUMBER}`,
 			`edit ${REVIEW_CHANGE_REQUEST_NUMBER} "feat(x): x answers one"`,
 			`queue ${REVIEW_CHANGE_REQUEST_NUMBER}`,
 		])
@@ -284,6 +285,73 @@ describe('dialecte lot approve', { timeout: STORE_CASE_TIMEOUT }, () => {
 			`lot approve: ${LOT_NAME} not approved: findings open: R1-1 blocking; nothing recorded, nothing queued`,
 		)
 		expect(calls).not.toContain(`queue ${REVIEW_CHANGE_REQUEST_NUMBER}`)
+	})
+
+	it('the send refused after the approval is recorded → approved, not queued; approve again, the host taking it → queued', () => {
+		const lot = landedLot()
+		const refusing = recordingHost({
+			existing: lot.changeRequest,
+			checks: checksOn({ head: lot.head, state: 'green' }),
+			editRefusal: 'gh pr edit: HTTP 502',
+		})
+		const first = runLotApprove({
+			cwd: lot.workspace.repository,
+			argv: [LOT_NAME, '--by', REVIEWER],
+			host: refusing.host,
+		})
+		const { host, calls } = recordingHost({
+			existing: lot.changeRequest,
+			checks: checksOn({ head: lot.head, state: 'green' }),
+		})
+
+		const again = runLotApprove({
+			cwd: lot.workspace.repository,
+			argv: [LOT_NAME, '--by', REVIEWER],
+			host,
+		})
+
+		expect({
+			first: first.output,
+			approvals: approvalCount(lot.lotFolder),
+			again: again.exitCode,
+			queued: calls.includes(`queue ${REVIEW_CHANGE_REQUEST_NUMBER}`),
+		}).toEqual({
+			first: `lot approve: ${LOT_NAME} approved by ${REVIEWER} on ${lot.head.slice(0, 12)}, change request #${REVIEW_CHANGE_REQUEST_NUMBER} not queued: gh pr edit: HTTP 502`,
+			approvals: 1,
+			again: 0,
+			queued: true,
+		})
+	})
+
+	it('a hand section written above the kept heading on the host → refused naming it, nothing recorded, nothing queued', () => {
+		const lot = landedLot()
+		const { host, calls } = recordingHost({
+			existing: {
+				...lot.changeRequest,
+				body: '### Hand section\n\nA note by hand.\n\n### Checklist for the reviewer when doing the PR review\n\n- [ ] Tests are complete\n',
+			},
+			checks: checksOn({ head: lot.head, state: 'green' }),
+		})
+
+		const result = runLotApprove({
+			cwd: lot.workspace.repository,
+			argv: [LOT_NAME, '--by', REVIEWER],
+			host,
+		})
+
+		expect({
+			exitCode: result.exitCode,
+			output: result.output,
+			approvals: approvalCount(lot.lotFolder),
+			queued: calls.includes(`queue ${REVIEW_CHANGE_REQUEST_NUMBER}`),
+		}).toEqual({
+			exitCode: 1,
+			output: expect.stringMatching(
+				/^lot approve: \S+ not approved: the change request body holds 1 line above '[^']+' that the render would drop \('### Hand section'\): .*; nothing recorded, nothing queued$/,
+			) as unknown as string,
+			approvals: 0,
+			queued: false,
+		})
 	})
 
 	it('an open should-fix finding beside a nit → refused naming the should-fix only, a nit never blocks', () => {

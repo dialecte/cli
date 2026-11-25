@@ -45,6 +45,10 @@ export const LANDING_LINES = {
 	drafted:
 		'{changeRequestNoun} #{number} back to a draft, out of the queue: an approval is for one head',
 	hostRefused: 'lot land: {reason}',
+	openedUnrecorded:
+		'lot land: {changeRequestNoun} #{number} opened, its lines not recorded: {reason}; fix it, then dialecte lot land {lot} again',
+	bodyRefused:
+		'lot land: pushed {head}; the {changeRequestNoun} body is not updated: {reason}; fix it, then dialecte lot land {lot} again',
 	committed: 'the lot is committed, nothing pushed: {landed}',
 	workSince: 'the lot holds {work}: they land in a new lot',
 	closeLanded: 'close it: dialecte lot close {lot}',

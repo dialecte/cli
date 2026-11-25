@@ -192,6 +192,47 @@ describe(
 			expect('refusal' in prepared ? prepared.refusal : 'rendered').toBe('rendered')
 		})
 
+		it('a section naming a file the lot adds → rendered; one naming a file no commit holds → refused naming it', () => {
+			const lot = changeRequestLot({
+				brief: {
+					sections: [
+						{ heading: 'Deviations', text: 'Reads `src/x.ts` once.' },
+						{ heading: 'Removals', text: 'Leaves `notes/a/plan.md` out.' },
+					],
+				},
+			})
+
+			const prepared = prepareChangeRequest({
+				lotFolder: lot.lotFolder,
+				worktree: lot.worktree,
+				baseRef: 'main',
+			})
+
+			expect('refusal' in prepared ? prepared.refusal : 'rendered').toBe(
+				'the change request text holds a path outside the tree or a link `notes/a/plan.md` in brief.json sections[1].text: rewrite that record, nothing sent',
+			)
+		})
+
+		it("a stored brief's sections → the sources hold them; sections that do not read → refused, nothing sent", () => {
+			const good = changeRequestLot({
+				brief: { sections: [{ heading: 'Deviations', text: 'One pass.' }] },
+			})
+			const bad = changeRequestLot({
+				brief: { sections: [{ heading: '# Deviations', text: 'One pass.' }] },
+			})
+
+			const read = sourcesOf(good)
+			const refused = sourcesOf(bad)
+
+			expect([
+				'refusal' in read ? read.refusal : read.sections,
+				'refusal' in refused ? refused.refusal : refused.sections,
+			]).toEqual([
+				[{ heading: 'Deviations', text: 'One pass.' }],
+				`${bad.lotFolder}/brief.json: sections[0].heading must be one non-empty line of at most 120 characters, without a leading #: nothing sent`,
+			])
+		})
+
 		it('a summary naming an untracked file of the worktree → refused: no commit holds it', () => {
 			const lot = changeRequestLot({ brief: { summary: 'Follows `notes/a/plan.md` closely.' } })
 			writeFiles({ root: lot.worktree, files: { 'notes/a/plan.md': 'private\n' } })

@@ -1,8 +1,10 @@
-<!-- dialecte: `dialecte lot describe` renders this body from the lot's records; text after the kept marker is kept -->
+<!-- dialecte: `dialecte lot describe` renders this body from the lot's records (the reviewer sections from the brief's sections); text after the kept marker is kept -->
 
 ### Summary
 
 <!-- dialecte:summary -->
+
+<!-- dialecte:reviewer-sections -->
 
 ### Behaviours
 

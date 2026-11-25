@@ -175,6 +175,7 @@ export type StoreFileNames = Readonly<
 		| 'baseDeclared'
 		| 'carry'
 		| 'carryCopies'
+		| 'sentBody'
 		| 'keep',
 		string
 	>

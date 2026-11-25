@@ -9,11 +9,8 @@ import { basename } from 'node:path'
 
 import { prepareChangeRequest } from '../lib/change-request/change-request-sources.ts'
 import { CHANGE_REQUEST_LINES } from '../lib/change-request/change-request.constants.ts'
-import {
-	composeChangeRequest,
-	keptPartOf,
-	linesOf,
-} from '../lib/change-request/compose-change-request.ts'
+import { composeChangeRequest, linesOf } from '../lib/change-request/compose-change-request.ts'
+import { sendWithRecord } from '../lib/change-request/send-with-record.ts'
 import { renderLotUsage } from '../lib/command-map/render-help.ts'
 import { hasFlag, positionalArguments } from '../lib/config.ts'
 import { SHORT_SHA_LENGTH } from '../lib/gate-records/gate-records.constants.ts'
@@ -35,10 +32,7 @@ import {
 	LOT_DESCRIBE_OPTIONS,
 } from './lot-describe.constants.ts'
 
-import type {
-	PreparedChangeRequest,
-	ChangeRequestText,
-} from '../lib/change-request/change-request.types.ts'
+import type { ChangeRequestText } from '../lib/change-request/change-request.types.ts'
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { HostAdapter, HostNouns, ChangeRequest } from '../lib/host/host.types.ts'
 import type { LotPlace } from './lot-describe.types.ts'
@@ -91,7 +85,7 @@ export function runLotDescribe(params: {
 				values: { ...nouns, number: String(read.number), state: read.state },
 			}),
 		})
-	const rendered = sendRenderedText({ host, worktree, prepared, changeRequest: read })
+	const rendered = sendWithRecord({ host, worktree, lotFolder, prepared, changeRequest: read })
 	if ('refusal' in rendered)
 		return refused({ line: `${LOT_DESCRIBE_LINES.prefix}${rendered.refusal}` })
 	const head = readGit({ root: worktree, args: ['rev-parse', 'HEAD'] }).trim()
@@ -135,7 +129,13 @@ function lotPlaceOf(params: { cwd: string; argv: string[] }): LotPlace | Command
 		(word) => word.startsWith('-') && !LOT_DESCRIBE_OPTIONS.includes(word),
 	)
 	if (ids.length !== 1 || unknown.length > 0) return { exitCode: 2, output: renderLotUsage() }
-	return resolveLotPlace({ cwd: params.cwd, id: ids[0], verb: LOT_DESCRIBE_VERB, mode: 'read' })
+	// a describe that may send writes the lot's sent record: resolved as every writing verb is, --print as a reader
+	return resolveLotPlace({
+		cwd: params.cwd,
+		id: ids[0],
+		verb: LOT_DESCRIBE_VERB,
+		mode: hasFlag(params.argv, 'print') ? 'read' : 'write',
+	})
 }
 
 /**
@@ -185,39 +185,6 @@ export function resolveLotPlace(params: {
 		baseRef: base.ref,
 		state: lotState(checked.input).state,
 	}
-}
-
-/**
- * The open change request's title and body rendered again from `prepared` (a person's part after the kept marker kept)
- * and sent when they read otherwise; the text and whether it was sent, or the refusal of the render or the host.
- *
- * @intent keep an open change request's text the lot's records
- * @internal
- */
-export function sendRenderedText(params: {
-	host: HostAdapter
-	worktree: string
-	prepared: PreparedChangeRequest
-	changeRequest: ChangeRequest
-}): { text: ChangeRequestText; sent: boolean } | { refusal: string } {
-	const { prepared, changeRequest } = params
-	const kept = keptPartOf({
-		template: prepared.template,
-		body: changeRequest.body,
-		nouns: prepared.nouns,
-	})
-	if ('refusal' in kept) return kept
-	const text = composeChangeRequest({ ...prepared, kept: kept.kept })
-	if ('refusal' in text) return text
-	const same =
-		changeRequest.title === text.title && linesOf(changeRequest.body).join('\n') === text.body
-	if (same) return { text, sent: false }
-	const edited = params.host.editChangeRequest({
-		root: params.worktree,
-		number: changeRequest.number,
-		...text,
-	})
-	return edited ?? { text, sent: true }
 }
 
 /** The line (or JSON) of a text sent to the open change request, or found the same there. */

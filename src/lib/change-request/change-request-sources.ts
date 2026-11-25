@@ -30,6 +30,7 @@ import { BASE_AWARE_RULES } from '../rules/check-code-rules.constants.ts'
 import { GENERIC_REFERENCE_PATTERNS } from '../rules/committed-text.constants.ts'
 import { readListedPatterns } from '../rules/committed-text.ts'
 import { forbiddenWordPatterns, readForbiddenWords } from '../rules/forbidden-words.ts'
+import { sectionsOf } from '../store/brief-sections.ts'
 import { lotsOf } from '../store/brief.ts'
 import { readLotOverlaps } from '../store/lot-overlaps.ts'
 import { folderPlanEntryIds } from '../store/public-text.ts'
@@ -200,6 +201,11 @@ function readSourcesAt(params: {
 				reason: lots.refused.map((refusal) => refusal.detail).join('; '),
 			}),
 		}
+	// the sections show verbatim: a list that does not read refuses the render, never renders without them
+	const sections = sectionsOf({ value: brief.sections })
+	const [unread] = sections.refused
+	if (unread !== undefined)
+		return { refusal: unreadBrief({ brief: briefPath, reason: unread.detail }) }
 	const fork = lotForkOf(params)
 	if ('refusal' in fork) return fork
 	// one base for the whole body: the lot's own fork, a stacked lot's too (its change request shows its own commits)
@@ -226,6 +232,8 @@ function readSourcesAt(params: {
 		messages: lots.lots.map((lot) => lot.message.trim()),
 		...(typeof brief.summary === 'string' && { summary: brief.summary }),
 		...(Array.isArray(brief.steps) && { steps: stepsOf(brief.steps) }),
+		...(sections.sections !== undefined &&
+			sections.sections.length > 0 && { sections: sections.sections }),
 		...(typeof brief.issue === 'number' && { issue: brief.issue }),
 		...(changelog !== undefined && { changelog }),
 		...(tests !== undefined && { tests }),

@@ -16,11 +16,8 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { prepareChangeRequest } from '../change-request/change-request-sources.ts'
-import {
-	composeChangeRequest,
-	keptPartOf,
-	linesOf,
-} from '../change-request/compose-change-request.ts'
+import { readSentBody, recordSent, sendWithRecord } from '../change-request/send-with-record.ts'
+import { renderChangeRequest } from '../change-request/sent-body.ts'
 import { recordForecastRun } from '../coordination/forecast-record.ts'
 import { forecastConflictsText, forecastHoldText } from '../coordination/forecast-view.ts'
 import { AGAINST_MAIN, FORECAST_STEP_LIMIT_MS } from '../coordination/forecast.constants.ts'
@@ -66,7 +63,10 @@ import { NOTHING_BEYOND_BASE_LINE } from './land-push.constants.ts'
 import { readLanding, readRawLanding } from './land-record.ts'
 import { prepareStackLanding, settleStackedChangeRequest } from './land-stack.ts'
 
-import type { ChangeRequestText } from '../change-request/change-request.types.ts'
+import type {
+	ChangeRequestText,
+	PreparedChangeRequest,
+} from '../change-request/change-request.types.ts'
 import type { HostAdapter, HostRefusal, ChangeRequest } from '../host/host.types.ts'
 import type { LandedFact } from '../landing/landed-record.types.ts'
 import type { KeepDecision } from '../store/keep-decisions.types.ts'
@@ -147,15 +147,15 @@ export function landLot(params: {
 			),
 		)
 	// rendered on the rebased head against origin's base (a lot base sees the base's line too); unrendered pushes nothing
-	const text = renderedText({
+	const rendered = renderedText({
 		...params,
 		baseRef: `${ORIGIN_BRANCH_REF_PREFIX}${base}`,
-		kept: known.changeRequest?.body,
+		known: known.changeRequest,
 	})
-	if ('refusal' in text)
+	if ('refusal' in rendered)
 		return {
 			exitCode: 1,
-			lines: [...lines, LANDING_LINES.unrendered.replace('{reason}', () => text.refusal)],
+			lines: [...lines, LANDING_LINES.unrendered.replace('{reason}', () => rendered.refusal)],
 		}
 	const pushed = dequeueAndPush({
 		...params,
@@ -167,7 +167,7 @@ export function landLot(params: {
 	return publishLanding({
 		...params,
 		known: known.changeRequest,
-		text,
+		...rendered,
 		head: pushed.head,
 		entry,
 		lines: pushed.lines,
@@ -433,8 +433,9 @@ function publishLanding(params: {
 	host: HostAdapter
 	now: Date
 	known: ChangeRequest | undefined
-	/** The lot's text, rendered on the head just pushed. */
+	/** The lot's text, rendered on the head just pushed, and what it was rendered from: the send renders it again. */
 	text: ChangeRequestText
+	prepared: PreparedChangeRequest
 	head: string
 	entry: string
 	lines: string[]
@@ -459,12 +460,8 @@ function publishLanding(params: {
 		head: params.head,
 		now: params.now,
 	})
-	const edited = editLot({ worktree, host, changeRequest: changeRequest, text })
-	if ('refusal' in edited)
-		return {
-			exitCode: 1,
-			lines: [...lines, LANDING_LINES.hostRefused.replace('{reason}', () => edited.refusal)],
-		}
+	const edited = sentAfterPush({ ...params, changeRequest })
+	if ('refusal' in edited) return { exitCode: 1, lines: [...lines, edited.refusal] }
 	if (edited.line !== undefined) lines.push(edited.line)
 	if (stack !== undefined) {
 		const settled = settleStackedChangeRequest({
@@ -853,53 +850,93 @@ function openLot(params: {
 }
 
 /**
- * The lot's text rendered from its records on the tree just pushed (`prepareChangeRequest`, the template's parts), a
- * person's part of the current body (`kept`) kept; the refusal of records that no longer pass.
+ * The lot's text rendered from its records on the tree just pushed (`prepareChangeRequest`, the template's parts) over the
+ * known change request's body (`renderChangeRequest`: the person's part carried, a line it would drop refused) and what
+ * it was rendered from; the refusal of records that no longer pass, a sent record unread or a body it would cut.
  */
 function renderedText(params: {
 	worktree: string
 	/** The ref the lot's changes are read against: origin's base (the lot base reads its parent's line itself). */
 	baseRef: string
 	lotFolder: string
-	kept: string | undefined
-}): ChangeRequestText | { refusal: string } {
+	known: ChangeRequest | undefined
+}): { text: ChangeRequestText; prepared: PreparedChangeRequest } | { refusal: string } {
 	const prepared = prepareChangeRequest({
 		lotFolder: params.lotFolder,
 		worktree: params.worktree,
 		baseRef: params.baseRef,
 	})
 	if ('refusal' in prepared) return prepared
-	const kept =
-		params.kept === undefined
-			? { kept: undefined }
-			: keptPartOf({ template: prepared.template, body: params.kept, nouns: prepared.nouns })
-	if ('refusal' in kept) return kept
-	return composeChangeRequest({ ...prepared, kept: kept.kept })
+	const record =
+		params.known === undefined
+			? { sent: undefined }
+			: readSentBody({ lotFolder: params.lotFolder, changeRequest: params.known.number })
+	if ('refusal' in record) return record
+	const text = renderChangeRequest({ ...prepared, current: params.known?.body, sent: record.sent })
+	return 'refusal' in text ? text : { text, prepared }
 }
 
 /**
- * The lot's change request given `text`: one whose title or body reads otherwise (opened before, renamed or edited by
- * hand, or records changed since) is edited, its line saying so; one that reads the same is not asked of the host.
+ * The lot's text sent to its reused change request (`sendWithRecord`: read again, rendered over that body, recorded,
+ * edited when it reads otherwise), its line saying so; the refusal of the read, the render, the record or the host.
  */
 function editLot(params: {
 	worktree: string
 	host: HostAdapter
+	lotFolder: string
+	prepared: PreparedChangeRequest
 	changeRequest: ChangeRequest
-	text: ChangeRequestText
 }): { line?: string } | { refusal: string } {
-	const { changeRequest, text } = params
-	if (changeRequest.title === text.title && linesOf(changeRequest.body).join('\n') === text.body)
-		return {}
-	const refused = params.host.editChangeRequest({
-		root: params.worktree,
-		number: changeRequest.number,
-		...text,
-	})
-	if (refused !== undefined) return refused
+	const sent = sendWithRecord(params)
+	if ('refusal' in sent) return sent
+	if (!sent.sent) return {}
 	return {
 		line: fillMessage({
 			template: LANDING_LINES.updated,
-			values: { ...hostNounsOf({ root: params.worktree }), number: String(changeRequest.number) },
+			values: {
+				...hostNounsOf({ root: params.worktree }),
+				number: String(params.changeRequest.number),
+			},
+		}),
+	}
+}
+
+/**
+ * After the push: a change request just opened gets its lines recorded under its new number, a reused one the lot's text
+ * (`editLot`); the line of either refusal says the head is out and running lot land again finishes it.
+ */
+function sentAfterPush(params: {
+	lot: string
+	worktree: string
+	host: HostAdapter
+	lotFolder: string
+	known: ChangeRequest | undefined
+	changeRequest: ChangeRequest
+	prepared: PreparedChangeRequest
+	text: ChangeRequestText
+	head: string
+}): { line?: string } | { refusal: string } {
+	const opened = params.known === undefined
+	const unrecorded = opened
+		? recordSent({
+				lotFolder: params.lotFolder,
+				template: params.prepared.template,
+				body: params.text.body,
+				changeRequest: params.changeRequest.number,
+			})
+		: undefined
+	const edited = opened ? (unrecorded ?? {}) : editLot(params)
+	if (!('refusal' in edited)) return edited
+	return {
+		refusal: fillMessage({
+			template: opened ? LANDING_LINES.openedUnrecorded : LANDING_LINES.bodyRefused,
+			values: {
+				...hostNounsOf({ root: params.worktree }),
+				number: String(params.changeRequest.number),
+				head: params.head.slice(0, SHORT_SHA_LENGTH),
+				reason: edited.refusal,
+				lot: params.lot,
+			},
 		}),
 	}
 }

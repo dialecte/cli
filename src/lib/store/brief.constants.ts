@@ -16,6 +16,7 @@ export const BRIEF_KEYS: readonly string[] = [
 	'summary',
 	'issue',
 	'keep',
+	'sections',
 ]
 
 /** The brief field a lot kept on purpose from its start names (KEEP 3.4). */
@@ -101,3 +102,49 @@ export const START_WINDOW_MS = 10 * 60_000
 
 /** The kind of the event that ends a recorded step. */
 export const STEP_END_KIND = 'step.end'
+
+/** The brief field holding the lot's reviewer sections. */
+export const SECTIONS_FIELD = 'sections'
+
+/** The keys of one reviewer section, and no other. */
+export const SECTION_KEYS: readonly string[] = ['heading', 'text']
+
+/** The longest heading of a reviewer section. */
+export const SECTION_HEADING_MAX_LENGTH = 120
+
+/** The most reviewer sections a brief holds. */
+export const SECTIONS_MAX_COUNT = 20
+
+/** The most characters the headings and texts of a brief's sections hold together: far under a host's body limit. */
+export const SECTIONS_MAX_LENGTH = 20_000
+
+/**
+ * A markdown task box at the start of a line (GFM), in a blockquote or not (its `>` marks the first group): a bullet
+ * (`-`, `*`, `+`) or an ordered marker (`1.`, `1)`), any spaces, then `[ ]` or `[x]`. One pattern for the sections' refusal and the change request's tick-blind line reading.
+ */
+export const TASK_MARKER_PATTERN = /^\s*((?:>\s*)*)(?:[-*+]|\d{1,9}[.)])\s+\[[ xX]\](?=\s|$)/
+
+/** A `<details>` element opened, and closed: a section holds as many of each, or the host folds what follows. */
+export const DETAILS_OPEN_PATTERN = /<details(?=[\s>])/gi
+export const DETAILS_CLOSE_PATTERN = /<\/details\s*>/gi
+
+/** A run of spaces in a heading, folded to one as headings are compared. */
+export const SPACE_RUN_PATTERN = /\s+/g
+
+/** The label of a link, as a refusal names it (`holds a link`). */
+export const LINK_LABEL = 'link'
+
+/** Why a reviewer section is refused: `{field}` the field. */
+export const SECTION_FAULTS = {
+	list: `sections must be a list of at most ${SECTIONS_MAX_COUNT} { heading, text }`,
+	item: '{field} must be an object of a heading and a text, two strings',
+	heading: `{field} must be one non-empty line of at most ${SECTION_HEADING_MAX_LENGTH} characters, without a leading #`,
+	twice: '{field} repeats the heading of another section',
+	empty: '{field} must hold text',
+	rendererLine: '{field} holds a line of the change request renderer (<!-- dialecte...)',
+	open: '{field} opens a fence, a comment or an HTML block it never closes: the host would hide what follows',
+	details: '{field} opens a <details> it never closes: the host would fold what follows',
+	taskBox:
+		'{field} holds a task box: a box above the kept heading follows the records, so a tick there never stays',
+	length: `sections must hold at most ${SECTIONS_MAX_LENGTH} characters, headings and texts together`,
+} as const

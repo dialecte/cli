@@ -156,12 +156,13 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
                two-questions, limit, failure, slow) under wait: no worktree, no branch, no registry
                entry; it never blocks a real lot
   brief - a working or ready real lot takes a new brief whose only changes are its public text (the
-          summary, the issue, step titles and behaviours, and each lot's commit message, which
-          titles its change request); any other change is refused naming the field, nothing written;
-          the new brief passes the start's field and public-text checks; it replaces the stored
-          brief and a brief transition records the sha256 of the old and new brief, --by and
-          --reason, the state and position kept; the same brief again answers already, nothing
-          written; a simulated lot is refused; brief.json edited any other way reads as damage
+          summary, the issue, the reviewer sections, step titles and behaviours, and each lot's
+          commit message, which titles its change request); any other change is refused naming the
+          field, nothing written; the new brief passes the start's field and public-text checks; it
+          replaces the stored brief and a brief transition records the sha256 of the old and new
+          brief, --by and --reason, the state and position kept; the same brief again answers
+          already, nothing written; a simulated lot is refused; brief.json edited any other way
+          reads as damage
   describe - renders the lot's change request from its records through the repository's
              change-request template (its host's path; with no host known, the first host template
              the tree holds): the title is the brief's first commit message (changed with lot
@@ -183,6 +184,25 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
              holding a person's text refused, never dropped); a damaged lot refused; --print prints
              and sends nothing; no change request yet prints the text and names lot land; --json {
              title, body, changeRequest, head, sent }
+  describe - the brief's sections (the lot's reviewer sections, a heading and its markdown text
+             each) render verbatim on every render of lot describe, lot land and lot approve: at the
+             template's reviewer-sections marker, else just before the kept part, under headings at
+             the level of the template heading above; a heading equal to a template heading, or a
+             text line equal to the line the kept part starts at, refused; every send reads the
+             change request again just before the host call, renders over that body and appends the
+             hashes of the lines it sends above the kept heading to <lot folder>/sent-body.jsonl
+             (per change request, never rewritten; a line that does not parse (a torn append)
+             skipped wherever it sits; a row of another schema refuses, naming the file to remove)
+             before the host call; a body holding above the kept heading a line neither recorded
+             there nor in the new render is refused, nothing sent, naming its first three lines and
+             their count (record them in the brief's sections or the record they belong to, move
+             them under the kept heading, or remove them); a task box there reads unticked (the
+             records decide it); a body no record covers is checked by its headings at the
+             template's level and its unclosed blocks; a send refused after lot land's push says the
+             head is pushed and the body not updated (or, just opened, its lines not recorded), and
+             lot land again sends it; one refused after lot approve recorded its approval says it is
+             not queued, and lot approve again queues it; the second read refuses a change request
+             no longer open; describe resolves its lot as a writing verb, as a reader with --print
   review - the private half of the lot's review, read-only (nothing written): the lot's state and
            branch, its change request (landing.json's) with the head it is at, the head the lot
            landed and the worktree's HEAD, its checks, the brief's goal and steps (title, spec,
@@ -1301,6 +1321,38 @@ already merged is not pushed again: `lot land` writes its landed fact, commits i
 (they land in a new lot) and prints the close line; `lot close` reads the same landing state (a squash read offline
 from the tree, or the change request the host says merged), after bringing the local base branch up to origin's. The push's lease is pinned to the head the
 last landing pushed, a lot must be on its branch, and a lot cut from another lot is refused until stacks land.
+
+## Reviewer sections and what a render keeps
+
+A lot writes the sections its reviewer needs (a deviation from the design, a removal the fix refuses) in its brief, not
+on the host: `"sections": [{ "heading": "Deviations from the design", "text": "..." }]`, each heading one line without
+`#`, each text markdown. `dialecte lot brief` adds, rewrites, reorders or removes them, recording who and why. Every
+render of the change request (`lot land`, `lot describe`, `lot approve`) shows them verbatim: at the template's
+`<!-- dialecte:reviewer-sections -->` marker, else just before the kept part, each under a heading at the level of the
+template heading above it. `lot start` and `lot brief` refuse a malformed section, a reference, a plan entry id or a link
+in one; a path is checked at render, against the lot's tree, like every record. A section must not open a fence, a
+comment or an HTML block (a `<details>` included) it never closes, nor hold a task box: the host would hide what follows,
+or a tick there would never stay.
+
+Above the kept heading the body is the records'; below it, the person's. Nothing a person wrote is dropped without a
+word: each send appends the hashes of the lines it sent above the kept heading to `<lot folder>/sent-body.jsonl` (per
+change request, never rewritten), and a render refuses, sending nothing, a body holding there a line neither recorded
+nor in the new render. The refusal names the lines and the ways out: record them in the brief's sections (or the record
+they belong to), move them under the kept heading, or remove them from the body. A line the cli wrote earlier (a count
+since changed, a section since removed) was recorded and passes. The record is of every line ever sent: a line a person writes that
+equals one the cli sent earlier passes as the cli's (a known limit). A task box above the kept heading reads unticked: the
+records decide it. Every send reads the change request again just before the host call and renders over that body, so
+an edit made while `lot land` pushed is carried or refused, never overwritten; the host has no compare-and-swap, so the
+moment between that read and the edit is the one window left.
+
+A refusal that comes after a step that cannot be undone says so. After `lot land`'s push, the head is out and the body
+is not updated (or, for a change request it just opened, its lines are not recorded): fix what the line names and run
+`lot land` again, which re-renders and sends with nothing new to push. After `lot approve` recorded its approval, the
+change request is not queued: fix it and run `lot approve` again, which queues the same head.
+
+A body sent by an older cli has no record: its headings at the template's level and its unclosed blocks are checked
+(a paragraph there is not seen), once, since the render that passes records it. A record that does not read refuses
+every render, naming the file: remove it, and the next render runs that check and records again.
 
 ## Review on the change request page
 

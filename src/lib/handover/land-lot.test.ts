@@ -2,7 +2,7 @@
  * A lot lands through its pull request: checked, rebased onto origin's base when behind, pushed, opened as a draft,
  * recorded; never queued (lot approve queues).
  */
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { FIXTURE_TEMPLATE_PATH } from '../../../test/change-request-template.constants.ts'
@@ -292,7 +292,7 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 
 			land({ repository, host })
 
-			expect(calls).toEqual(['read feat/x', ...taken, 'edit 7 "feat(x): x answers one"'])
+			expect(calls).toEqual(['read feat/x', ...taken, 'read 7', 'edit 7 "feat(x): x answers one"'])
 		},
 	)
 
@@ -307,7 +307,7 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 
 		expect({ exitCode: landed.exitCode, calls }).toEqual({
 			exitCode: 0,
-			calls: ['read feat/x', 'edit 7 "feat(x): x answers one"'],
+			calls: ['read feat/x', 'read 7', 'edit 7 "feat(x): x answers one"'],
 		})
 	})
 
@@ -322,7 +322,12 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 
 		expect({ exitCode: landed.exitCode, calls }).toEqual({
 			exitCode: 0,
-			calls: ['read feat/x', 'draft-back 7 queued ready', 'edit 7 "feat(x): x answers one"'],
+			calls: [
+				'read feat/x',
+				'draft-back 7 queued ready',
+				'read 7',
+				'edit 7 "feat(x): x answers one"',
+			],
 		})
 	})
 
@@ -337,7 +342,7 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 
 		expect({ exitCode: landed.exitCode, calls }).toEqual({
 			exitCode: 1,
-			calls: ['read feat/x', 'draft-back 7 queued ready', 'editChangeRequest refused'],
+			calls: ['read feat/x', 'draft-back 7 queued ready', 'read 7', 'editChangeRequest refused'],
 		})
 	})
 
@@ -372,6 +377,7 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		expect(calls).toEqual([
 			'read feat/x',
 			'draft-back 7 queued ready',
+			'read 7',
 			'edit 7 "feat(x): x answers one"',
 		])
 	})
@@ -781,6 +787,115 @@ describe(
 			expect(bodies[0]?.endsWith(`\n\n${kept}`)).toBe(true)
 		})
 
+		it('a reused pull request holding a hand section above the kept heading → refused before the push, nothing pushed or sent', () => {
+			const repository = landingRepository()
+			const kept =
+				'### Checklist for the reviewer when doing the PR review\n\n- [ ] Tests are complete'
+			const { host, calls } = recordingHost({
+				existing: {
+					...changeRequestOf({ state: 'open', head: '' }),
+					body: `### Removals this fix refuses\n\nNothing outside the lot.\n\n${kept}\n`,
+				},
+			})
+
+			const landed = land({ repository, host })
+
+			expect({
+				exitCode: landed.exitCode,
+				last: landed.lines.at(-1),
+				edits: calls.filter((call) => call.startsWith('edit')),
+				pushed: git({
+					root: repository.root,
+					args: ['ls-remote', repository.origin, 'refs/heads/feat/x'],
+				}),
+			}).toEqual({
+				exitCode: 1,
+				last: "lot land: the change request body holds 1 line above '### Checklist for the reviewer when doing the PR review' that the render would drop ('### Removals this fix refuses'): record it with dialecte lot brief (sections) or in the record it belongs to, move it under '### Checklist for the reviewer when doing the PR review', or remove it from the body (a line another cli version wrote is removed there); nothing sent",
+				edits: [],
+				pushed: '',
+			})
+		})
+
+		it('a body refused after the push → its line says so; lot land again, the host taking it → the body sent', () => {
+			const repository = landingRepository()
+			const refusing = recordingHost({
+				existing: { ...changeRequestOf({ state: 'open', head: '' }), body: '' },
+				editRefusal: 'gh pr edit: HTTP 502',
+			})
+			const first = land({ repository, host: refusing.host })
+			const { host, calls } = recordingHost({
+				existing: { ...changeRequestOf({ state: 'open', head: '' }), body: '' },
+			})
+
+			const again = land({ repository, host })
+
+			expect({
+				first: first.lines.at(-1)?.startsWith('lot land: pushed '),
+				exitCode: again.exitCode,
+				edited: calls.includes('edit 7 "feat(x): x answers one"'),
+			}).toEqual({ first: true, exitCode: 0, edited: true })
+		})
+
+		it('a pull request opened, its lines not recorded → its own line: opened, not recorded, lot land again', () => {
+			const repository = landingRepository()
+			mkdirSync(join(repository.lotFolder, 'sent-body.jsonl'))
+			const { host, bodies } = recordingHost()
+
+			const landed = land({ repository, host })
+
+			expect({
+				exitCode: landed.exitCode,
+				opened: bodies.length,
+				last: landed.lines.at(-1),
+			}).toEqual({
+				exitCode: 1,
+				opened: 1,
+				last: expect.stringMatching(
+					/^lot land: change request #7 opened, its lines not recorded: .+; fix it, then dialecte lot land \S+ again$/,
+				) as unknown as string,
+			})
+		})
+
+		it('a person part edited on the host while the lot pushed → carried by the send', () => {
+			const repository = landingRepository()
+			const kept =
+				'### Checklist for the reviewer when doing the PR review\n\n- [ ] Tests are complete'
+			const recording = recordingHost({
+				existing: { ...changeRequestOf({ state: 'open', head: '' }), body: `${kept}\n` },
+			})
+			const host: HostAdapter = {
+				...recording.host,
+				readChangeRequest: function editedOnTheSecondRead(call) {
+					const read = recording.host.readChangeRequest(call)
+					return call.ref === '7' && read !== undefined && !('refusal' in read)
+						? { ...read, body: `${read.body}\nA reviewer note.\n` }
+						: read
+				},
+			}
+
+			land({ repository, host })
+
+			expect(
+				recording.bodies.at(-1)?.endsWith('- [ ] Tests are complete\n\nA reviewer note.'),
+			).toBe(true)
+		})
+
+		it('a pull request opened by the landing → the lines it was opened with recorded under its number', () => {
+			const repository = landingRepository()
+			const { host } = recordingHost()
+
+			land({ repository, host })
+
+			const file = join(repository.lotFolder, 'sent-body.jsonl')
+			expect(
+				existsSync(file) &&
+					readFileSync(file, 'utf8')
+						.trim()
+						.split('\n')
+						.every((line) => (JSON.parse(line) as { changeRequest: number }).changeRequest === 7),
+			).toBe(true)
+		})
+
 		it('the host refusing the edit of a reused pull request → exit 1, the landing still recorded', () => {
 			const repository = landingRepository()
 			const { host } = recordingHost({
@@ -791,7 +906,9 @@ describe(
 			const landed = land({ repository, host })
 
 			expect(landed.exitCode).toBe(1)
-			expect(landed.lines.at(-1)).toBe('lot land: gh pr edit: HTTP 403')
+			expect(landed.lines.at(-1)).toMatch(
+				/^lot land: pushed [0-9a-f]{12}; the change request body is not updated: gh pr edit: HTTP 403; fix it, then dialecte lot land \S+ again$/,
+			)
 			expect(existsSync(join(repository.lotFolder, 'landing.json'))).toBe(true)
 		})
 
