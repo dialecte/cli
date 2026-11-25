@@ -233,6 +233,8 @@ export type ReceiptFlag =
 	| 'red on base'
 	/** A red carried from the case's earlier label by a `moved` entry, its test call the one that red froze. */
 	| 'moved'
+	/** A red carried from the same case of the lot this one was rebuilt from (`lot start --from`), its test code and production slice the ones that red ran on. */
+	| 'carried'
 
 /**
  * - `red`: the case failed for a real reason before the code;
@@ -267,6 +269,8 @@ export type TddReceipt = TestCaseId & {
 	/** A refusal: why. */
 	reason?: string
 	flags?: ReceiptFlag[]
+	/** A carried red: the lot it was carried from and the time of the source's red. */
+	carriedFrom?: { lot: string; at: string }
 	/** ISO date. */
 	at: string
 }
@@ -315,6 +319,9 @@ export type TddLedger = {
 	entries: TddEntry[]
 	production?: Record<string, Record<string, Record<string, string>>>
 }
+
+/** Why a ledger text is no ledger of this cli: not JSON, or another version (or no entry list). */
+export type LedgerUnreadable = 'json' | 'version'
 
 /**
  * The production files of the package now: `hash` as `hashProduction` computes it, `base` the commit
@@ -397,7 +404,7 @@ export type OwnCodeVerdict =
  * its earlier case), or why none can be carried.
  */
 export type MovedCarry =
-	| { kind: 'carry'; from: TestCaseId; red: TddReceipt }
+	| { kind: 'carry'; from: TestCaseId; red: TddReceipt; lot?: string }
 	| { kind: 'refused'; reason: string }
 
 /** A test helper (test code that is not a test file) a red run froze at its current hash because a `revised` entry names it. */
@@ -599,6 +606,8 @@ export type RedJudgement = {
 	flags: ReceiptFlag[]
 	/** The production state the receipt names when it is not the tree's now: a red on base, the base's. */
 	productionHash?: string
+	/** A red carried from the lot this one was rebuilt from: that lot and the time of its red (the receipt's `carriedFrom`). */
+	carriedFrom?: { lot: string; at: string }
 }
 
 /** Where an import of a test file leads. */

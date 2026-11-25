@@ -29,7 +29,8 @@
  *   the test calls of the base the lot file declares gone); `status --legend`: the tdd terms of the
  *   hand-over card's legend.
  */
-import { posix, relative, sep } from 'node:path'
+import { existsSync } from 'node:fs'
+import { join, posix, relative, sep } from 'node:path'
 
 import { DEFAULT_CARD_COLUMNS } from '../lib/card/card.constants.ts'
 import { resolveCardColumns } from '../lib/card/render-section-card.ts'
@@ -40,6 +41,7 @@ import { designGateOf, ownLotFolderOf } from '../lib/design/design-gate.ts'
 import { startStep } from '../lib/events/record-step.ts'
 import { realPathOf } from '../lib/file-system.ts'
 import { computeStateHash } from '../lib/gate-records/state-hash.ts'
+import { tryReadGit } from '../lib/git.ts'
 import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { TDD_LEGEND_TERMS } from '../lib/legend/legend.constants.ts'
 import { renderLegend } from '../lib/legend/render-legend.ts'
@@ -52,6 +54,12 @@ import { openProcessLiveOutput } from '../lib/progress/process-live-output.ts'
 import { createStepProgress } from '../lib/progress/step-progress.ts'
 import { createSystemClock } from '../lib/progress/system-clock.ts'
 import { runCaseOnBase, runCasesOnBase, trashBaseRunLeftovers } from '../lib/tdd/base-red.ts'
+import {
+	CARRIED_FLAG,
+	CARRIED_FROM,
+	CARRIED_PASSES_ON_BASE,
+} from '../lib/tdd/carry-over.constants.ts'
+import { lotCarryOf, readCarry } from '../lib/tdd/carry-over.ts'
 import { createSkippedAsWrittenReader, frozenHashOf, isProvenNow } from '../lib/tdd/case-status.ts'
 import { firstLine, notARed } from '../lib/tdd/classify-failure.ts'
 import { countingReceipts, isProvenRedThenGreen, receiptsOf } from '../lib/tdd/counting-receipts.ts'
@@ -100,6 +108,7 @@ import {
 import {
 	appendEntries,
 	hashChangedTestCode,
+	hashTestCode,
 	hashTestCodeText,
 	isTestFile,
 	listChangedTestFiles,
@@ -169,6 +178,7 @@ import type { CommandResult } from '../lib/command-result.types.ts'
 import type { PackageJson } from '../lib/package-json.types.ts'
 import type { LiveOutput } from '../lib/progress/step-progress.types.ts'
 import type { BaseRedVerdict } from '../lib/tdd/base-red.types.ts'
+import type { Carry, LotCarryParams } from '../lib/tdd/carry-over.types.ts'
 import type {
 	LotCaseEntry,
 	LotMovedEntry,
@@ -176,6 +186,7 @@ import type {
 	ModuleResolver,
 	MovedFrom,
 	ModuleMockRefusal,
+	ProductionState,
 	OwnCodeStatement,
 	OwnCodeVerdict,
 	ChangedTestFile,
@@ -277,9 +288,8 @@ export async function runTdd(params: {
 			progress: createStepProgress({ live: params.live, clock: createSystemClock() }),
 		}),
 	}
-	// a lot's own worktree: its required design approved before its tests (DESIGN-GATE), at the run's one base
-	const designRefusal = subcommand === 'red' ? redDesignRefusalOf({ root, change }) : undefined
-	if (designRefusal !== undefined) return resultOf({ exitCode: 2, lines: [designRefusal] })
+	const admitted = admitLot({ root, change, subcommand })
+	if ('refusal' in admitted) return admitted.refusal
 	if (subcommand === 'red' || subcommand === 'green') {
 		trashBaseRunLeftovers()
 		const admission = admitRun({ context, subcommand })
@@ -293,7 +303,7 @@ export async function runTdd(params: {
 		try {
 			const result =
 				subcommand === 'red'
-					? await runRed({ context, admission })
+					? await runRed({ context, admission, carry: admitted.carry })
 					: await runGreen({ context, admission })
 			recorder.end({ exit: result.exitCode, stateHash: endStateHash })
 			return result
@@ -303,6 +313,30 @@ export async function runTdd(params: {
 		}
 	}
 	return await runStatus(context)
+}
+
+/**
+ * What a red run in a lot's worktree reads of its lot before any run, or the refusal (exit 2) that stops it there: its
+ * required design approved before its tests (DESIGN-GATE), at the run's one base; then, for a lot rebuilt with
+ * `lot start --from`, its carry records (`readCarry`), untrusted ones refusing the run before anything is recorded.
+ * Any other subcommand, or a worktree of no lot, reads nothing.
+ */
+function admitLot(params: {
+	root: string
+	change: { base: string; presence: TestCodePresence }
+	subcommand: TddSubcommand
+}): { carry: Carry | undefined } | { refusal: CommandResult } {
+	const { root } = params
+	if (params.subcommand !== 'red') return { carry: undefined }
+	const designRefusal = redDesignRefusalOf({ root, change: params.change })
+	if (designRefusal !== undefined)
+		return { refusal: resultOf({ exitCode: 2, lines: [designRefusal] }) }
+	// the lot's own worktree only: a review throwaway of the lot carries nothing (design B6)
+	const lotFolder = ownLotFolderOf({ cwd: root })
+	const carry = lotFolder === undefined ? undefined : readCarry({ lotFolder })
+	if (carry !== undefined && 'failure' in carry)
+		return { refusal: resultOf({ exitCode: 2, lines: [`tdd red: ${carry.failure}`] }) }
+	return { carry }
 }
 
 /**
@@ -404,6 +438,8 @@ function hasHelperToFreeze(params: {
 async function runRed(params: {
 	context: TddContext
 	admission: TddRunAdmission
+	/** What the lot was started from (`lot start --from`); undefined: it carries nothing. */
+	carry: Carry | undefined
 }): Promise<CommandResult> {
 	const context = withSelectionReader({ context: params.context, files: params.admission.files })
 	const { root } = context
@@ -539,7 +575,11 @@ async function runRed(params: {
 	}
 	const frozen: Record<string, string> = {}
 	const judgedFiles = runnable.filter((candidate) => !ranNoCase.has(candidate.file))
-	const { carries: movedCarries, onBase: movedOnBase } = await decideMovedCases({
+	const {
+		carries: movedCarries,
+		lotCarries,
+		onBase: movedOnBase,
+	} = await decideMovedCases({
 		context,
 		modules: reported,
 		resolveModule,
@@ -550,6 +590,8 @@ async function runRed(params: {
 		revisions,
 		testCode,
 		dependenciesOf: (file) => dependenciesOf(file).dependencies,
+		carry: params.carry,
+		production,
 	})
 	for (const file of judgedFiles) {
 		const { dependencies, unresolved: unresolvedImports } = dependenciesOf(file.file)
@@ -587,6 +629,7 @@ async function runRed(params: {
 				acceptances,
 				revisions,
 				movedCarry: movedCarries.get(caseLabel(testCase)),
+				lotCarry: lotCarries.get(caseLabel(testCase)),
 				movedOnBase: movedOnBase.get(caseLabel(testCase)),
 			})
 			judged.push(judgement)
@@ -604,6 +647,7 @@ async function runRed(params: {
 						...(judgement.message && { message: judgement.message }),
 						...(judgement.reason && { reason: judgement.reason }),
 						...(judgement.flags.length && { flags: judgement.flags }),
+						...(judgement.carriedFrom && { carriedFrom: judgement.carriedFrom }),
 						at,
 					}
 				: undefined
@@ -852,6 +896,11 @@ async function judgeRed(params: {
 	revisions: readonly LotCaseEntry[]
 	/** What the lot's `moved` entries make of the case (`readMovedCarries`); none name it: undefined. */
 	movedCarry: MovedCarry | undefined
+	/**
+	 * What the lot it was rebuilt from makes of the case (`lotCarryOf`); only a case nothing else would prove (a red run
+	 * would answer it `PROVES_NOTHING`) has one, else undefined.
+	 */
+	lotCarry: MovedCarry | undefined
 	/** How the case ran on the base's production, when it may carry a red. */
 	movedOnBase: BaseRedVerdict | undefined
 }): Promise<RedJudgement> {
@@ -901,6 +950,9 @@ async function judgeRed(params: {
 	// a case moved after its red, with no proof of its own yet: its red is carried from its earlier label
 	if (params.movedCarry)
 		return judgeMoved({ testCase, carry: params.movedCarry, onBase: params.movedOnBase })
+	// a case the lot rebuilt from proved as it stands now: its red is carried from that lot
+	if (params.lotCarry)
+		return judgeMoved({ testCase, carry: params.lotCarry, onBase: params.movedOnBase })
 	const acceptance = findCaseEntry({ entries: params.acceptances, testCase, list: 'accept' })
 	// an acceptance never overrides a proof: a case proven red → green goes the normal path, the line says so
 	if (acceptance && !isProvenRedThenGreen({ receipts: counted, caseHash: testCase.caseHash }))
@@ -918,8 +970,9 @@ async function judgeRed(params: {
 }
 
 /**
- * The moved cases of a red run decided before their judgement: what the lot's `moved` entries make of each case
- * (`readMovedCarries`), then one run on the base's production of every case that may carry a red.
+ * The moved and carried cases of a red run decided before their judgement: what the lot's `moved` entries make of each
+ * case (`readMovedCarries`), then what the lot it was rebuilt from makes of each case nothing else decides
+ * (`readLotCarries`), then one run on the base's production of every case that may carry a red.
  */
 async function decideMovedCases(params: {
 	context: TddContext
@@ -933,24 +986,142 @@ async function decideMovedCases(params: {
 	revisions: readonly LotCaseEntry[]
 	testCode: ReadonlyMap<string, string>
 	dependenciesOf: (file: string) => readonly string[]
-}): Promise<{ carries: Map<string, MovedCarry>; onBase: Map<string, BaseRedVerdict> }> {
+	/** What the lot was started from (`lot start --from`); undefined: it carries nothing. */
+	carry: Carry | undefined
+	/** The production state of the package now, read once by the run. */
+	production: ProductionState
+}): Promise<{
+	carries: Map<string, MovedCarry>
+	lotCarries: Map<string, MovedCarry>
+	onBase: Map<string, BaseRedVerdict>
+}> {
 	const { context } = params
-	const carries = readMovedCarries({
-		...params,
-		files: new Map(params.files.map((file) => [file.file, file])),
-	})
+	const files = new Map(params.files.map((file) => [file.file, file]))
+	const carries = readMovedCarries({ ...params, files })
+	const lotCarries =
+		params.carry === undefined
+			? new Map<string, MovedCarry>()
+			: readLotCarries({ ...params, carry: params.carry, files, moved: carries })
 	const onBase = await runCasesOnBase({
 		root: context.root,
 		base: context.base,
 		presence: context.presence,
 		packageJson: context.packageJson,
 		testCases: params.cases.filter(
-			(testCase) => carries.get(caseLabel(testCase))?.kind === 'carry',
+			(testCase) =>
+				carries.get(caseLabel(testCase))?.kind === 'carry' ||
+				lotCarries.get(caseLabel(testCase))?.kind === 'carry',
 		),
 		observer: runnerObserverOf({ context, name: MOVED_BASE_RUN_STEP }),
 		...(context.vitestSelection && { vitestSelection: context.vitestSelection }),
 	})
-	return { carries, onBase }
+	return { carries, lotCarries, onBase }
+}
+
+/**
+ * What the lot this one was rebuilt from makes of each case a red run would answer `PROVES_NOTHING` for, by its label
+ * (`lotCarryOf`): a passing case of the change with no counted receipt but refusals, no `accept` or `revised` entry
+ * naming it and no `moved` decision (FIX-receipt-carry-over D3). Every other case is judged as without a source. The
+ * base's blobs and commits are read through git once per run.
+ */
+function readLotCarries(params: {
+	context: TddContext
+	modules: readonly ReportedModule[]
+	files: ReadonlyMap<string, ChangedTestFile>
+	cases: readonly RunCase[]
+	acceptances: readonly LotCaseEntry[]
+	revisions: readonly LotCaseEntry[]
+	testCode: ReadonlyMap<string, string>
+	dependenciesOf: (file: string) => readonly string[]
+	carry: Carry
+	production: ProductionState
+	/** The cases the lot's `moved` entries decided: an explicit entry wins. */
+	moved: ReadonlyMap<string, MovedCarry>
+}): Map<string, MovedCarry> {
+	const { context, testCode } = params
+	const { root } = context
+	const readers = baseReadersOf(root)
+	/** The hash of a test-code file now: the change's, else the file as it stands (unchanged since the base). */
+	function hashNow(file: string): string | undefined {
+		const changed = testCode.get(file)
+		if (changed !== undefined) return changed
+		return existsSync(join(root, file)) ? hashTestCode({ root, file }) : undefined
+	}
+	const carries = new Map<string, MovedCarry>()
+	for (const testCase of params.cases.filter(function isProvenByNothing(candidate) {
+		return isLotCarryCandidate({ ...params, testCase: candidate })
+	})) {
+		const file = params.files.get(testCase.file)
+		const testFileHash =
+			testCode.get(testCase.file) ??
+			hashTestCodeText({ file: testCase.file, text: file?.text ?? '' })
+		const conftests = PYTHON_FILE_PATTERN.test(testCase.file)
+			? conftestsOf({ root, file: testCase.file, modules: params.modules })
+			: []
+		carries.set(
+			caseLabel(testCase),
+			lotCarryOf({
+				carry: params.carry,
+				root,
+				testCase: idOf(testCase),
+				caseHash: testCase.caseHash,
+				testFileHash,
+				dependencies: params.dependenciesOf(testCase.file),
+				conftests,
+				hashNow,
+				production: params.production,
+				...readers,
+			}),
+		)
+	}
+	return carries
+}
+
+/**
+ * A case only the lot carry can prove: passing, of the change, with no counted receipt but refusals, no `accept` or
+ * `revised` entry naming it, no `moved` decision. `judgePass` answers such a case `PROVES_NOTHING`.
+ */
+function isLotCarryCandidate(params: {
+	context: TddContext
+	testCase: RunCase
+	acceptances: readonly LotCaseEntry[]
+	revisions: readonly LotCaseEntry[]
+	moved: ReadonlyMap<string, MovedCarry>
+}): boolean {
+	const { testCase } = params
+	if (testCase.state !== 'passed' || !testCase.ofChange) return false
+	if (params.moved.has(caseLabel(testCase))) return false
+	if (findCaseEntry({ entries: params.acceptances, testCase, list: 'accept' })) return false
+	if (findCaseEntry({ entries: params.revisions, testCase, list: 'revised' })) return false
+	return countingReceipts({
+		ledger: params.context.ledger,
+		testCase: idOf(testCase),
+		acceptances: params.acceptances,
+		revisions: params.revisions,
+	}).counting.every((receipt) => receipt.kind === 'refused')
+}
+
+/** The git readers `lotCarryOf` takes, each answer kept for the run: a blob of a commit, and whether a commit reads. */
+function baseReadersOf(root: string): Pick<LotCarryParams, 'readBaseBlob' | 'isBaseReadable'> {
+	const blobs = new Map<string, string | undefined>()
+	const commits = new Map<string, boolean>()
+	return {
+		readBaseBlob: function readBaseBlob({ base, path }) {
+			const key = `${base}:${path}`
+			if (blobs.has(key)) return blobs.get(key)
+			const text = tryReadGit({ root, args: ['show', `${base}:./${path}`] })
+			blobs.set(key, text)
+			return text
+		},
+		isBaseReadable: function isBaseReadable({ base }) {
+			const known = commits.get(base)
+			if (known !== undefined) return known
+			const readable =
+				tryReadGit({ root, args: ['cat-file', '-e', `${base}^{commit}`] }) !== undefined
+			commits.set(base, readable)
+			return readable
+		},
+	}
 }
 
 /** The conftests each frozen pytest file of the run ran under (`conftestsOf`): a moved case keeps them. */
@@ -1197,9 +1368,10 @@ function dependenciesUnlikeRed(params: {
 }
 
 /**
- * A passing case its `moved` entries decided before the run (`carry`): refused for the reason given; carrying, refused
- * when it passes on the base's production as written now (its file may assert nothing of the lot's code), else the
- * earlier case's red under its label (flag `moved`, at that red's production state).
+ * A passing case its `moved` entries, or the lot it was rebuilt from (`lot` set), decided before the run (`carry`):
+ * refused for the reason given; carrying, refused when it passes on the base's production as written now (its file
+ * may assert nothing of the lot's code), else the earlier red under its label at that red's production state: a
+ * moved one flagged `moved`, a carried one with the source red's flags and `carried`, naming the source lot.
  */
 function judgeMoved(params: {
 	testCase: RunCase
@@ -1209,6 +1381,7 @@ function judgeMoved(params: {
 	const { testCase, carry } = params
 	if (carry.kind === 'refused')
 		return { testCase, kind: 'refused', detail: carry.reason, reason: carry.reason, flags: [] }
+	if (carry.lot !== undefined) return judgeCarried({ ...params, carry, lot: carry.lot })
 	const fromLabel = caseLabel(carry.from)
 	if (params.onBase?.kind === 'passes') {
 		const reason = MOVED_PASSES_ON_BASE.replace('{from}', () => fromLabel)
@@ -1221,6 +1394,33 @@ function judgeMoved(params: {
 		...(carry.red.message !== undefined && { message: carry.red.message }),
 		flags: ['moved'],
 		productionHash: carry.red.productionHash,
+	}
+}
+
+/**
+ * A case carrying the red of the lot it was rebuilt from (`judgeMoved`): refused when it passes on the base's
+ * production; else that red, its flags kept and `carried` added, its production state and its time named.
+ */
+function judgeCarried(params: {
+	testCase: RunCase
+	carry: Extract<MovedCarry, { kind: 'carry' }>
+	lot: string
+	onBase: BaseRedVerdict | undefined
+}): RedJudgement {
+	const { testCase, lot } = params
+	const { red } = params.carry
+	if (params.onBase?.kind === 'passes') {
+		const reason = fillMessage({ template: CARRIED_PASSES_ON_BASE, values: { lot } })
+		return { testCase, kind: 'refused', detail: reason, reason, flags: [] }
+	}
+	return {
+		testCase,
+		kind: 'red',
+		detail: fillMessage({ template: CARRIED_FROM, values: { lot, at: red.at } }),
+		...(red.message !== undefined && { message: red.message }),
+		flags: [...new Set<ReceiptFlag>([...(red.flags ?? []), CARRIED_FLAG])],
+		productionHash: red.productionHash,
+		carriedFrom: { lot, at: red.at },
 	}
 }
 

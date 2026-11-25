@@ -10,6 +10,7 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
   dialecte lot start <brief.json> [--effort low|medium|high] [--overlap-ok] [--by <who> --reason <text>] [--dry-run] [--simulate <scenario>] [--json]
   dialecte lot start <brief.json> --on <lot> [the options above]
   dialecte lot start <brief.json> --keep <why> [the options above]
+  dialecte lot start <brief.json> --from <lot> [the options above]
   dialecte lot status <id> [--json]
   dialecte lot forecast [<id>] [--json] [--against <lot>]
   dialecte lot risk <id|folder> [--json]
@@ -103,6 +104,21 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
           change request as the host holds it (open, draft, queued, closed, or the host cannot say:
           <why>), the hand-over card on <parent> (#<change request>) from files only; on <parent>
           (no change request yet) without one
+  start - --from <lot> rebuilds a canceled lot (the value is a lot id, not a file): the lot it
+          names, resolved in the brief's repository, must be canceled (a canceled transition or a
+          registry abandoned entry), not simulated and not landed; a failed, working, ready or
+          input-required lot is refused naming lot stop, a lot canceled by its abandoned.json marker
+          only is refused until the run its marker names ends, a committed or landed one is refused
+          (its work is on main), each before any fault of the brief, so a live lot of the same scope
+          is never met as an overlap; then a lot of another repository, a worktree gone, receipts
+          missing, not JSON, of another version or holding no production state, no base of them git
+          can read, or a .dialecte/lot.json that does not read are refused together (exit 2, nothing
+          published); the lot folder gets carry.json ({ schema, from, state, at, ledger,
+          declaration?, receipts }) and carry/ledger.json and carry/lot.json, the source's bytes as
+          read, before it is published; the start line names it (carry from <lot> (<state>): <n> red
+          receipts kept for tdd red), --dry-run names it (would carry from ...) writing nothing,
+          --json adds carry { from, state, receipts }; --from with --simulate is a usage error (exit
+          2)
   start - a met lot that merged on the host but was never closed is settled first: a pushed lot (its
           landing.json names a change request, or origin holds its branch) read merged by git (its
           tip in origin/<base>, or a squash read from the tree), else by the host when git cannot
@@ -720,7 +736,7 @@ e.g. dialecte lot finding ../handover --round 1 --severity nit --at src/a.ts:3 "
 
 Verbs: `start`, `status`, `forecast`, `risk`, `wait`, `answer`, `result`, `stop`, `scope`, `keep`, `unkeep`, `station`, `exempt`, `accept`, `revised`, `gone`, `moved`, `mutation`, `finding`, `decide`, `snapshot`, `choice`, `standard`, `delta`, `recap`, `verify`, `report`, `export`, `brief`, `describe`, `review`, `approve`, `design`, `land`, `close`, `prune`
 
-Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`, `--json`, `--on`, `--keep`, `--against`, `--class`, `--timeout`, `--drop`, `--add`, `--step`, `--round`, `--attempt`, `--agent`, `--executor`, `--vendor`, `--model`, `--tier`, `--session`, `--skill`, `--skill-asked`, `--event`, `--run`, `--tokens-in`, `--tokens-out`, `--tokens-cache-read`, `--tokens-cache-write`, `--tokens-total`, `--money`, `--duration`, `--exit`, `--verdict`, `--suite`, `--from`, `--remove`, `--severity`, `--at`, `--beyond-cap`, `--worktree`, `--note`, `--feature`, `--simulated`, `--kept`, `--print`, `--no-open`, `--comments`, `--from-plan`, `--approve`, `--waive`, `--all`, `--yes`
+Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`, `--json`, `--on`, `--keep`, `--from`, `--against`, `--class`, `--timeout`, `--drop`, `--add`, `--step`, `--round`, `--attempt`, `--agent`, `--executor`, `--vendor`, `--model`, `--tier`, `--session`, `--skill`, `--skill-asked`, `--event`, `--run`, `--tokens-in`, `--tokens-out`, `--tokens-cache-read`, `--tokens-cache-write`, `--tokens-total`, `--money`, `--duration`, `--exit`, `--verdict`, `--suite`, `--remove`, `--severity`, `--at`, `--beyond-cap`, `--worktree`, `--note`, `--feature`, `--simulated`, `--kept`, `--print`, `--no-open`, `--comments`, `--from-plan`, `--approve`, `--waive`, `--all`, `--yes`
 <!-- /dialecte-reference -->
 
 - `dialecte lot start <brief.json> [--effort low|medium|high] [--by <who> --reason <text>] [--dry-run] [--simulate <scenario>] [--json]` starts a lot from its brief
@@ -1235,6 +1251,27 @@ Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`
   `=`, `[`, `-`; `~/`), is refused with the row's id; a `/` starting no segment (`a.ts / b.ts`, `+/- 2`) and
   URLs stay. Where a finding was logged, the hand-over folder and the lots file's notes are left out. It writes
   nothing.
+
+## Rebuilding a canceled lot
+
+A lot canceled and rebuilt on a fresh branch (its commits brought over by a cherry-pick) would start with an empty tdd
+ledger: its production exists already, so every passing case would be refused at `tdd red` as proving nothing.
+`lot start <brief.json> --from <lot>` keeps the canceled lot's red receipts instead:
+
+1. Stop the old lot (`dialecte lot stop <lot>`): only a canceled lot is a source. A failed, working, ready or
+   input-required one is refused naming `lot stop`; one canceled by its `abandoned.json` marker only is refused until
+   the run its marker names ends; a committed or landed one has its work on main already.
+2. Start the new lot with `--from <lot>`. The start copies the source's ledger (and its `.dialecte/lot.json` when it
+   has one) into the new lot's folder, `carry/ledger.json` and `carry/lot.json`, with their sha256 in `carry.json`:
+   the source's worktree may be pruned afterwards. `--dry-run` names what it would carry and writes nothing.
+3. Bring the work over (the cherry-pick), then run `dialecte tdd red` before any other production edit: a case's red
+   is carried only when its test code is byte-identical to what the source's named green ran, as the source's own
+   status counted it, and the lot's whole production surface reads as it did at that green. Any production edit before
+   that first `tdd red` refuses every carry; reverted, the next `tdd red` carries again. The source side is the
+   production state its own runs recorded; today's side is read with today's `package.json`, so a change of which
+   files count as production only refuses, never carries. A carried red is flagged `carried` and names the source lot; a case that cannot be carried is refused
+   with the reason, never silently.
+4. Run `dialecte tdd green`: greens are never carried, each case runs at today's tree.
 
 ## Landing through the host's queue
 

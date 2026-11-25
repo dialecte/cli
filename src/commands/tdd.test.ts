@@ -1353,7 +1353,7 @@ describe('tdd status --legend', { timeout: 60_000 }, () => {
 		}).toEqual({
 			exitCodes: [0, 0],
 			first: true,
-			terms: 30,
+			terms: 32,
 		})
 		expect(legend.lines).toEqual(handover.lines.slice(first, last + 2))
 	})

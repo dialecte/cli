@@ -8,6 +8,7 @@ export const START_VALUE_OPTIONS: readonly string[] = [
 	'reason',
 	'on',
 	'keep',
+	'from',
 ]
 export const START_FLAGS: readonly string[] = ['dry-run', 'json', 'overlap-ok']
 

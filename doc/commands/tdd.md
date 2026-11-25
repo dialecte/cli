@@ -42,6 +42,14 @@ tdd - Receipts that each new test failed on an assertion before the code, then p
                  name that old path, a gone entry naming it is refused (a case removed in the rename
                  is gone at the new path), and a file-level moved entry on a pair tdd matches itself
                  is listed not needed, never unused
+  carried - in a lot started with lot start --from <lot>, a passing case of the change nothing else
+            proves (no receipt but refusals, no accept, revised or moved entry) carries the canceled
+            lot's red when its test call, test file, the test code it depends on and the production
+            slice of that lot's green are byte-identical now: a red flagged carried (that red's
+            flags kept, carried from <lot>: its red of <time>), whose green runs again; else refused
+            not carried from <lot>: <why>, or carried from <lot>, but it passes on the base
+            production; carry.json or a copy of it unreadable or changed since the start refuses the
+            whole red run (exit 2, nothing recorded)
   --legend - the tdd terms of the hand-over card
 
 e.g. dialecte tdd green
@@ -243,6 +251,24 @@ Flags: `--base`, `--json`, `--flags`, `--legend`
     outside its test calls, by tokens, that it no longer runs; a row added to a table is no split), in a
     scratch copy of the base tree outside the worktree removed after it, bounded
     at 5 minutes; `status` prints its duration (`base collect  <n> file(s)  <duration>`).
+  - A lot rebuilt with `lot start <brief.json> --from <lot>` (see `lot`, "Rebuilding a canceled lot") carries the
+    red of the canceled lot for a passing case of the change nothing else proves: no receipt of it but refusals, no
+    `accept`, `revised` or `moved` entry naming it. The case carries when it stands as the canceled lot's green of
+    it stood: the same test call, test file and test code it depends on (each helper as the last freeze before that
+    green held it, else as the canceled lot's base held it; a pytest file's conftests as its freeze recorded them),
+    and every production file of that green's state and of today's state at the content it had then (a path a state
+    does not name read at its base). The first green of the canceled lot that matches is the one compared. The red is
+    recorded at that red's production state, its flags kept and `carried` added, with
+    `carried from <lot>: its red of <time>` on its line and `carriedFrom` in the receipt; it then runs on the base's
+    production like a moved case, and passing there is refused (`carried from <lot>, but it passes on the base
+    production: the carry proves nothing`). A case that cannot be carried is refused in place of `it ran green: this
+    test proves nothing yet` with `not carried from <lot>: <why>` (its test call, test file, a helper, its conftests
+    or a production file differs, naming it; the canceled lot proved it otherwise than by a red, holds no green of it,
+    recorded no production state for that green, or its base no longer reads). A case accepted, revised, of the base
+    or with a receipt of its own is judged exactly as without a source. Greens are never carried: `tdd green` runs
+    each carried case at today's tree. `carry.json`, `carry/ledger.json` or `carry/lot.json` in the lot folder
+    unreadable, missing or changed since the start (their sha256 recorded in `carry.json`) refuses the whole red run,
+    exit 2, naming the file, nothing recorded.
   - `green` runs the changed test files: each case needs a red receipt, its file, its test call and its
     test code as frozen, production changed since its red ("nothing in production changed since red"),
     and a pass.

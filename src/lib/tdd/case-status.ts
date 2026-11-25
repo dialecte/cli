@@ -81,9 +81,12 @@ export function caseStatusOf(params: {
 /**
  * The last freeze that can change what a green of the case proved: it froze the case's own file or a
  * helper the case depends on at a new hash. A freeze of another test file (the next step's), or of the
- * same file at the same hash, does not.
+ * same file at the same hash, does not. Its index in `entries`, -1 for none.
+ *
+ * @intent find the freeze after which a green of a case still proves it
+ * @internal
  */
-function lastInvalidatingFreeze(params: {
+export function lastInvalidatingFreeze(params: {
 	root: string
 	entries: readonly TddEntry[]
 	file: string
@@ -123,7 +126,8 @@ export function flagsOf(params: { ledger: TddLedger; testCase: TestCaseId }): Re
 	return [...new Set(receiptsOf(params).flatMap((receipt) => receipt.flags ?? []))]
 }
 
-function lastIndexOf(params: {
+/** The index of the last entry that `matches`; -1 for none. */
+export function lastIndexOf(params: {
 	entries: readonly TddEntry[]
 	matches: (entry: TddEntry) => boolean
 }): number {
