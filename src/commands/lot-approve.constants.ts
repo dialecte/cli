@@ -10,6 +10,8 @@ export const APPROVAL_LINE_SCHEMA = 1
 export const APPROVABLE_STATES: readonly string[] = ['working', 'ready']
 
 export const LOT_APPROVE_LINES = {
+	// a failing test on the lot's tests record (testEvidenceRefusalOf), as land refuses it
+	failingTests: '{reason}',
 	prefix: 'lot approve: ',
 	notApprovable: 'lot approve: {lot} is {state}: only a lot at work is approved',
 	noLanding: 'lot approve: {lot} has no {changeRequestNoun} yet: dialecte lot land {lot} opens it',

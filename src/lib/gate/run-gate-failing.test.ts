@@ -460,3 +460,97 @@ describe(
 		)
 	},
 )
+
+/** A first run that fails one case and one collect, naming three modules it ran. */
+const KEYED_FIRST_OUTPUT = [
+	' ❯ |node| src/a.test.ts (2 tests | 1 failed) 3ms',
+	' ✓ |node| src/b.test.ts (1 test) 1ms',
+	' FAIL  src/z.test.ts [ src/z.test.ts ]',
+	' FAIL  |node| src/a.test.ts > group > one',
+	' Test Files  2 failed | 1 passed (3)',
+	'      Tests  1 failed | 2 passed (3)',
+	'',
+].join('\n')
+
+/** A serial rerun that passes both failing files. */
+const KEYED_SERIAL_PASSED = ` ✓ |node| src/a.test.ts (2 tests) 3ms\n ✓ src/z.test.ts (1 test) 1ms\n${PRINTED_PASSED}`
+
+/** A serial rerun that fails another case of the first file. */
+const KEYED_SERIAL_FAILED = [
+	' ❯ |node| src/a.test.ts (2 tests | 1 failed) 3ms',
+	' FAIL  |node| src/a.test.ts > group > two',
+	' Test Files  1 failed (1)',
+	'      Tests  1 failed | 1 passed (2)',
+	'',
+].join('\n')
+
+describe(
+	'runGateSteps: a test step records the keys it failed and ran (D1)',
+	{ timeout: SCRATCH_REPOSITORY_TIMEOUT },
+	() => {
+		it('fails in parallel, passes serially → flaky, the first run’s failing keys and cases, the keys of both runs, a scoped test step; recorded as such', async () => {
+			const given = packageFolder()
+			writeFiles({
+				root: given.root,
+				files: { 'output.txt': KEYED_FIRST_OUTPUT, 'output-serial.txt': KEYED_SERIAL_PASSED },
+			})
+
+			const result = await runOne({ given, step: DIRECT })
+
+			const expected = {
+				status: 'passed',
+				note: 'flaky in parallel',
+				testStep: true,
+				selects: 'scoped',
+				failingKeys: ['src/z.test.ts', '|node| src/a.test.ts'],
+				failingCases: ['|node| src/a.test.ts > group > one'],
+				ranFiles: ['src/z.test.ts', '|node| src/a.test.ts', '|node| src/b.test.ts'],
+			}
+			expect(result).toMatchObject(expected)
+			const { status: _status, note: _note, ...recorded } = expected
+			expect(recordedStepOf({ root: given.root, result })).toMatchObject(recorded)
+		})
+
+		it('fails serially too → failed, the cases of both runs', async () => {
+			const given = packageFolder()
+			writeFiles({
+				root: given.root,
+				files: {
+					'output.txt': KEYED_FIRST_OUTPUT,
+					'output-serial.txt': KEYED_SERIAL_FAILED,
+					'exit-serial.txt': '1',
+				},
+			})
+
+			const result = await runOne({ given, step: DIRECT })
+
+			expect(result).toMatchObject({
+				status: 'failed',
+				testStep: true,
+				failingKeys: ['src/z.test.ts', '|node| src/a.test.ts'],
+				failingCases: ['|node| src/a.test.ts > group > one', '|node| src/a.test.ts > group > two'],
+				// the collect failure prints no module line: src/z.test.ts never ran
+				ranFiles: ['|node| src/a.test.ts', '|node| src/b.test.ts'],
+			})
+		})
+
+		it('a test step not run after a failed step, and a failed step that counts no tests → no test step, no keys', async () => {
+			const given = packageFolder()
+
+			const [check, tests] = await runGateSteps({
+				root: given.root,
+				steps: [{ name: 'check', run: 'sh ./step.sh check' }, DIRECT],
+				packageJson: PACKAGE_JSON,
+				scope: given.scope,
+			})
+
+			expect(check?.status).toBe('failed')
+			expect(tests?.status).toBe('not-run')
+			for (const result of [check, tests]) {
+				expect(result?.testStep).toBeUndefined()
+				expect(result?.selects).toBeUndefined()
+				expect(result?.ranFiles).toBeUndefined()
+			}
+		})
+	},
+)

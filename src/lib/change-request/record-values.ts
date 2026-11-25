@@ -1,6 +1,7 @@
 /**
  * The review and tests rows checked against what their writers write, before the body shows them: a severity, a state,
- * a review station, a verdict, a model word, a gate mode or a case status outside its list is a forged row, refused
+ * a review station, a verdict, a model word, a gate mode or a case status outside its list, or a tests.json field of the wrong shape (`testsRecordFault`, the one
+ * rule per field), is a forged row, refused
  * with its record and field, never shown.
  */
 import {
@@ -9,13 +10,8 @@ import {
 	VERDICT_WORD_PATTERN,
 } from '../review-rounds/review-record.constants.ts'
 import { FINDING_ID_PATTERN } from '../review-rounds/review-rounds.constants.ts'
-import {
-	PIECE_RECORDS,
-	RECORD_CASE_STATUSES,
-	RECORD_GATE_MODES,
-	ROW_SEVERITIES,
-	ROW_VERDICTS,
-} from './change-request.constants.ts'
+import { testsRecordFault } from '../tdd/tests-record-rules.ts'
+import { PIECE_RECORDS, ROW_SEVERITIES, ROW_VERDICTS } from './change-request.constants.ts'
 
 import type { FindingRow, VerdictRow } from '../review-rounds/review-record.types.ts'
 import type { ChangeRequestSources } from './change-request.types.ts'
@@ -29,12 +25,9 @@ export function recordValueFault(
 		review?.findings.map(findingFault).find((fault) => fault !== undefined) ??
 		review?.verdicts.map(verdictFault).find((fault) => fault !== undefined)
 	if (field !== undefined) return { record: PIECE_RECORDS.review, field }
-	const { tdd, gate } = sources.tests ?? {}
-	if (gate !== undefined && !(RECORD_GATE_MODES as readonly string[]).includes(gate.mode))
-		return { record: PIECE_RECORDS.tests, field: 'mode' }
-	const statuses = Object.keys(tdd?.counts ?? {})
-	if (statuses.some((status) => !(RECORD_CASE_STATUSES as readonly string[]).includes(status)))
-		return { record: PIECE_RECORDS.tests, field: 'status' }
+	const testsField =
+		sources.tests === undefined ? undefined : testsRecordFault({ record: sources.tests })
+	if (testsField !== undefined) return { record: PIECE_RECORDS.tests, field: testsField }
 	return undefined
 }
 

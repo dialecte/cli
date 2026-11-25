@@ -80,6 +80,7 @@ export const BODY_LINES = {
 	risk: 'risk class {riskClass} · effort {effort}',
 	noOverlaps: 'none',
 	noGate: 'gate: not recorded, CI is the proof',
+	gateUnknown: 'gate: {unknown}',
 	unindexedLot: 'another lot',
 	overlap: '- {index}: {reason}',
 } as const

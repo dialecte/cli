@@ -35,7 +35,8 @@ export function renderReuseLine(params: { command: string; record: GateRecord })
 /**
  * The steps of a reused record as results, but those named in `leftOut` (a step this run made its own): each with
  * its configured step when `steps` holds one of its name, else a step of that name with no command. A scoped
- * step's selection, a failed or flaky step's failing files and the heavy mark are the record's (`heavy` stays
+ * step's selection, a failed or flaky step's failing files, keys and cases, a test step's mark, selects and ran keys,
+ * and the heavy mark are the record's (`heavy` stays
  * outside the key, so the record says it).
  */
 export function reusedResults(params: {
@@ -61,6 +62,11 @@ export function reusedResults(params: {
 				...(recorded.optedOut !== undefined && { optedOut: recorded.optedOut }),
 				...(recorded.selection && { selection: recorded.selection }),
 				...(recorded.failing && { failing: recorded.failing }),
+				...(recorded.failingKeys && { failingKeys: recorded.failingKeys }),
+				...(recorded.failingCases && { failingCases: recorded.failingCases }),
+				...(recorded.testStep && { testStep: true as const }),
+				...(recorded.selects && { selects: recorded.selects }),
+				...(recorded.ranFiles && { ranFiles: recorded.ranFiles }),
 			}
 		})
 }

@@ -11,7 +11,7 @@ import { CHANGELOG_FILE, NO_ENTRY_EXTENSION } from '../changelog/changelog.const
 import { readSections } from '../changelog/sections.ts'
 import { lotGitDeclaredHighOf } from '../design/base-declared.ts'
 import { readContribRecord, readGateRecords } from '../gate-records/gate-records.ts'
-import { hashStateTree } from '../gate-records/state-hash.ts'
+import { headStateHashOf } from '../gate-records/state-hash.ts'
 import { readCommitOrNone, readFilesAtRevision, readGit, tryReadGit } from '../git.ts'
 import { readLanding } from '../handover/land-record.ts'
 import { HOST_VENDORS } from '../host/host-vendors.constants.ts'
@@ -206,9 +206,7 @@ function readSourcesAt(params: {
 	const base = fork.forkPoint
 	const changes = changedFilesOf({ worktree: params.worktree, base })
 	const version = versionFactsOf({ worktree: params.worktree, base, changes })
-	const treeHash = hashStateTree(
-		readGit({ root: params.worktree, args: ['rev-parse', 'HEAD^{tree}'] }).trim(),
-	)
+	const treeHash = headStateHashOf({ root: params.worktree })
 	const standing = riskStandingOf({ folder: params.lotFolder })
 	const tests = readTestsRecord({ folder: params.lotFolder })
 	const review = reviewAtHead(params)

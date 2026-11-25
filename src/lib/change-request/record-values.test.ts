@@ -134,4 +134,21 @@ describe('recordValueFault', () => {
 
 		expect(recordValueFault(sources)).toEqual({ record: 'tests.json', field: 'status' })
 	})
+
+	it('a gate part whose ledger is no list → refused naming tests.json and the field', () => {
+		const sources = sourcesWith({
+			tests: {
+				schema: 1,
+				gate: {
+					mode: 'full',
+					at: '',
+					head: '',
+					stateHash: TREE,
+					failures: {} as [],
+				},
+			},
+		})
+
+		expect(recordValueFault(sources)).toEqual({ record: 'tests.json', field: 'failures' })
+	})
 })

@@ -882,7 +882,7 @@ function flakyLineOf(step: RecordedStep): CardGateLine {
 }
 
 /** `failing <n>: <first 3 paths>`, then `, +<k> more` when there are more. */
-function failingDetail(failing: readonly string[]): string {
+export function failingDetail(failing: readonly string[]): string {
 	const shown = failing.slice(0, FAILING_PATHS_SHOWN)
 	const more = failing.length - shown.length
 	return FAILING_DETAIL.replace('{count}', String(failing.length)).replace(

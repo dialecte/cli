@@ -4,7 +4,13 @@
  */
 import type { ReleaseChangelog } from '../changelog/changelog.types.ts'
 import type { UsedGateBase } from '../gate/gate-base.types.ts'
-import type { GateMode, StepCounts, StepSelection, StepStatus } from '../gate/gate.types.ts'
+import type {
+	GateMode,
+	StepCounts,
+	StepSelection,
+	StepStatus,
+	TestSelects,
+} from '../gate/gate.types.ts'
 import type { AllowedCounts } from '../rules/allow-comments.types.ts'
 import type { DuplicateCaseId, JudgedCase } from '../tdd/tdd.types.ts'
 import type { ModeCommandHashes } from './mode-command-hashes.types.ts'
@@ -40,6 +46,16 @@ export type RecordedStep = {
 	heavy?: true
 	/** A failed or flaky step: every file it named as failing, sorted, unique. */
 	failing?: string[]
+	/** A failed or flaky step: the test keys it named as failing, sorted, unique. */
+	failingKeys?: string[]
+	/** A failed or flaky step: the cases it named as failing, each `<key> > <path>`. */
+	failingCases?: string[]
+	/** A step configured to count tests that ran (true only). */
+	testStep?: true
+	/** A test step that ran: how its configured step chose its tests. */
+	selects?: TestSelects
+	/** A test step that ran: the test keys its runs name as run. */
+	ranFiles?: string[]
 	/** What the step ran as (`hashGateStep`): another record's step of the same hash answers it; absent on a record of an older cli. */
 	stepHash?: string
 }

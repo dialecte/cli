@@ -16,6 +16,7 @@ import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { readPackageJson } from '../lib/package-json.ts'
 import { openBlockingFindings } from '../lib/review-rounds/review-record.ts'
 import { resolveTddBase } from '../lib/tdd/tdd-base.ts'
+import { testEvidenceRefusalOf } from '../lib/tdd/test-evidence.ts'
 import { APPROVABLE_STATES, LOT_APPROVE_LINES } from './lot-approve.constants.ts'
 
 import type { StackRoute } from '../lib/handover/stack-queue.types.ts'
@@ -106,7 +107,8 @@ function renderReasons(params: { place: LotPlace; changeRequest: ChangeRequest }
 
 /**
  * Why `lot approve` would refuse the lot now: the lot is no longer at work, its change request is not open or not at the
- * head the lot landed, its checks are not green on that head, or a finding other than a nit is open; none when it
+ * head the lot landed, its checks are not green on that head, a failing test is on its tests record, or a finding
+ * other than a nit is open; none when it
  * would approve.
  *
  * @intent tell what stands between a lot and its approval
@@ -145,6 +147,7 @@ export function approvalRefusals(params: {
 		...headReasons(params),
 		...worktreeReasons(params),
 		...checksReasons(params),
+		...testEvidenceReasons({ place }),
 		...blockingReasons({ folder: place.lotFolder }),
 		...designReasons({ place }),
 		...queueReasons(params),
@@ -288,6 +291,17 @@ function checksReasons(params: {
 				]
 			: []
 	return [...failing, ...pending]
+}
+
+/** A failing test on the lot's tests record, or a record that does not read, as one reason (D6); none otherwise. */
+function testEvidenceReasons(params: { place: LotPlace }): string[] {
+	const reason = testEvidenceRefusalOf({
+		lotFolder: params.place.lotFolder,
+		worktree: params.place.worktree,
+	})
+	return reason === undefined
+		? []
+		: [fillMessage({ template: LOT_APPROVE_LINES.failingTests, values: { reason } })]
 }
 
 /** The findings other than nits still open, each with its severity, as one reason. */

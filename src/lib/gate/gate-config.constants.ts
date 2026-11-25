@@ -170,6 +170,27 @@ export const VITEST_COMMAND_PATTERN = /\bvitest\b/
 export const FAILING_FILE_PATTERN = /^\s*FAIL\s+(?:\|[^|\n]*\|\s+)?(\S+) (?:>|\[) /gm
 
 /**
+ * A `FAIL` line read for its test key and case: the project (`|name|`, absent for vitest's default one), the file, and
+ * after ` > ` the case path (a collect failure's ` [ ... ]` names none).
+ */
+export const FAILING_CASE_PATTERN = /^\s*FAIL\s+(?:\|([^|\n]*)\|\s+)?(\S+) (?:> (.*)|\[)/gm
+
+/**
+ * vitest's per-module line, printed for every module a run ran, passing ones included: its mark, the project, the
+ * file, then ` (<n> test`.
+ */
+export const RAN_MODULE_PATTERN = /^\s*[✓❯×↓]\s+(?:\|([^|\n]*)\|\s+)?(\S+)\s+\(\d+ tests?\b/gm
+
+/** The `:<line>:<col>` a file carries under vitest's `includeTaskLocation`: not part of its key. */
+export const TASK_LOCATION_PATTERN = /:\d+:\d+$/
+
+/** The project prefix of a test key (`|name| `). */
+export const TEST_KEY_PROJECT_PATTERN = /^\|[^|]*\|\s+/
+
+/** The retry marker vitest may end a case path with: not part of the case. */
+export const RETRY_MARKER_PATTERN = /\s*\[retry: \d+\]$/
+
+/**
  * vitest's markers of an error outside any test: its `Unhandled Errors` banner (`⎯⎯ Unhandled Errors ⎯⎯`) or its
  * summary's `Errors  <n> error(s)` line. A run that shows one failed on a test failure, as a failed test does.
  */

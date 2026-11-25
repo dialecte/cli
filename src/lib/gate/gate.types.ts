@@ -14,6 +14,9 @@ export type StepCounts = {
 
 export type StepStatus = 'passed' | 'failed' | 'skipped' | 'not-run'
 
+/** How a test step chose its tests: the whole suite, the changed files (`changedOnly`), or a scoped selection. */
+export type TestSelects = 'all' | 'changed' | 'scoped'
+
 export type StepResult = {
 	step: GateStep
 	status: StepStatus
@@ -41,6 +44,16 @@ export type StepResult = {
 	duplicates?: DuplicateCaseId[]
 	/** A failed or flaky step: every file its output (and a scoped step's selection) names as failing, sorted, unique. */
 	failing?: string[]
+	/** A failed or flaky step: the test keys its output names as failing (`failingKeysOf`), sorted, unique. */
+	failingKeys?: string[]
+	/** A failed or flaky step: the cases its output names as failing, each `<key> > <path>`, sorted, unique. */
+	failingCases?: string[]
+	/** A step configured to count tests that ran (passed or failed), with or without counts. */
+	testStep?: true
+	/** A test step that ran: how its configured step chose its tests. */
+	selects?: TestSelects
+	/** A test step that ran: the test keys its runs (a serial rerun's included) name as run, sorted, unique. */
+	ranFiles?: string[]
 	/** A vitest test step that failed: its one serial rerun. */
 	rerun?: StepRerun
 	/** A scoped step that wrote a valid selection: what it recorded (the first run's, after a rerun). */

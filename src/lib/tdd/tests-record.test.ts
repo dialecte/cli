@@ -8,12 +8,18 @@ import { join } from 'node:path'
 
 import { temporaryFolder } from '../../../test/scratch-repository.ts'
 import { STORE_FILES } from '../store/store.constants.ts'
-import { readTestsRecord, writeTestsRecord } from './tests-record.ts'
+import {
+	readTestsFile,
+	readTestsRecord,
+	testsRecordFault,
+	writeTestsRecord,
+} from './tests-record.ts'
 
 import { describe, expect, it } from 'vitest'
 
 import type { GateRecord } from '../gate-records/gate-records.types.ts'
 import type { CaseStatusLine } from './tdd.types.ts'
+import type { TestsRecord } from './tests-record.types.ts'
 
 /** A case proven red then green, one accepted, one revised in another project, one red with a flag. */
 const CASES: CaseStatusLine[] = [
@@ -93,6 +99,7 @@ function gatePart(at: string) {
 		stateHash: 'e'.repeat(64),
 		tests: { passed: 40, failed: 0, skipped: 2, total: 42 },
 		testFiles: { passed: 5, failed: 0, total: 5 },
+		failures: [],
 	}
 }
 
@@ -204,5 +211,181 @@ describe('readTestsRecord', () => {
 		})
 
 		expect(readTestsRecord({ folder })).toEqual({ schema: 1, tdd: TDD_PART })
+	})
+})
+
+/** A new cli's fast record at `at` whose scoped test step failed `|node| src/a.test.ts` (one case), or passed it. */
+function keyedRecord(params: {
+	at: string
+	failed: boolean
+	selects?: 'scoped' | 'all'
+}): GateRecord {
+	const key = '|node| src/a.test.ts'
+	return {
+		mode: params.selects === 'all' ? 'full' : 'fast',
+		at: params.at,
+		head: 'd'.repeat(40),
+		stateHash: 'e'.repeat(64),
+		steps: [
+			{
+				name: 'tests',
+				status: params.failed ? 'failed' : 'passed',
+				counts: { tests: { passed: 3, failed: params.failed ? 1 : 0, skipped: 0, total: 4 } },
+				testStep: true,
+				selects: params.selects ?? 'scoped',
+				ranFiles: [key],
+				...(params.failed && { failingKeys: [key], failingCases: [`${key} > group > one`] }),
+			},
+		],
+	}
+}
+
+/** The failures of the folder's gate part, as their keys (`unknown` for an unknown entry). */
+function openKeysOf(folder: string): unknown {
+	const gate = readTestsRecord({ folder })?.gate
+	return gate?.failures?.map(
+		(failure) => failure.key ?? ('unknown' in failure ? 'unknown' : 'nameless'),
+	)
+}
+
+describe('writeTestsRecord - the ledger of the gate part', () => {
+	it('a gate refresh after a run whose test step failed -> one named entry with its case', () => {
+		const folder = temporaryFolder('tests-record-')
+
+		writeTestsRecord({
+			folder,
+			gateRecords: [keyedRecord({ at: '2026-11-24T10:00:00.000Z', failed: true })],
+		})
+
+		expect(readTestsRecord({ folder })?.gate?.failures).toEqual([
+			{
+				key: '|node| src/a.test.ts',
+				cases: ['|node| src/a.test.ts > group > one'],
+				mode: 'fast',
+				head: 'd'.repeat(40),
+				stateHash: 'e'.repeat(64),
+				at: '2026-11-24T10:00:00.000Z',
+			},
+		])
+	})
+
+	it('a tests.json that is not JSON, then a gate refresh of a scoped pass -> an unknown entry, never cleared by it', () => {
+		const folder = temporaryFolder('tests-record-')
+		writeFileSync(join(folder, STORE_FILES.tests), '{"schema":1,"ga')
+
+		writeTestsRecord({
+			folder,
+			gateRecords: [keyedRecord({ at: '2026-11-24T10:00:00.000Z', failed: false })],
+		})
+
+		expect(openKeysOf(folder)).toEqual(['unknown'])
+	})
+
+	it('a tests.json that is not JSON, then a tdd refresh -> a seeded gate part: no mode, the refresh’s tree and time, one unknown entry', () => {
+		const folder = temporaryFolder('tests-record-')
+		writeFileSync(join(folder, STORE_FILES.tests), 'not json')
+
+		writeTestsRecord({
+			folder,
+			tdd: { at: TDD_PART.at, head: TDD_PART.head, stateHash: TDD_PART.stateHash, cases: CASES },
+		})
+
+		const gate = readTestsRecord({ folder })?.gate
+		expect({
+			gate,
+			fault: testsRecordFault({ record: readTestsRecord({ folder }) as TestsRecord }),
+		}).toEqual({
+			gate: {
+				mode: null,
+				at: TDD_PART.at,
+				head: TDD_PART.head,
+				stateHash: TDD_PART.stateHash,
+				failures: [{ key: null, unknown: expect.stringContaining('tests.json'), at: TDD_PART.at }],
+			},
+			fault: undefined,
+		})
+	})
+
+	it('a faulty field, then a whole-suite pass -> no failure left', () => {
+		const folder = temporaryFolder('tests-record-')
+		writeFileSync(
+			join(folder, STORE_FILES.tests),
+			JSON.stringify({ schema: 1, gate: { mode: 'fast', at: 'x', head: 'h', stateHash: 7 } }),
+		)
+
+		writeTestsRecord({
+			folder,
+			gateRecords: [keyedRecord({ at: '2026-11-24T10:00:00.000Z', failed: false, selects: 'all' })],
+		})
+
+		expect(openKeysOf(folder)).toEqual([])
+	})
+})
+
+describe('readTestsFile', () => {
+	it('a folder without tests.json -> absent', () => {
+		expect(readTestsFile({ folder: temporaryFolder('tests-record-') })).toEqual({ absent: true })
+	})
+
+	for (const [what, text] of [
+		['a torn file', '{"schema":1,"td'],
+		['another schema', '{"schema":2,"tdd":{}}'],
+		['no object', '[1,2]'],
+	])
+		it(`${what} -> unreadable, with why`, () => {
+			const folder = temporaryFolder('tests-record-')
+			writeFileSync(join(folder, STORE_FILES.tests), text)
+
+			expect(readTestsFile({ folder })).toEqual({ unreadable: expect.any(String) })
+		})
+
+	it('a written record -> the record', () => {
+		const folder = temporaryFolder('tests-record-')
+		writeTestsRecord({
+			folder,
+			tdd: { at: TDD_PART.at, head: TDD_PART.head, stateHash: TDD_PART.stateHash, cases: CASES },
+		})
+
+		expect(readTestsFile({ folder })).toEqual({ record: { schema: 1, tdd: TDD_PART } })
+	})
+})
+
+/** A gate part that holds, with `fields` over it. */
+function recordWithGate(fields: Record<string, unknown>): TestsRecord {
+	return {
+		schema: 1,
+		gate: { ...gatePart('2026-11-24T10:00:00.000Z'), ...fields },
+	} as TestsRecord
+}
+
+describe('testsRecordFault', () => {
+	it.each([
+		{ what: 'a stateHash that is no string', fields: { stateHash: 7 }, field: 'stateHash' },
+		{ what: 'a mode no gate writes', fields: { mode: 'nightly' }, field: 'mode' },
+		{ what: 'no mode on a part without an unknown entry', fields: { mode: null }, field: 'mode' },
+		{ what: 'failures that are no list', fields: { failures: {} }, field: 'failures' },
+		{
+			what: 'an entry of a mode no gate writes',
+			fields: {
+				failures: [
+					{ key: 'src/a.test.ts', cases: [], mode: 'nightly', head: 'h', stateHash: 's', at: 'a' },
+				],
+			},
+			field: 'failures',
+		},
+		{
+			what: 'a nameless entry without its ran keys',
+			fields: {
+				failures: [{ key: null, mode: 'fast', head: 'h', stateHash: 's', at: 'a', failed: 1 }],
+			},
+			field: 'failures',
+		},
+		{ what: 'counts that are no numbers', fields: { tests: { passed: 'many' } }, field: 'tests' },
+	])('$what -> the field $field', ({ fields, field }) => {
+		expect(testsRecordFault({ record: recordWithGate(fields) })).toBe(field)
+	})
+
+	it('a record as the writers write it -> no fault', () => {
+		expect(testsRecordFault({ record: recordWithGate({}) })).toBeUndefined()
 	})
 })

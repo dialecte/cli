@@ -170,12 +170,14 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
   review - the private half of the lot's review, read-only (nothing written): the lot's state and
            branch, its change request (landing.json's) with the head it is at, the head the lot
            landed and the worktree's HEAD, its checks, the brief's goal and steps (title, spec,
-           behaviours), tests.json's tdd counts and gate run, decisions.md, every finding of the
-           ledger with its text and state, the standard line, and what lot approve would refuse,
-           every reason it gives, read by the same reader (or the approve command when it would
-           approve); then opens the change request's changed files in the browser (--no-open names
-           the page only; an opener that fails is named, never an exit); a lot without a landing
-           prints its private half and names lot land <id>, the host never asked
+           behaviours), tests.json's tdd counts and gate run (a tests.json that does not read, or
+           holds a field no writer writes, prints tests: tests.json cannot be read: <why>),
+           decisions.md, every finding of the ledger with its text and state, the standard line, and
+           what lot approve would refuse, every reason it gives, read by the same reader (or the
+           approve command when it would approve); then opens the change request's changed files in
+           the browser (--no-open names the page only; an opener that fails is named, never an
+           exit); a lot without a landing prints its private half and names lot land <id>, the host
+           never asked
   review --comments - the change request's line comments come back as findings of round <n> in the
     lot's findings ledger: a thread's first comment only (replies discuss it), each once
     (pulled-comments.jsonl records the comment and its finding; a second pull answers already), its
@@ -187,32 +189,33 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
             nothing queued) unless the lot is at work, the change request landing.json names is open
             at the head the lot landed and the worktree is at that head too (an unpushed commit
             refuses), its checks ran on that head and are green (a check run again counts by its
-            newest run; a failing or pending check, or none yet, refuses) and no finding but a nit
-            is open (open, or a fix still to verify), and its text renders over the live body; every
-            reason is named at once (the text checked once a stacked lot's route stands; a checks
-            read the host refuses named alone), for a lot at work the same reasons lot review's
-            approve line prints; then appends { schema, at, by, reason?, number, head } to the lot
-            folder's approvals.jsonl, which review.jsonl shows as a person's approve verdict with
-            that head (a change request text rendered on another head, after a later commit or a
-            rebase, leaves it out; the body names it by kind only, never the name; the orchestrator
-            in any casing and spacing is recorded as orchestrator), renders the change request's
-            text again from the records, makes a draft ready and queues it (the host's auto-merge or
-            queue; a lot started with --on whose change request still merges into its parent's
-            branch queues as a stack up to it through the host's stack merge, and only on a host
-            with stacks once the parent's change request, read by the parent's branch, is queued
-            (auto-merge on or in the host's queue), refused otherwise before anything is recorded:
-            approve the parent first, or land it again once the parent merged); the only verb that
-            queues, lot land never does; a queue the host refuses after the up-front queue-kind
-            check keeps the approval (exit 1) and the same approval run again answers already
-            approved, writing nothing, and queues; --by orchestrator (in any casing and spacing)
-            approves the cli's own lots only (the package named @dialecte/cli), every other package
-            waits for a person (exit 2); a forbidden word in --by or --reason, or a --by holding
-            what a public record never holds, refused (exit 2) before the host is asked; a lot
-            without a landing names lot land <id>; the queued line names the queue the host answers
-            for the change request's base (queued (<the host's word for its queue>)), nothing when
-            the read is refused or the lot is stacked; a lot queued alone whose host offers neither
-            auto-merge nor a queue is refused before anything is recorded or sent, naming what to
-            turn on (the queue kind read once, before the approval; a refused read refuses nothing)
+            newest run; a failing or pending check, or none yet, refuses), the lot's tests.json
+            holds no failing test and reads (as lot land holds it) and no finding but a nit is open
+            (open, or a fix still to verify), and its text renders over the live body; every reason
+            is named at once (the text checked once a stacked lot's route stands; a checks read the
+            host refuses named alone), for a lot at work the same reasons lot review's approve line
+            prints; then appends { schema, at, by, reason?, number, head } to the lot folder's
+            approvals.jsonl, which review.jsonl shows as a person's approve verdict with that head
+            (a change request text rendered on another head, after a later commit or a rebase,
+            leaves it out; the body names it by kind only, never the name; the orchestrator in any
+            casing and spacing is recorded as orchestrator), renders the change request's text again
+            from the records, makes a draft ready and queues it (the host's auto-merge or queue; a
+            lot started with --on whose change request still merges into its parent's branch queues
+            as a stack up to it through the host's stack merge, and only on a host with stacks once
+            the parent's change request, read by the parent's branch, is queued (auto-merge on or in
+            the host's queue), refused otherwise before anything is recorded: approve the parent
+            first, or land it again once the parent merged); the only verb that queues, lot land
+            never does; a queue the host refuses after the up-front queue-kind check keeps the
+            approval (exit 1) and the same approval run again answers already approved, writing
+            nothing, and queues; --by orchestrator (in any casing and spacing) approves the cli's
+            own lots only (the package named @dialecte/cli), every other package waits for a person
+            (exit 2); a forbidden word in --by or --reason, or a --by holding what a public record
+            never holds, refused (exit 2) before the host is asked; a lot without a landing names
+            lot land <id>; the queued line names the queue the host answers for the change request's
+            base (queued (<the host's word for its queue>)), nothing when the read is refused or the
+            lot is stacked; a lot queued alone whose host offers neither auto-merge nor a queue is
+            refused before anything is recorded or sent, naming what to turn on (the queue kind read
+            once, before the approval; a refused read refuses nothing)
   design - a lot's design (design before code): --from <file> records it by the sha256 of its bytes,
            appending { schema, at, kind: recorded, file, hash, from } to the lot folder's
            design.jsonl and keeping its copy as design/<hash>.md (the copy rules once the source is
@@ -334,6 +337,19 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
          naming every such path and the lot scope <lot> --add ... --by lot-session to run, no entry,
          no rebase, nothing pushed, no change request; uncommitted work is not held; a lot base that
          cannot be read refuses
+  land - then, still before anything is written, the lot's tests.json is held: a failing test on
+         record refuses (exit 1, no entry, no rebase, nothing pushed, no change request) whatever
+         tree it was seen on, naming each failing key and its cases, the gate mode and head that saw
+         it, this tree or another, and the run that clears it (dialecte gate --<mode>, or --release;
+         --release alone for a failure no file names; dialecte tdd green for a red tdd case); a
+         tests.json that does not read, or holds a field its writers never write so, refuses the
+         same way (fails closed); a pass of another tree, or no tests.json, lands as before (CI
+         tests the pushed head); the failures are the gate part's ledger: a failure stays until a
+         newer gate run ran its key and nothing in that run failed it, or a whole-suite pass (every
+         test step selecting every test: gate --full, or gate --release whose scoped steps select
+         against the empty tree); a run that tested nothing, an older run, a run reused from a
+         record older than the failure and a commit hook's run change nothing; a test file the
+         committed HEAD no longer holds stops counting
   status - the state derived from the lot records (working, input-required, ready, committed,
            canceled, failed), the worktree and link checks (a closed lot whose worktree is gone
            reads removed, no warning; an open one's reads worktree missing), and the exact next
