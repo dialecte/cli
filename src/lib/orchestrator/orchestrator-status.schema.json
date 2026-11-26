@@ -1,0 +1,242 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "orchestrator-status.schema.json",
+	"title": "Dialecte orchestrator status",
+	"type": "object",
+	"additionalProperties": false,
+	"required": ["schema", "workspace", "outcome", "state", "statusLine", "damage"],
+	"properties": {
+		"schema": { "type": "integer", "enum": [1] },
+		"workspace": { "$ref": "#/$defs/workspace" },
+		"outcome": { "type": "string", "enum": ["present", "missing", "damaged"] },
+		"state": {
+			"oneOf": [{ "type": "null" }, { "$ref": "#/$defs/state" }]
+		},
+		"statusLine": { "type": "string" },
+		"damage": { "type": "array", "items": { "$ref": "#/$defs/damage" } }
+	},
+	"allOf": [
+		{
+			"if": {
+				"properties": { "outcome": { "const": "present" } },
+				"required": ["outcome"]
+			},
+			"then": {
+				"properties": {
+					"state": { "$ref": "#/$defs/state" },
+					"damage": { "maxItems": 0 }
+				}
+			}
+		},
+		{
+			"if": {
+				"properties": { "outcome": { "const": "missing" } },
+				"required": ["outcome"]
+			},
+			"then": {
+				"properties": {
+					"state": { "type": "null" },
+					"damage": {
+						"minItems": 1,
+						"maxItems": 1,
+						"items": { "$ref": "#/$defs/missingDamage" }
+					}
+				}
+			}
+		},
+		{
+			"if": {
+				"properties": { "outcome": { "const": "damaged" } },
+				"required": ["outcome"]
+			},
+			"then": {
+				"properties": {
+					"damage": { "minItems": 1 }
+				}
+			}
+		}
+	],
+	"$defs": {
+		"damage": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["source", "message"],
+			"properties": {
+				"source": { "type": "string", "enum": ["state", "render", "log"] },
+				"message": { "type": "string" }
+			}
+		},
+		"missingDamage": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["source", "message"],
+			"properties": {
+				"source": { "type": "string", "enum": ["state"] },
+				"message": { "type": "string", "enum": ["state.json: missing"] }
+			}
+		},
+		"workspace": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["root", "key"],
+			"properties": {
+				"root": { "type": "string" },
+				"key": { "type": "string" }
+			}
+		},
+		"state": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": [
+				"schema",
+				"workspace",
+				"updatedAt",
+				"lanes",
+				"lots",
+				"runs",
+				"runners",
+				"held",
+				"waitingOnYou",
+				"prs",
+				"next",
+				"seen"
+			],
+			"properties": {
+				"schema": { "type": "integer", "enum": [1] },
+				"workspace": { "$ref": "#/$defs/workspace" },
+				"updatedAt": { "type": "string" },
+				"lanes": { "type": "array", "items": { "$ref": "#/$defs/lane" } },
+				"lots": { "type": "array", "items": { "$ref": "#/$defs/lot" } },
+				"runs": { "type": "array", "items": { "$ref": "#/$defs/run" } },
+				"runners": { "type": "array", "items": { "$ref": "#/$defs/runner" } },
+				"held": { "type": "array", "items": { "$ref": "#/$defs/held" } },
+				"waitingOnYou": { "type": "array", "items": { "$ref": "#/$defs/waiting" } },
+				"prs": { "type": "array", "items": { "$ref": "#/$defs/changeRequest" } },
+				"next": { "type": "array", "items": { "$ref": "#/$defs/next" } },
+				"seen": { "type": "array", "items": { "$ref": "#/$defs/seen" } }
+			}
+		},
+		"lane": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["name", "repos", "holds", "owns", "mode", "plan", "queue"],
+			"properties": {
+				"name": { "type": "string" },
+				"repos": { "type": "array", "items": { "type": "string" } },
+				"holds": { "type": "array", "items": { "type": "string" } },
+				"owns": { "type": "array", "items": { "type": "string" } },
+				"mode": { "type": "string", "enum": ["running", "hold", "paused"] },
+				"plan": { "type": "string" },
+				"queue": { "type": "array", "items": { "type": "string" } },
+				"pin": { "type": "string" }
+			}
+		},
+		"lot": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["id", "lane", "repo", "state", "station", "attempt", "pr", "head"],
+			"properties": {
+				"id": { "type": "string" },
+				"lane": { "type": "string" },
+				"repo": { "type": "string" },
+				"state": {
+					"type": "string",
+					"enum": ["working", "ready", "failed", "canceled", "input-required", "committed"]
+				},
+				"station": { "type": "string" },
+				"attempt": { "type": "number" },
+				"pr": { "type": "string" },
+				"head": { "type": "string" },
+				"run": { "$ref": "#/$defs/lotRun" }
+			}
+		},
+		"lotRun": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["runner", "handle"],
+			"properties": {
+				"runner": { "type": "string" },
+				"handle": { "type": "string" }
+			}
+		},
+		"run": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["id", "kind", "subject", "runner", "attempt", "status", "started"],
+			"properties": {
+				"id": { "type": "string" },
+				"kind": { "type": "string" },
+				"subject": { "type": "string" },
+				"runner": { "type": "string" },
+				"attempt": { "type": "number" },
+				"status": { "type": "string" },
+				"started": { "type": "string" },
+				"until": { "type": "string" }
+			}
+		},
+		"runner": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["id", "available", "tokensSinceReset"],
+			"properties": {
+				"id": { "type": "string" },
+				"available": { "type": "boolean" },
+				"until": { "type": "string" },
+				"tokensSinceReset": { "type": "number" },
+				"usage": { "type": "string" }
+			}
+		},
+		"held": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["item", "by", "since"],
+			"properties": {
+				"item": { "type": "string" },
+				"by": { "type": "string", "enum": ["user", "runner", "overlap"] },
+				"since": { "type": "string" },
+				"until": { "type": "string" }
+			}
+		},
+		"waiting": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["id", "kind", "text"],
+			"properties": {
+				"id": { "type": "string" },
+				"kind": { "type": "string", "enum": ["gate", "question"] },
+				"text": { "type": "string" },
+				"line": { "type": "string" },
+				"options": { "type": "array", "items": { "type": "string" } }
+			}
+		},
+		"changeRequest": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["repo", "head", "ci", "review"],
+			"properties": {
+				"repo": { "type": "string" },
+				"head": { "type": "string" },
+				"ci": { "type": "string" },
+				"review": { "type": "string" }
+			}
+		},
+		"next": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["lane", "lot"],
+			"properties": {
+				"lane": { "type": "string" },
+				"lot": { "type": "string" }
+			}
+		},
+		"seen": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["source", "event"],
+			"properties": {
+				"source": { "type": "string" },
+				"event": { "type": "string" }
+			}
+		}
+	}
+}

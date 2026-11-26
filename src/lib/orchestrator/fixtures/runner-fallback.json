@@ -1,0 +1,71 @@
+{
+	"schema": 1,
+	"workspace": {
+		"root": "/workspace/core",
+		"key": "core-abcdef123456"
+	},
+	"updatedAt": "2026-11-26T10:10:00.000Z",
+	"lanes": [
+		{
+			"name": "core",
+			"repos": ["core"],
+			"holds": [],
+			"owns": ["0501-core-parser"],
+			"mode": "running",
+			"plan": "implementation-plans/AGENT_TOOLING/research/40-SO4",
+			"queue": []
+		}
+	],
+	"lots": [
+		{
+			"id": "0501-core-parser",
+			"lane": "core",
+			"repo": "core",
+			"state": "working",
+			"station": "implement",
+			"attempt": 1,
+			"pr": "",
+			"head": "0501-cccc",
+			"run": {
+				"runner": "runner-b",
+				"handle": "run-fallback-1"
+			}
+		}
+	],
+	"runs": [
+		{
+			"id": "run-fallback-1",
+			"kind": "station",
+			"subject": "0501-core-parser",
+			"runner": "runner-b",
+			"attempt": 1,
+			"status": "running",
+			"started": "2026-11-26T10:05:00.000Z"
+		}
+	],
+	"runners": [
+		{
+			"id": "runner-a",
+			"available": false,
+			"until": "2026-11-26T11:00:00.000Z",
+			"tokensSinceReset": 9800,
+			"usage": "limit"
+		},
+		{
+			"id": "runner-b",
+			"available": true,
+			"tokensSinceReset": 1200,
+			"usage": "24%"
+		}
+	],
+	"held": [],
+	"waitingOnYou": [],
+	"prs": [],
+	"next": [],
+	"seen": [
+		{
+			"source": "runner",
+			"event": "event-fallback-1"
+		}
+	]
+}

@@ -1,0 +1,5 @@
+{
+	"inFlight": ["0401-cli-state", "0402-cli-status"],
+	"waitingOnYou": ["Approve the status command before handover"],
+	"next": ["0403-cli-render"]
+}

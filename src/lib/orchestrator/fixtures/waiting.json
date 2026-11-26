@@ -1,0 +1,109 @@
+{
+	"schema": 1,
+	"workspace": {
+		"root": "/workspace/cli",
+		"key": "cli-123456789abc"
+	},
+	"updatedAt": "2026-11-26T10:00:00.000Z",
+	"lanes": [
+		{
+			"name": "cli",
+			"repos": ["cli"],
+			"holds": [],
+			"owns": ["0401-cli-state", "0402-cli-status"],
+			"mode": "running",
+			"plan": "implementation-plans/AGENT_TOOLING/research/40-SO1",
+			"queue": [],
+			"pin": "lot-0403"
+		}
+	],
+	"lots": [
+		{
+			"id": "0401-cli-state",
+			"lane": "cli",
+			"repo": "cli",
+			"state": "working",
+			"station": "test",
+			"attempt": 1,
+			"pr": "",
+			"head": "0401-aaaa",
+			"run": {
+				"runner": "runner-a",
+				"handle": "run-waiting-1"
+			}
+		},
+		{
+			"id": "0402-cli-status",
+			"lane": "cli",
+			"repo": "cli",
+			"state": "working",
+			"station": "review",
+			"attempt": 2,
+			"pr": "pr-402",
+			"head": "0402-bbbb",
+			"run": {
+				"runner": "runner-a",
+				"handle": "run-waiting-2"
+			}
+		}
+	],
+	"runs": [
+		{
+			"id": "run-waiting-1",
+			"kind": "station",
+			"subject": "0401-cli-state",
+			"runner": "runner-a",
+			"attempt": 1,
+			"status": "running",
+			"started": "2026-11-26T09:50:00.000Z"
+		},
+		{
+			"id": "run-waiting-2",
+			"kind": "station",
+			"subject": "0402-cli-status",
+			"runner": "runner-a",
+			"attempt": 2,
+			"status": "running",
+			"started": "2026-11-26T09:55:00.000Z",
+			"until": "2026-11-26T10:05:00.000Z"
+		}
+	],
+	"runners": [
+		{
+			"id": "runner-a",
+			"available": true,
+			"tokensSinceReset": 3200,
+			"usage": "64%"
+		}
+	],
+	"held": [],
+	"waitingOnYou": [
+		{
+			"id": "gate-status",
+			"kind": "gate",
+			"text": "Approve the status command before handover",
+			"line": "dialecte orchestrate status",
+			"options": ["approve", "hold"]
+		}
+	],
+	"prs": [
+		{
+			"repo": "cli",
+			"head": "0402-cli-status",
+			"ci": "pending",
+			"review": "none"
+		}
+	],
+	"next": [
+		{
+			"lane": "cli",
+			"lot": "0403-cli-render"
+		}
+	],
+	"seen": [
+		{
+			"source": "lot-store",
+			"event": "event-waiting-2"
+		}
+	]
+}

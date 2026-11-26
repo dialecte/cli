@@ -612,6 +612,21 @@ export const COMMAND_MAP: CommandMap = {
 		],
 		example: 'dialecte handover write ../handover/lots.json',
 	},
+	orchestrate: {
+		family: 'Workspace',
+		summary: 'The read-only orchestrator state of a workspace',
+		usage: ['dialecte orchestrate status [--workspace <path>] [--json]'],
+		notes: [
+			'status - reads state.json, log.jsonl and STATE.md below the state home for the selected workspace; the exact stored STATE.md is printed when state and render agree, and nothing is written',
+			'--workspace - selects a workspace path (relative to the current folder); the current folder is selected by default',
+			'--json - the versioned whole status document { schema, workspace, outcome, state, statusLine, damage }',
+		],
+		exitCodes: [
+			'1  orchestrator state is missing or damaged',
+			'2  unknown arguments or options, or the selected workspace is not a directory',
+		],
+		example: 'dialecte orchestrate status --workspace . --json',
+	},
 	worktree: {
 		family: 'Workspace',
 		summary: 'A worktree ready to work in; prune what a merge left',

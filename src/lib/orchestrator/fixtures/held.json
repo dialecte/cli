@@ -1,0 +1,68 @@
+{
+	"schema": 1,
+	"workspace": {
+		"root": "/workspace/orchestrator",
+		"key": "orchestrator-fedcba654321"
+	},
+	"updatedAt": "2026-11-26T10:20:00.000Z",
+	"lanes": [
+		{
+			"name": "cli",
+			"repos": ["cli", "core"],
+			"holds": ["release-window"],
+			"owns": [],
+			"mode": "hold",
+			"plan": "implementation-plans/AGENT_TOOLING",
+			"queue": ["0601-cli-release"]
+		},
+		{
+			"name": "copy-paste",
+			"repos": ["copy-paste"],
+			"holds": [],
+			"owns": [],
+			"mode": "paused",
+			"plan": "implementation-plans/COPY_PASTE",
+			"queue": []
+		}
+	],
+	"lots": [],
+	"runs": [],
+	"runners": [
+		{
+			"id": "runner-a",
+			"available": true,
+			"tokensSinceReset": 4100
+		}
+	],
+	"held": [
+		{
+			"item": "cli",
+			"by": "user",
+			"since": "2026-11-26T08:00:00.000Z",
+			"until": "2026-11-27T08:00:00.000Z"
+		},
+		{
+			"item": "copy-paste",
+			"by": "overlap",
+			"since": "2026-11-25T16:00:00.000Z"
+		}
+	],
+	"waitingOnYou": [],
+	"prs": [],
+	"next": [
+		{
+			"lane": "copy-paste",
+			"lot": "0602-copy-paste-docs"
+		},
+		{
+			"lane": "cli",
+			"lot": "0603-cli-release"
+		}
+	],
+	"seen": [
+		{
+			"source": "lane",
+			"event": "event-held-2"
+		}
+	]
+}
