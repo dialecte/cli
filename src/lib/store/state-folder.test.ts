@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 
+import { temporaryFolder } from '../../../test/scratch-repository.ts'
 import { stateFolder } from './state-folder.ts'
 import { storeListPath } from './store-list.ts'
 
@@ -28,6 +29,14 @@ describe('stateFolder', () => {
 		)
 	})
 
+	it('XDG_STATE_HOME relative → ignored as unset: <home>/.local/state of the given home', () => {
+		const home = temporaryFolder('dialecte-state-folder-home-')
+
+		expect(stateFolder({ environment: { XDG_STATE_HOME: 'relative/state' }, home })).toBe(
+			join(home, '.local', 'state'),
+		)
+	})
+
 	it('no parameter → the process environment', () => {
 		vi.stubEnv('XDG_STATE_HOME', '/state/y')
 
@@ -39,6 +48,14 @@ describe('storeListPath on the shared state folder', () => {
 	it('a guard: the store list stays <state>/dialecte/lot-stores', () => {
 		expect(storeListPath({ environment: { XDG_STATE_HOME: '/state/x' } })).toBe(
 			join('/state/x', 'dialecte', 'lot-stores'),
+		)
+	})
+
+	it('a relative XDG_STATE_HOME → ignored: the store list below <home>/.local/state of the given home', function relativeStoreList() {
+		const home = temporaryFolder('dialecte-store-list-home-')
+
+		expect(storeListPath({ environment: { XDG_STATE_HOME: 'relative/state' }, home })).toBe(
+			join(home, '.local', 'state', 'dialecte', 'lot-stores'),
 		)
 	})
 })

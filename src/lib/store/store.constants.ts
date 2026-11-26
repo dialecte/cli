@@ -129,7 +129,7 @@ export const COMMONDIR_FILE = 'commondir'
 export const COMMON_FOLDER_FILE = 'HEAD'
 export const COMMON_FOLDER_FOLDERS: readonly string[] = ['objects', 'refs']
 
-/** The variable naming the state folder, and the state folder below the home folder when it is unset or empty. */
+/** The variable naming the state folder, and the state folder below the home folder when it is unset, empty or relative. */
 export const STATE_HOME_VARIABLE = 'XDG_STATE_HOME'
 export const DEFAULT_STATE_SEGMENTS: readonly string[] = ['.local', 'state']
 
@@ -201,6 +201,19 @@ export const CHECK_NEXT_COMMANDS: Readonly<Record<NextCheckName, string>> = {
 
 /** What runs a lot in S: a person or a host runs the stations by hand, or the simulator plays a scenario. */
 export const RUNNERS = { manual: 'manual', simulated: 'simulated' } as const
+
+/**
+ * The states a lot reports, in order: the engine's written states, then the derived `input-required` and
+ * `committed`. A damaged or moved-aside lot folder is not a lot state. `LotStateName` is derived from this list.
+ */
+export const LOT_STATE_NAMES = [
+	'working',
+	'ready',
+	'failed',
+	'canceled',
+	'input-required',
+	'committed',
+] as const
 
 /** The states of a closed lot: it keeps nothing and holds no scope (33S section 11); read through `isClosedState`. */
 export const CLOSED_STATES: readonly LotStateName[] = ['committed', 'canceled']

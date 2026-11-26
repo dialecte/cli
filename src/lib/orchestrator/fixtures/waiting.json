@@ -1,0 +1,119 @@
+{
+	"schema": 1,
+	"workspace": {
+		"root": "/workspace/cli",
+		"key": "cli-123456789abc"
+	},
+	"updatedAt": "2026-11-26T10:00:00.000Z",
+	"lanes": [
+		{
+			"name": "cli",
+			"repos": ["cli"],
+			"holds": [],
+			"owns": ["lot-state", "lot-status"],
+			"mode": "running",
+			"plan": "plans/cli",
+			"queue": [],
+			"pin": "lot-pin"
+		}
+	],
+	"lots": [
+		{
+			"id": "lot-base",
+			"lane": "cli",
+			"repo": "cli",
+			"state": "committed",
+			"station": "land",
+			"attempt": 1,
+			"pr": "pr-base",
+			"head": "head-base"
+		},
+		{
+			"id": "lot-state",
+			"lane": "cli",
+			"repo": "cli",
+			"state": "working",
+			"station": "test",
+			"attempt": 1,
+			"pr": "",
+			"head": "head-state",
+			"run": {
+				"runner": "runner-a",
+				"handle": "run-waiting-1"
+			}
+		},
+		{
+			"id": "lot-status",
+			"lane": "cli",
+			"repo": "cli",
+			"state": "working",
+			"station": "review",
+			"attempt": 2,
+			"pr": "pr-status",
+			"head": "head-status",
+			"run": {
+				"runner": "runner-a",
+				"handle": "run-waiting-2"
+			}
+		}
+	],
+	"runs": [
+		{
+			"id": "run-waiting-1",
+			"kind": "station",
+			"subject": "lot-state",
+			"runner": "runner-a",
+			"attempt": 1,
+			"status": "running",
+			"started": "2026-11-26T09:50:00.000Z"
+		},
+		{
+			"id": "run-waiting-2",
+			"kind": "station",
+			"subject": "lot-status",
+			"runner": "runner-a",
+			"attempt": 2,
+			"status": "running",
+			"started": "2026-11-26T09:55:00.000Z",
+			"until": "2026-11-26T10:05:00.000Z"
+		}
+	],
+	"runners": [
+		{
+			"id": "runner-a",
+			"available": true,
+			"tokensSinceReset": 3200,
+			"usage": "64%"
+		}
+	],
+	"held": [],
+	"waitingOnYou": [
+		{
+			"id": "gate-status",
+			"kind": "gate",
+			"text": "Approve the status command before handover",
+			"line": "dialecte orchestrate status",
+			"options": ["approve", "hold"]
+		}
+	],
+	"prs": [
+		{
+			"repo": "cli",
+			"head": "lot-status",
+			"ci": "pending",
+			"review": "none"
+		}
+	],
+	"next": [
+		{
+			"lane": "cli",
+			"lot": "lot-next"
+		}
+	],
+	"seen": [
+		{
+			"source": "lot-store",
+			"event": "event-waiting-2"
+		}
+	]
+}

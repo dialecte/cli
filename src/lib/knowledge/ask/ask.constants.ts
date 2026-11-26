@@ -422,7 +422,7 @@ export const STATE_ASKS_SEGMENTS: readonly string[] = ['dialecte', 'asks']
 /** The refusals of the ask folder (D16); `{...}` are filled in. */
 export const ASK_FOLDER_REFUSALS = {
 	stateInWorkTree:
-		'{path} (the asks outside a lot, below XDG_STATE_HOME) is inside the git work tree {top}: set XDG_STATE_HOME to a folder outside every repository',
+		'{path} (the asks outside a lot, below the state home: an absolute XDG_STATE_HOME, else ~/.local/state) is inside the git work tree {top}: set XDG_STATE_HOME to an absolute folder outside every repository',
 } as const
 
 /** The kind and the effort of every question of the gold run (D21). */

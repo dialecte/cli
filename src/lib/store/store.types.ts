@@ -2,13 +2,13 @@ import type { HandoverRunMarker, StoreEntry } from '../handover/handover.types.t
 import type { PrintedText } from '../print/print.types.ts'
 import type { KeepDecision } from './keep-decisions.types.ts'
 import type { NextStation } from './next-station.types.ts'
-import type { QUESTION_AUDIENCES } from './store.constants.ts'
+import type { LOT_STATE_NAMES, QUESTION_AUDIENCES } from './store.constants.ts'
 
 /** The states the engine writes in a transition. `input-required` and `committed` are derived, never written. */
 export type EngineState = 'working' | 'ready' | 'failed' | 'canceled'
 
-/** The states a lot reports. */
-export type LotStateName = EngineState | 'input-required' | 'committed'
+/** The states a lot reports, read from the one list `LOT_STATE_NAMES`. */
+export type LotStateName = (typeof LOT_STATE_NAMES)[number]
 
 /** What caused a transition. */
 export type TransitionCauseKind =
@@ -284,6 +284,9 @@ export type StateFolderLocation = {
 	environment?: Record<string, string | undefined>
 	home?: string
 }
+
+/** The state home and where it came from: `$XDG_STATE_HOME` (`variable`) or `<home>/.local/state` (`home`). */
+export type StateHome = { path: string; origin: 'variable' | 'home' }
 
 /** What `storeListPath` reads: the state folder's location. */
 export type StoreListLocation = StateFolderLocation

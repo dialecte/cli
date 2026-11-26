@@ -8,7 +8,7 @@ export const DECLARED_FAMILIES: Array<[CommandFamily, string[]]> = [
 	['Plan', ['plan']],
 	['Check', ['gate', 'tdd', 'rules', 'contrib', 'changelog', 'ci', 'mutants']],
 	['Hand over', ['handover']],
-	['Workspace', ['worktree', 'doctor', 'models', 'skills', 'corpus']],
+	['Workspace', ['orchestrate', 'worktree', 'doctor', 'models', 'skills', 'corpus']],
 	['Maintain', ['bench', 'coverage', 'narrowing', 'audit', 'text']],
 ]
 

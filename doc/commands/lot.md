@@ -780,7 +780,7 @@ Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`
   `<git common folder>/dialecte-lots/<index>-<repository>-<branch tail>/` (the brief, a copy of the plan, the
   first transition, `identity.json` last; every record written once, read-only), makes the numbered worktree at
   the recorded base commit and its `.dialecte/lot` link to the lot folder. The store is appended to the user's
-  store list (`$XDG_STATE_HOME/dialecte/lot-stores`, else `~/.local/state/dialecte/lot-stores`), refused when
+  store list (`$XDG_STATE_HOME/dialecte/lot-stores` when `XDG_STATE_HOME` is absolute, else `~/.local/state/dialecte/lot-stores`), refused when
   that list sits inside a git work tree. `--dry-run` runs the checks (the store-list refusal included, no
   hard-link probe), names the lot and the start to run next (`next: dialecte lot start <brief path as given>`),
   writing and claiming nothing. A worktree that cannot be made leaves the lot
@@ -1203,7 +1203,7 @@ Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`
     than 0.
   - Heavy steps (`gate --full`, `--release`, `contrib`, `mutants run`, a rehearsal, a gate step the package
     declares heavy, and for the last only while that part runs) write a live marker in
-    `<state folder>/dialecte/heavy/` (`$XDG_STATE_HOME`, else `~/.local/state`): the step, the lot, the
+    `<state folder>/dialecte/heavy/` (an absolute `$XDG_STATE_HOME`, else `~/.local/state`): the step, the lot, the
     worktree, the process and its start time. The step removes it at its end; a marker whose process is gone, or
     runs with another start time, is dead and ignored. A person's run outside any lot writes the marker too, and
     no event. This is how a host sees which heavy step runs now, and since when.

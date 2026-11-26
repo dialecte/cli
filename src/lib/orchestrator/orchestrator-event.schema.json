@@ -1,0 +1,17 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "orchestrator-event.schema.json",
+	"title": "Dialecte orchestrator log event",
+	"description": "One line of the orchestrator's log.jsonl: a neutral record of something that happened.",
+	"type": "object",
+	"additionalProperties": false,
+	"required": ["schema", "id", "at", "kind", "subject", "facts"],
+	"properties": {
+		"schema": { "type": "integer", "enum": [1] },
+		"id": { "type": "string" },
+		"at": { "type": "string" },
+		"kind": { "type": "string" },
+		"subject": { "type": "string" },
+		"facts": { "type": "object" }
+	}
+}

@@ -14,6 +14,7 @@ import {
 } from '../handover/handover.constants.ts'
 import { DECISIONS_FILE, LEDGER_FILE } from '../review-rounds/review-rounds.constants.ts'
 import { STANDARD_FILE } from '../standard/standard.constants.ts'
+import * as storeConstants from './store.constants.ts'
 import { STORE_FILES, STORE_FOLDER } from './store.constants.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -67,5 +68,20 @@ describe('the names of the store (case 30)', () => {
 		const registry: string = HANDOVER_STORE_FOLDER
 
 		expect([folder === '', folder === registry]).toEqual([false, false])
+	})
+})
+
+describe('the one list of lot states', () => {
+	it('LOT_STATE_NAMES -> exactly the six lot states, in order, without damaged nor moved-aside', () => {
+		const constants: Record<string, unknown> = storeConstants
+
+		expect(constants.LOT_STATE_NAMES).toEqual([
+			'working',
+			'ready',
+			'failed',
+			'canceled',
+			'input-required',
+			'committed',
+		])
 	})
 })

@@ -198,8 +198,8 @@ export const COMMAND_MAP: CommandMap = {
 			'--about [<Parent>/]<Tag>[@<attr>], --code, --method name the subject; --kind forces the kind; --decision skips rung 1 (a choice the definition does not make)',
 			'--decision reads the definition as the boundary of what is valid (boundary: <answer> (definition), never the answer): a stored schema fact is a candidate only; a standard or person fact answers inside it; one naming what the XSD rejects is cut to the boundary (a list) or takes its answer, and a ! conflict: line flags it (standard-vs-xsd, exit 0): the XSD wins, fix it and ask again',
 			'an answer from rung 1 or 2 is recorded as a fact in $XDG_DATA_HOME/dialecte/facts at the ask effort; --no-facts reads and records none',
-			'an ask is a folder A-<n> holding ask.json (the --json object, schema: 1, with boundary and conflict): with --lot <id|folder> in <lot folder>/asks/ (a store lot by index, name or folder, or a hand-over folder outside every repository), inside a lot worktree in its lot, else in $XDG_STATE_HOME/dialecte/asks/',
-			'the events (ask.parsed, ask.rung, ask.fact, ask.state, ask.pack, ask.answer) go to the lot events.jsonl, else $XDG_STATE_HOME/dialecte/asks/events.jsonl; they hold the question length and key hash, never its text; ask.state says conflict: true|false, never what conflicts; ask.pack the round, the readers and skipped; ask.answer rung 6, the reader miss and citeRefused, never the answer or a quote',
+			'an ask is a folder A-<n> holding ask.json (the --json object, schema: 1, with boundary and conflict): with --lot <id|folder> in <lot folder>/asks/ (a store lot by index, name or folder, or a hand-over folder outside every repository), inside a lot worktree in its lot, else in <state home>/dialecte/asks/ (an absolute $XDG_STATE_HOME, else ~/.local/state)',
+			'the events (ask.parsed, ask.rung, ask.fact, ask.state, ask.pack, ask.answer) go to the lot events.jsonl, else <state home>/dialecte/asks/events.jsonl; they hold the question length and key hash, never its text; ask.state says conflict: true|false, never what conflicts; ask.pack the round, the readers and skipped; ask.answer rung 6, the reader miss and citeRefused, never the answer or a quote',
 			'the documents - the DIALECTE_STANDARD folder whose id matches the dialecte standard name; without one the ask goes to outside readers (--no-standard is refused while documents are readable)',
 			'--effort - a lot ask takes the lot effort; elsewhere --effort, else medium',
 			'pack - the next round of readers of an ask (the ask folder keeps request.json beside ask.json: what the ask read): rounds/round-<r>/ gets reader-<A|B|C>.md and .json (the slices with their line numbers, the report schema, a nonce each) and pack.json; A reads by rank, B by angle family, C (high) as B without the top slice, each up to 1,500 non-noise lines; a later round gives no slice a reader of the same letter had; pack again on an open round prints the same briefs; --out copies them; --outside [--web] for an ask without documents',
@@ -611,6 +611,22 @@ export const COMMAND_MAP: CommandMap = {
 			'2  write: a --target branch with neither a local nor an origin ref, no base branch found without --target, an --out the lot folder refuses; nothing written',
 		],
 		example: 'dialecte handover write ../handover/lots.json',
+	},
+	orchestrate: {
+		family: 'Workspace',
+		summary: 'The read-only orchestrator state of a workspace',
+		usage: ['dialecte orchestrate status [--workspace <path>] [--json]'],
+		notes: [
+			'status - reads state.json and log.jsonl below the state home for the selected workspace and prints the render of state.json; a missing, stale or unreadable STATE.md and skipped log lines are notes; nothing is written',
+			'--workspace - selects a workspace path (relative to the current folder); the current folder is selected by default',
+			'--json - the versioned whole status document { schema, workspace, outcome, state, statusLine, damage, notes }, each damage and note with its code; described by orchestrator-status.schema.json (schema 1)',
+			'the state home is $XDG_STATE_HOME when it is absolute, else ~/.local/state; it must be outside the workspace',
+		],
+		exitCodes: [
+			'1  orchestrator state is missing or damaged (state.json, or a damaged or unreadable log)',
+			'2  unknown arguments or options, the selected workspace is not a directory, or the state home is inside it or cannot be read',
+		],
+		example: 'dialecte orchestrate status --workspace . --json',
 	},
 	worktree: {
 		family: 'Workspace',

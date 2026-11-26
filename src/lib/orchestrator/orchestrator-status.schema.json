@@ -1,0 +1,176 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "orchestrator-status.schema.json",
+	"title": "Dialecte orchestrator status",
+	"type": "object",
+	"additionalProperties": false,
+	"required": ["schema", "workspace", "outcome", "state", "statusLine", "damage", "notes"],
+	"properties": {
+		"schema": {
+			"type": "integer",
+			"enum": [1]
+		},
+		"workspace": {
+			"$ref": "orchestrator-state.schema.json#/$defs/workspace"
+		},
+		"outcome": {
+			"type": "string",
+			"enum": ["present", "missing", "damaged"]
+		},
+		"state": {
+			"oneOf": [
+				{
+					"type": "null"
+				},
+				{
+					"$ref": "orchestrator-state.schema.json"
+				}
+			]
+		},
+		"statusLine": {
+			"type": "string"
+		},
+		"damage": {
+			"type": "array",
+			"items": {
+				"$ref": "#/$defs/damage"
+			}
+		},
+		"notes": {
+			"type": "array",
+			"items": {
+				"$ref": "#/$defs/note"
+			}
+		}
+	},
+	"allOf": [
+		{
+			"if": {
+				"properties": {
+					"outcome": {
+						"type": "string",
+						"const": "present"
+					}
+				},
+				"required": ["outcome"],
+				"type": "object"
+			},
+			"then": {
+				"properties": {
+					"state": {
+						"type": "object"
+					},
+					"damage": {
+						"type": "array",
+						"maxItems": 0
+					}
+				},
+				"type": "object"
+			}
+		},
+		{
+			"if": {
+				"properties": {
+					"outcome": {
+						"type": "string",
+						"const": "missing"
+					}
+				},
+				"required": ["outcome"],
+				"type": "object"
+			},
+			"then": {
+				"properties": {
+					"state": {
+						"type": "null"
+					},
+					"damage": {
+						"type": "array",
+						"minItems": 1,
+						"maxItems": 1,
+						"items": {
+							"type": "object",
+							"properties": {
+								"code": {
+									"type": "string",
+									"const": "state-missing"
+								}
+							}
+						}
+					},
+					"notes": {
+						"type": "array",
+						"maxItems": 0
+					}
+				},
+				"type": "object"
+			}
+		},
+		{
+			"if": {
+				"properties": {
+					"outcome": {
+						"type": "string",
+						"const": "damaged"
+					}
+				},
+				"required": ["outcome"],
+				"type": "object"
+			},
+			"then": {
+				"properties": {
+					"damage": {
+						"type": "array",
+						"minItems": 1
+					}
+				},
+				"type": "object"
+			}
+		}
+	],
+	"$defs": {
+		"damage": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["source", "code", "message"],
+			"properties": {
+				"source": {
+					"type": "string",
+					"enum": ["state", "log"]
+				},
+				"code": {
+					"type": "string",
+					"enum": [
+						"state-missing",
+						"state-invalid",
+						"state-unreadable",
+						"workspace-mismatch",
+						"log-damaged",
+						"log-unreadable"
+					]
+				},
+				"message": {
+					"type": "string"
+				}
+			}
+		},
+		"note": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["source", "code", "message"],
+			"properties": {
+				"source": {
+					"type": "string",
+					"enum": ["render", "log"]
+				},
+				"code": {
+					"type": "string",
+					"enum": ["render-missing", "render-stale", "render-unreadable", "log-skipped"]
+				},
+				"message": {
+					"type": "string"
+				}
+			}
+		}
+	}
+}

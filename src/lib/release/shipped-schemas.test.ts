@@ -18,6 +18,9 @@ const SCHEMA_NAMES = [
 	'dialecterc.schema.json',
 	'keep-decision.schema.json',
 	'lot-risk.schema.json',
+	'orchestrator-event.schema.json',
+	'orchestrator-state.schema.json',
+	'orchestrator-status.schema.json',
 	'risk-line.schema.json',
 	'rules.schema.json',
 	'scope-change.schema.json',
@@ -38,7 +41,7 @@ function escapedForRegExp(text: string): string {
 }
 
 describe('shippedSchemaFilesOf', () => {
-	it('the real src/ → the eight schemas, sorted', () => {
+	it('the real src/ → the eleven schemas, sorted', () => {
 		expect(shippedNamesOf(CLI_ROOT)).toEqual(SCHEMA_NAMES)
 	})
 
