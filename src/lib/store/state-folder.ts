@@ -1,18 +1,12 @@
-import { homedir } from 'node:os'
-import { join } from 'node:path'
-
-import { DEFAULT_STATE_SEGMENTS, STATE_HOME_VARIABLE } from './store.constants.ts'
+import { stateHomeOf } from './state-home.ts'
 
 import type { StateFolderLocation } from './store.types.ts'
 
 /**
- * `$XDG_STATE_HOME` (an empty one is unset), else `<home>/.local/state`; the environment and the home default to
- * the process's. The store list and the heavy markers are built under it.
+ * `$XDG_STATE_HOME` when it is an absolute path, else `<home>/.local/state`: an empty or relative variable counts as
+ * unset, as the XDG base-directory rule asks. The environment and the home default to the process's. The store list,
+ * the heavy markers, the plan marks, the asks folder and the orchestrator state are built under it.
  */
 export function stateFolder(params: StateFolderLocation = {}): string {
-	const environment = params.environment ?? process.env
-	// an empty variable is an unset one
-	return (
-		environment[STATE_HOME_VARIABLE] || join(params.home ?? homedir(), ...DEFAULT_STATE_SEGMENTS)
-	)
+	return stateHomeOf(params).path
 }

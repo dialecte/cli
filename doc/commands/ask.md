@@ -27,9 +27,9 @@ ask - Answer a question about a dialecte: a fact recorded before, the definition
   an ask is a folder A-<n> holding ask.json (the --json object, schema: 1, with boundary and
     conflict): with --lot <id|folder> in <lot folder>/asks/ (a store lot by index, name or folder,
     or a hand-over folder outside every repository), inside a lot worktree in its lot, else in
-    $XDG_STATE_HOME/dialecte/asks/
+    <state home>/dialecte/asks/ (an absolute $XDG_STATE_HOME, else ~/.local/state)
   the events (ask.parsed, ask.rung, ask.fact, ask.state, ask.pack, ask.answer) go to the lot
-    events.jsonl, else $XDG_STATE_HOME/dialecte/asks/events.jsonl; they hold the question length and
+    events.jsonl, else <state home>/dialecte/asks/events.jsonl; they hold the question length and
     key hash, never its text; ask.state says conflict: true|false, never what conflicts; ask.pack
     the round, the readers and skipped; ask.answer rung 6, the reader miss and citeRefused, never
     the answer or a quote
@@ -150,7 +150,7 @@ as its next command; in a store lot it raises one question on the lot (its text 
 member, now `1`: the subject, kind, rung, state, answer, fact, source, boundary, conflict, candidates, methods,
 angles, slices, effort, next and what was read of the documents). With `--lot <id|folder>` (a store lot by index, name or folder, or a hand-over folder outside every
 repository) it is in `<lot folder>/asks/`; run in a lot's worktree, in that lot; else in
-`$XDG_STATE_HOME/dialecte/asks/`. An ask of a lot that reaches the documents or the outside route rewrites the lot's note (see **The lot note**
+`<state home>/dialecte/asks/` (an absolute `$XDG_STATE_HOME`, else `~/.local/state`). An ask of a lot that reaches the documents or the outside route rewrites the lot's note (see **The lot note**
 below). The ask folder also keeps `request.json`, what the ask read: the request (question, `about`, `code`,
 `method`, `package`, kind, `decision`, limit, effort) and the documents (configured or not, the declared name and
 its key, the folders and their files keys, and the manifest: each file's id, sha256 and line count), so a later
@@ -158,7 +158,7 @@ its key, the folders and their files keys, and the manifest: each file's id, sha
 effort; elsewhere `--effort`, else `medium`.
 
 **Events.** `ask.parsed`, `ask.rung` (one per rung run, with its time), `ask.fact` and `ask.state` go to the
-lot's `events.jsonl`, else `$XDG_STATE_HOME/dialecte/asks/events.jsonl`; they hold the question's length and key
+lot's `events.jsonl`, else `<state home>/dialecte/asks/events.jsonl`; they hold the question's length and key
 hash, never its text, a quote or a slice's text; `ask.state` says `conflict: true|false`, never what conflicts.
 `ask pack` adds `ask.pack` (`{ round, readers, skipped }`); `ask verdict` adds `ask.state`, `ask.verdict`
 (`{ round, state, reason, accepted, refused: { <reason>: <n> }, polarityConflicts, adjudicator }`) and, on a fact

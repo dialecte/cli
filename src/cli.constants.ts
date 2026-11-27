@@ -22,6 +22,7 @@ import { run as models } from './commands/models.ts'
 import { run as mutants } from './commands/mutants.ts'
 import { run as narrowing } from './commands/narrowing.ts'
 import { run as newVerb } from './commands/new-verb.ts'
+import { run as orchestrate } from './commands/orchestrate.ts'
 import { run as plan } from './commands/plan.ts'
 import { renamedCommand } from './commands/renamed.ts'
 import { run as rules } from './commands/rules.ts'
@@ -61,6 +62,7 @@ export const COMMANDS = {
 	handover,
 	lot,
 	inbox,
+	orchestrate,
 	health,
 	plan,
 	mutants,

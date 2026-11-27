@@ -13,7 +13,7 @@ import {
 import type { StoreListLocation } from './store.types.ts'
 
 /**
- * `$XDG_STATE_HOME/dialecte/lot-stores`, else `<home>/.local/state/dialecte/lot-stores`; the environment and the
+ * `$XDG_STATE_HOME/dialecte/lot-stores` when the variable is absolute, else `<home>/.local/state/dialecte/lot-stores`; the environment and the
  * home default to the process's.
  */
 export function storeListPath(params: StoreListLocation): string {
@@ -47,7 +47,7 @@ export function storeListRefusal(params: { listPath?: string }): string | undefi
 	const listPath = params.listPath ?? storeListPath({})
 	const workTree = workTreeHolding({ from: dirname(listPath) })
 	if (workTree === undefined) return undefined
-	return `the store list ${listPath} would sit inside the git work tree ${workTree}: set ${STATE_HOME_VARIABLE} to a folder outside every repository`
+	return `the store list ${listPath} would sit inside the git work tree ${workTree}: set ${STATE_HOME_VARIABLE} to an absolute folder outside every repository`
 }
 
 /** The non-blank lines of the list, trimmed. */
