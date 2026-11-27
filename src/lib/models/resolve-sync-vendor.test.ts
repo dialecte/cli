@@ -53,7 +53,7 @@ describe('resolveSyncVendor', () => {
 	})
 
 	it('--vendor acme -> rejected with the known ids', () => {
-		expect(() => resolve({ given: 'acme' })).toThrow('anthropic, openai, google')
+		expect(() => resolve({ given: 'acme' })).toThrow('anthropic, openai, google, microsoft')
 	})
 
 	it('a remembered vendor wins over detection', () => {
@@ -73,7 +73,7 @@ describe('resolveSyncVendor', () => {
 
 		expect(resolve({ interactive: true })).toEqual({
 			kind: 'ask',
-			candidates: ['anthropic', 'openai', 'google'],
+			candidates: ['anthropic', 'openai', 'google', 'microsoft'],
 		})
 		expect(resolve({}).kind).toBe('unset')
 	})

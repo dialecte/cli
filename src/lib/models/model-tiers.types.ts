@@ -25,9 +25,11 @@ export type ModelTierMap = {
 /** An agent a project can be set up for. */
 export type VendorHost = {
 	agent: string
+	/** The vendor families the agent serves, in tier-map order; one for a single-vendor agent. */
+	vendors: readonly VendorId[]
 	/** Alternatives; an alternative holds when all its paths exist. */
 	anyOf: readonly (readonly string[])[]
-} & ({ vendor: VendorId } | { multiVendor: true })
+}
 
 /** What the project folder says about the vendor. */
 export type VendorDetection =

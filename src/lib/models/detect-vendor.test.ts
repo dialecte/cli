@@ -23,10 +23,35 @@ describe('detectVendor', () => {
 	it('.github/copilot-instructions.md -> copilot, needs a choice', () => {
 		expect(detect('.github/copilot-instructions.md')).toEqual({
 			kind: 'choose',
+			candidates: ['anthropic', 'openai', 'google', 'microsoft'],
+		})
+		expect(detect('.github/skills')).toEqual({
+			kind: 'choose',
+			candidates: ['anthropic', 'openai', 'google', 'microsoft'],
+		})
+		expect(detect('.cursor')).toEqual({
+			kind: 'choose',
 			candidates: ['anthropic', 'openai', 'google'],
 		})
-		expect(detect('.github/skills').kind).toBe('choose')
-		expect(detect('.cursor').kind).toBe('choose')
+	})
+
+	it('a single-vendor host with a multi-family host -> the union, in vendor order, no repeat', () => {
+		expect(detect('.claude', '.github/copilot-instructions.md')).toEqual({
+			kind: 'choose',
+			candidates: ['anthropic', 'openai', 'google', 'microsoft'],
+		})
+		expect(detect('.claude', '.cursor')).toEqual({
+			kind: 'choose',
+			candidates: ['anthropic', 'openai', 'google'],
+		})
+		expect(detect('.gemini', '.github/copilot-instructions.md')).toEqual({
+			kind: 'choose',
+			candidates: ['anthropic', 'openai', 'google', 'microsoft'],
+		})
+		expect(detect('.gemini', '.cursor')).toEqual({
+			kind: 'choose',
+			candidates: ['anthropic', 'openai', 'google'],
+		})
 	})
 
 	it('several agents -> their vendors as candidates', () => {

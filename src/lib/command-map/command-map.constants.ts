@@ -1,4 +1,5 @@
 /** The declared map of the commands: family, summary, usage lines, exit codes and one example each. */
+import { VENDOR_IDS } from '../models/model-tiers.constants.ts'
 import { renamedEntriesOf } from '../review-rounds/review-round-verbs.ts'
 
 import type { CommandFamily, CommandMap } from './command-map.types.ts'
@@ -676,7 +677,7 @@ export const COMMAND_MAP: CommandMap = {
 		family: 'Workspace',
 		summary:
 			"Which model each tier (fast, standard, strong, frontier) means for the project's vendor",
-		usage: ['dialecte models [--vendor <anthropic|openai|google>] [--json]'],
+		usage: [`dialecte models [--vendor <${VENDOR_IDS.join('|')}>] [--json]`],
 		notes: [],
 		exitCodes: ['1  an unknown vendor', '2  no vendor known'],
 		example: 'dialecte models --vendor openai',
