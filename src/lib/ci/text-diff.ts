@@ -61,7 +61,7 @@ function commonLengths(params: {
 }): number[][] {
 	const { before, after } = params
 	const common = Array.from({ length: before.length + 1 }, () =>
-		new Array<number>(after.length + 1).fill(0),
+		Array.from({ length: after.length + 1 }, () => 0),
 	)
 	for (let oldIndex = before.length - 1; oldIndex >= 0; oldIndex -= 1)
 		for (let newIndex = after.length - 1; newIndex >= 0; newIndex -= 1)

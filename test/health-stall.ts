@@ -3,7 +3,6 @@ import { pairRuns } from '../src/lib/events/pair-runs.ts'
 import {
 	NOW,
 	OTHER_STALL_LOT,
-	RESUME_CASES,
 	STALL_COMMON,
 	STALL_FOLDER_ROOT,
 	STALL_LOT,

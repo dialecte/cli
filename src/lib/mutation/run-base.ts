@@ -1,6 +1,6 @@
 /** The base a `changed` mutation run diffs against, and the scope lines changed since it. */
 import { findBaseBranchRef, resolveFlagBase } from '../gate/gate-base.ts'
-import { readGit, tryReadGit } from '../git.ts'
+import { readGit } from '../git.ts'
 import { BASE_FLAG_HINT } from './mutation.constants.ts'
 import { changedRanges } from './scope.ts'
 

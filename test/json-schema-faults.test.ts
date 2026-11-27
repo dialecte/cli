@@ -8,6 +8,15 @@ import { describe, expect, it } from 'vitest'
 
 import type { JsonSchema } from './json-schema-faults.types.ts'
 
+/** A schema with one keyword added by name: the rows add `then`, which an object member of that name would make read as a thenable. */
+function withKeyword(params: {
+	schema: JsonSchema
+	keyword: string
+	value: JsonSchema
+}): JsonSchema {
+	return { ...params.schema, [params.keyword]: params.value }
+}
+
 type FaultRow = {
 	value: unknown
 	schema: JsonSchema
@@ -59,22 +68,28 @@ const CASES: Record<string, FaultRow> = {
 		schema: {
 			type: 'object',
 			allOf: [
-				{
-					if: {
-						type: 'object',
-						properties: { outcome: { const: 'present' } },
-						required: ['outcome'],
+				withKeyword({
+					schema: {
+						if: {
+							type: 'object',
+							properties: { outcome: { const: 'present' } },
+							required: ['outcome'],
+						},
 					},
-					then: { type: 'object', required: ['state'] },
-				},
-				{
-					if: {
-						type: 'object',
-						properties: { outcome: { const: 'missing' } },
-						required: ['outcome'],
+					keyword: 'then',
+					value: { type: 'object', required: ['state'] },
+				}),
+				withKeyword({
+					schema: {
+						if: {
+							type: 'object',
+							properties: { outcome: { const: 'missing' } },
+							required: ['outcome'],
+						},
 					},
-					then: { type: 'object', required: ['other'] },
-				},
+					keyword: 'then',
+					value: { type: 'object', required: ['other'] },
+				}),
 			],
 		},
 		expected: ['$.state: missing'],
@@ -117,18 +132,20 @@ const CASES: Record<string, FaultRow> = {
 		},
 	'if without type that fails on an object -> its then does not apply': {
 		value: { outcome: 'missing' },
-		schema: {
-			if: { properties: { outcome: { const: 'present' } }, required: ['outcome'] },
-			then: { type: 'object', required: ['state'] },
-		},
+		schema: withKeyword({
+			schema: { if: { properties: { outcome: { const: 'present' } }, required: ['outcome'] } },
+			keyword: 'then',
+			value: { type: 'object', required: ['state'] },
+		}),
 		expected: [],
 	},
 	'if without type that holds on an object -> its then without type applies': {
 		value: { outcome: 'present' },
-		schema: {
-			if: { properties: { outcome: { const: 'present' } }, required: ['outcome'] },
-			then: { required: ['state'] },
-		},
+		schema: withKeyword({
+			schema: { if: { properties: { outcome: { const: 'present' } }, required: ['outcome'] } },
+			keyword: 'then',
+			value: { required: ['state'] },
+		}),
 		expected: ['$.state: missing'],
 	},
 	'$ref naming an unknown $id -> an unresolved fault, never no fault': {
