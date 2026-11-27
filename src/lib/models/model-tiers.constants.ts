@@ -1,7 +1,7 @@
 import type { ModelTierMap, ModelTierName, VendorHost } from './model-tiers.types.ts'
 
 /** The vendor families of the tier map. */
-export const VENDOR_IDS = ['anthropic', 'openai', 'google'] as const
+export const VENDOR_IDS = ['anthropic', 'openai', 'google', 'microsoft'] as const
 
 /** What an agent asks for instead of naming a model, cheapest first. */
 export const TIER_NAMES = ['fast', 'standard', 'strong', 'frontier'] as const
@@ -26,7 +26,7 @@ export const MODEL_TIERS: ModelTierMap = {
 				fast: { model: 'Haiku 5.5' },
 				standard: { model: 'Sonnet 5.5' },
 				strong: { model: 'Opus 5.5' },
-				frontier: { model: 'Fable 5.1' },
+				frontier: { model: 'Fable 5.2' },
 			},
 		},
 		openai: {
@@ -46,18 +46,27 @@ export const MODEL_TIERS: ModelTierMap = {
 				frontier: { model: 'the current flagship' },
 			},
 		},
+		microsoft: {
+			note: 'served by the Copilot host only: the ids are what `copilot --model` takes',
+			tiers: {
+				fast: { model: 'mai-code-2-flash' },
+				standard: { model: 'mai-code-2-flash' },
+				strong: { model: 'mai-code-2' },
+				frontier: { model: 'mai-code-2' },
+			},
+		},
 	},
 }
 
-/** Files that tell which agent a project is set up for; every path of an entry must exist. */
+/** Files that tell which agent a project is set up for, and the vendor families it serves; every path of an entry must exist. */
 export const VENDOR_HOSTS: readonly VendorHost[] = [
-	{ agent: 'claude-code', vendor: 'anthropic', anyOf: [['.claude']] },
-	{ agent: 'codex', vendor: 'openai', anyOf: [['AGENTS.md', '.codex']] },
-	{ agent: 'gemini-cli', vendor: 'google', anyOf: [['.gemini']] },
+	{ agent: 'claude-code', vendors: ['anthropic'], anyOf: [['.claude']] },
+	{ agent: 'codex', vendors: ['openai'], anyOf: [['AGENTS.md', '.codex']] },
+	{ agent: 'gemini-cli', vendors: ['google'], anyOf: [['.gemini']] },
 	{
 		agent: 'copilot',
-		multiVendor: true,
+		vendors: ['anthropic', 'openai', 'google', 'microsoft'],
 		anyOf: [['.github/copilot-instructions.md'], ['.github/skills']],
 	},
-	{ agent: 'cursor', multiVendor: true, anyOf: [['.cursor']] },
+	{ agent: 'cursor', vendors: ['anthropic', 'openai', 'google'], anyOf: [['.cursor']] },
 ]

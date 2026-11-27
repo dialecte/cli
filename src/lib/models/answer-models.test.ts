@@ -19,7 +19,37 @@ describe('answerModels', () => {
 
 		expect(exitCode).toBe(1)
 		expect(output).toContain('unknown vendor "acme"')
-		expect(output).toContain('anthropic, openai, google')
+		expect(output).toContain('anthropic, openai, google, microsoft')
+	})
+
+	it('vendor microsoft -> the mai-code ids, the note naming Copilot and copilot --model', () => {
+		const { output, exitCode } = answerModels({ vendor: 'microsoft', json: true })
+
+		expect(exitCode).toBe(0)
+
+		expect(output).toContain('mai-code-2-flash')
+
+		const parsed = JSON.parse(output)
+
+		expect(parsed.tiers).toEqual({
+			fast: { model: 'mai-code-2-flash' },
+			standard: { model: 'mai-code-2-flash' },
+			strong: { model: 'mai-code-2' },
+			frontier: { model: 'mai-code-2' },
+		})
+		expect(parsed.note).toContain('Copilot')
+		expect(parsed.note).toContain('copilot --model')
+
+		const text = answerModels({ vendor: 'microsoft', json: false })
+
+		expect(text.exitCode).toBe(0)
+		expect(text.output).toMatch(/^strong {4}mai-code-2$/m)
+	})
+
+	it('vendor anthropic -> frontier Fable 5.2', () => {
+		const parsed = JSON.parse(answerModels({ vendor: 'anthropic', json: true }).output)
+
+		expect(parsed.tiers.frontier).toEqual({ model: 'Fable 5.2' })
 	})
 
 	it('no vendor known -> exit 2 with the command to set it', () => {
