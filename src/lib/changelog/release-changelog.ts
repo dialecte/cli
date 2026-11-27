@@ -15,7 +15,6 @@ import type {
 	Fragment,
 	OrderedSection,
 	SourcedEntry,
-	SectionEntry,
 	SectionsRead,
 } from './changelog.types.ts'
 

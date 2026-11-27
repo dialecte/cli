@@ -12,7 +12,6 @@ import { QUALITY_RECORD_FILE, QUALITY_RECORD_SCHEMA } from './quality.constants.
 import type {
 	LotDocs,
 	QualityBase,
-	QualityDocs,
 	QualityDocsStanding,
 	QualityRecord,
 	QualityStanding,

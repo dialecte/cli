@@ -7,10 +7,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import {
-	RECORD_CASE_STATUSES,
-	RECORD_GATE_MODES,
-} from '../change-request/change-request.constants.ts'
 import { realPathOf } from '../file-system.ts'
 import { readGateRecords, readReleaseRecord } from '../gate-records/gate-records.ts'
 import { computeStateHash } from '../gate-records/state-hash.ts'

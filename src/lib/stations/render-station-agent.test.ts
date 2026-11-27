@@ -40,7 +40,7 @@ describe('claudeModelAlias', () => {
 		['Sonnet 5.5', 'sonnet'],
 		['Opus 5.5', 'opus'],
 		['Haiku 5.5', 'haiku'],
-		['Fable 5.1', 'fable'],
+		['Fable 5.2', 'fable'],
 		['Sol', undefined],
 	])('%s -> %s', (modelName, alias) => {
 		expect(claudeModelAlias(modelName)).toBe(alias)

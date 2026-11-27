@@ -4,6 +4,14 @@ import { describe, expect, it } from 'vitest'
 
 type StableJsonCase = { description: string; value: unknown; expected: string }
 
+/** An array with a hole at index 1, built by assignment so no array literal carries a bare comma. */
+function sparseArray(): number[] {
+	const array: number[] = []
+	array[0] = 1
+	array[2] = 3
+	return array
+}
+
 const CASES: StableJsonCase[] = [
 	{ description: 'keys of an object are sorted', value: { b: 1, a: 2 }, expected: '{"a":2,"b":1}' },
 	{
@@ -51,7 +59,7 @@ const REFUSED: RefusedCase[] = [
 	{ description: 'a class instance', value: new Instance() },
 	{ description: 'a class instance nested in an object', value: { a: { b: new Instance() } } },
 	{ description: 'a Date nested in an array', value: [{ when: new Date(0) }] },
-	{ description: 'a sparse array', value: [1, , 3] },
+	{ description: 'a sparse array', value: sparseArray() },
 	{ description: 'a function', value: () => 1 },
 	{ description: 'a function member of an object', value: { a: () => 1 } },
 	{ description: 'a symbol', value: Symbol('s') },

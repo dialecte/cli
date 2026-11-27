@@ -231,8 +231,18 @@ describe(
 			const marked = runPlan(
 				callOf(
 					workspace,
-					...['mark', 'plan.md', 'M', 'done', '--landed', `cli:${landed}`],
-					...['--landed', `core:${coreLanded}`, '--by', 'tester', '--reason', 'landed by hand'],
+					'mark',
+					'plan.md',
+					'M',
+					'done',
+					'--landed',
+					`cli:${landed}`,
+					'--landed',
+					`core:${coreLanded}`,
+					'--by',
+					'tester',
+					'--reason',
+					'landed by hand',
 				),
 			)
 

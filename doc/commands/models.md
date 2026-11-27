@@ -27,7 +27,8 @@ Flags: `--vendor`, `--json`
   (Copilot, Cursor) or none are found: among the families the detected agents serve, in the tier map's order
   (Copilot: `anthropic`, `openai`, `google`, `microsoft`; Cursor: the first three), or every family when none is
   found. The `microsoft` family is served by Copilot only; its tiers are the ids `copilot --model` takes
-  (`mai-code-2-flash` for fast and standard, `mai-code-2` for strong and frontier). Without a terminal, a sync that cannot tell installs the skills without a vendor (`models` stays
-  unset: the skills need none) and says how to set it: `--vendor <id>`, which also sets it without asking. When manifests disagree, `models` warns on stderr, naming them, and uses the
-  most recently written; an unknown vendor id in a manifest is ignored with a warning. Exit 1 for an unknown
-  `--vendor`, 2 when no vendor is known.
+  (`mai-code-2-flash` for fast and standard, `mai-code-2` for strong and frontier). Without a terminal, a sync that
+  cannot tell installs the skills without a vendor (`models` stays unset: the skills need none) and says how to set
+  it: `--vendor <id>`, which also sets it without asking. When manifests disagree, `models` warns on stderr, naming
+  them, and uses the most recently written; an unknown vendor id in a manifest is ignored with a warning. Exit 1 for
+  an unknown `--vendor`, 2 when no vendor is known.

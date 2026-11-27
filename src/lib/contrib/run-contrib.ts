@@ -544,7 +544,7 @@ function rulesResult(params: {
 		counts: { errors: check.errors, warnings: check.warnings },
 		restored: [],
 		...(errors.length && { reason: firstErrorOf(errors) }),
-		...(noteOf({ noBase: params.noBase, noFile: check.files.length === 0 }) ?? {}),
+		...noteOf({ noBase: params.noBase, noFile: check.files.length === 0 }),
 		// every finding under the row, errors first: the row's line stays one line
 		...(check.findings.length && { details: [...errors, ...warnings].map(renderRuleFinding) }),
 	}
